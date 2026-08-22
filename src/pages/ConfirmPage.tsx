@@ -13,6 +13,7 @@ import {
   sendLeaderResponseNotification,
   logInAppNotification
 } from '../services/notificationService';
+import { confirmAssignmentByToken } from '../services/supabaseDataService';
 import KcKalvarijaLogo from '../components/KcKalvarijaLogo';
 import { 
   CheckCircle2, 
@@ -154,6 +155,7 @@ export default function ConfirmPage({
         onUpdateSunday(res.modifiedSunday);
         setCurrentStatus('confirmed');
         setProcessed(true);
+        confirmAssignmentByToken(token, 'confirmed').catch(console.warn);
         if (!hasNotifiedLeaderRef.current) {
           hasNotifiedLeaderRef.current = true;
           notifyLeader('confirmed');
@@ -165,6 +167,7 @@ export default function ConfirmPage({
         onUpdateSunday(res.modifiedSunday);
         setCurrentStatus('declined');
         setProcessed(true);
+        confirmAssignmentByToken(token, 'declined').catch(console.warn);
         if (!hasNotifiedLeaderRef.current) {
           hasNotifiedLeaderRef.current = true;
           notifyLeader('declined');
@@ -185,6 +188,7 @@ export default function ConfirmPage({
       onUpdateSunday(res.modifiedSunday);
       setCurrentStatus('confirmed');
       setProcessed(true);
+      confirmAssignmentByToken(token, 'confirmed').catch(console.warn);
       notifyLeader('confirmed');
     }
   };
@@ -196,6 +200,7 @@ export default function ConfirmPage({
       onUpdateSunday(res.modifiedSunday);
       setCurrentStatus('declined');
       setProcessed(true);
+      confirmAssignmentByToken(token, 'declined', declineReasonInput).catch(console.warn);
       notifyLeader('declined', declineReasonInput);
     }
   };
@@ -206,6 +211,7 @@ export default function ConfirmPage({
     if (res) {
       onUpdateSunday(res.modifiedSunday);
       setNoteSaved(true);
+      confirmAssignmentByToken(token, 'declined', declineReasonInput).catch(console.warn);
       notifyLeader('declined', declineReasonInput);
       setTimeout(() => setNoteSaved(false), 3500);
     }

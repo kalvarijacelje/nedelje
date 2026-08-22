@@ -100,7 +100,21 @@ import {
   deleteDoc, 
   getDocs, 
   writeBatch 
-} from 'firebase/firestore';
+import { 
+  fetchSundaysFromSupabase, 
+  upsertSundayToSupabase, 
+  fetchPeopleFromSupabase, 
+  upsertPersonToSupabase, 
+  deletePersonFromSupabase, 
+  fetchBlackoutsFromSupabase, 
+  insertBlackoutToSupabase, 
+  deleteBlackoutFromSupabase, 
+  fetchShiftSwapsFromSupabase, 
+  upsertShiftSwapToSupabase, 
+  subscribeToSupabaseRealtime, 
+  IS_SUPABASE_CONFIGURED 
+} from './services/supabaseDataService';
+import { seedSupabaseDatabase } from './utils/supabaseSeeder';
 
 type TabType = 'home' | 'sundays' | 'statistics' | 'sunday_school' | 'worship' | 'ministries' | 'people';
 
@@ -556,16 +570,24 @@ export default function App() {
       createdAt: 'Danes ob ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     setSwapRequests(prev => [newReq, ...prev]);
+    upsertShiftSwapToSupabase(newReq).catch(console.warn);
   };
 
   const handleAcceptSwapRequest = (requestId: string, acceptingPersonName: string) => {
     const req = swapRequests.find(r => r.id === requestId);
     if (!req) return;
 
+    const updatedReq: ShiftSwapRequest = {
+      ...req,
+      status: 'accepted',
+      acceptedByName: acceptingPersonName
+    };
+
     // 1. Mark request as accepted
     setSwapRequests(prev =>
-      prev.map(r => r.id === requestId ? { ...r, status: 'accepted', acceptedByName: acceptingPersonName } : r)
+      prev.map(r => r.id === requestId ? updatedReq : r)
     );
+    upsertShiftSwapToSupabase(updatedReq).catch(console.warn);
 
     // 2. Automatically update Sunday assignments: replace requester with accepting person
     setSundays(prevSundays =>
@@ -580,10 +602,12 @@ export default function App() {
           }
           updatedAssignments[req.ministryId] = newList;
 
-          return {
+          const modifiedSunday = {
             ...sun,
             assignments: updatedAssignments
           };
+          upsertSundayToSupabase(modifiedSunday).catch(console.warn);
+          return modifiedSunday;
         }
         return sun;
       })
@@ -591,6 +615,10 @@ export default function App() {
   };
 
   const handleCancelSwapRequest = (requestId: string) => {
+    const req = swapRequests.find(r => r.id === requestId);
+    if (req) {
+      upsertShiftSwapToSupabase({ ...req, status: 'cancelled' }).catch(console.warn);
+    }
     setSwapRequests(prev => prev.filter(r => r.id !== requestId));
   };
 
@@ -602,10 +630,12 @@ export default function App() {
       createdAt: new Date().toLocaleDateString('sl')
     };
     setBlackoutDates(prev => [newB, ...prev]);
+    insertBlackoutToSupabase(b).catch(console.warn);
   };
 
   const handleDeleteBlackoutDate = (id: string) => {
     setBlackoutDates(prev => prev.filter(b => b.id !== id));
+    deleteBlackoutFromSupabase(id).catch(console.warn);
   };
 
 
@@ -931,6 +961,85 @@ export default function App() {
     };
   }, [activeRole]);
 
+  // --- Supabase Realtime & Persistent Data Synchronizer ---
+  useEffect(() => {
+    if (!IS_SUPABASE_CONFIGURED) return;
+
+    const loadFromSupabase = async () => {
+      try {
+        const [remoteSundays, remotePeople, remoteBlackouts, remoteSwaps] = await Promise.all([
+          fetchSundaysFromSupabase(),
+          fetchPeopleFromSupabase(),
+          fetchBlackoutsFromSupabase(),
+          fetchShiftSwapsFromSupabase()
+        ]);
+
+        if (remoteSundays.length > 0) {
+          const localSundays = safeParseSundays(localStorage.getItem('church_roster_sundays_v2'));
+          const merged = mergeSundaysWithDefaults(remoteSundays, localSundays);
+          setSundays(merged);
+          try { localStorage.setItem('church_roster_sundays_v2', JSON.stringify(merged)); } catch (e) {}
+        }
+
+        if (remotePeople.length > 0) {
+          const localPeople = safeParsePeople(localStorage.getItem('church_roster_people_v2'));
+          const merged = mergePeopleWithDefaults(remotePeople, localPeople);
+          setPeople(merged);
+          try { localStorage.setItem('church_roster_people_v2', JSON.stringify(merged)); } catch (e) {}
+        }
+
+        if (remoteBlackouts.length > 0) {
+          setBlackoutDates(remoteBlackouts);
+          try { localStorage.setItem('church_roster_blackouts_v1', JSON.stringify(remoteBlackouts)); } catch (e) {}
+        }
+
+        if (remoteSwaps.length > 0) {
+          setSwapRequests(remoteSwaps);
+          try { localStorage.setItem('church_roster_swaps_v1', JSON.stringify(remoteSwaps)); } catch (e) {}
+        }
+      } catch (err) {
+        console.warn('[Supabase] Initial data fetch notice:', err);
+      }
+    };
+
+    loadFromSupabase();
+
+    const unsubRealtime = subscribeToSupabaseRealtime(
+      async () => {
+        const freshSundays = await fetchSundaysFromSupabase();
+        if (freshSundays.length > 0) {
+          setSundays(freshSundays);
+          try { localStorage.setItem('church_roster_sundays_v2', JSON.stringify(freshSundays)); } catch (e) {}
+        }
+      },
+      async () => {
+        const freshPeople = await fetchPeopleFromSupabase();
+        if (freshPeople.length > 0) {
+          setPeople(freshPeople);
+          try { localStorage.setItem('church_roster_people_v2', JSON.stringify(freshPeople)); } catch (e) {}
+        }
+      },
+      async () => {
+        const freshBlackouts = await fetchBlackoutsFromSupabase();
+        if (freshBlackouts.length > 0) {
+          setBlackoutDates(freshBlackouts);
+          try { localStorage.setItem('church_roster_blackouts_v1', JSON.stringify(freshBlackouts)); } catch (e) {}
+        }
+      },
+      async () => {
+        const freshSwaps = await fetchShiftSwapsFromSupabase();
+        if (freshSwaps.length > 0) {
+          setSwapRequests(freshSwaps);
+          try { localStorage.setItem('church_roster_swaps_v1', JSON.stringify(freshSwaps)); } catch (e) {}
+        }
+      }
+    );
+
+    return () => {
+      unsubRealtime();
+    };
+  }, []);
+
   // --- Manual Developer Database Seeding Helper (Only triggered via explicit manual command) ---
   const seedInitialCollections = async () => {
     if (!db) return;
@@ -986,8 +1095,9 @@ export default function App() {
     if (typeof window !== 'undefined') {
       (window as any).seedChurchDatabaseManually = seedInitialCollections;
       (window as any).restoreFullRoster = handleRestoreFullRoster;
+      (window as any).seedSupabaseDatabase = () => seedSupabaseDatabase(sundays, people);
     }
-  }, []);
+  }, [sundays, people]);
 
   const handleGoogleLogin = async () => {
     if (!auth || !googleProvider) return;
@@ -1140,6 +1250,9 @@ export default function App() {
       }
     }
 
+    // Persist to Supabase
+    upsertPersonToSupabase(personWithId).catch(console.warn);
+
     if (IS_FIREBASE_ENABLED && db) {
       try {
         await createPersonRecord(personWithId);
@@ -1189,6 +1302,9 @@ export default function App() {
     for (const u of linkedUsers) {
       handleLinkUserPerson(u.uid, undefined);
     }
+
+    // Persist to Supabase
+    deletePersonFromSupabase(targetId).catch(console.warn);
 
     // 4. Delete document from Firestore
     if (IS_FIREBASE_ENABLED && db) {
@@ -1257,6 +1373,9 @@ export default function App() {
       });
     }
 
+    // Persist to Supabase
+    upsertPersonToSupabase(personWithId).catch(console.warn);
+
     // 3. Persist to Firestore: overwrite /people/{person.id} directly
     if (IS_FIREBASE_ENABLED && db) {
       try {
@@ -1311,6 +1430,9 @@ export default function App() {
     if (updatedSunday.assignments['nedeljska_sola_mlajsa'] || updatedSunday.assignments['nedeljska_sola_starejsa']) {
       setSundaySchoolLessons(prev => syncSundaySchoolLessonsFromSunday(updatedSunday, prev));
     }
+
+    // Persist to Supabase
+    upsertSundayToSupabase(updatedSunday).catch(console.warn);
 
     // 2. Persist to Firestore if available
     if (IS_FIREBASE_ENABLED && db) {
@@ -1392,6 +1514,9 @@ export default function App() {
     });
 
     setSelectedSundayId(nextId);
+
+    // Persist to Supabase
+    upsertSundayToSupabase(newSunday).catch(console.warn);
 
     if (IS_FIREBASE_ENABLED && db) {
       try {
