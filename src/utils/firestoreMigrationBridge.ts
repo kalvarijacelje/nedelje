@@ -49,7 +49,10 @@ async function fetchFirestoreCollection(collectionName: string): Promise<any[]> 
  * One-time Firestore to Supabase Migration Bridge.
  * Extracts all documents from original Firebase collections and maps/upserts them into PostgreSQL tables in Supabase.
  */
-export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
+export async function migrateFirestoreToSupabase(customSupabaseClient?: any): Promise<MigrationSummary> {
+  const client = customSupabaseClient || supabase;
+  const isConfigured = customSupabaseClient ? true : IS_SUPABASE_CONFIGURED;
+
   const summary: MigrationSummary = {
     ministriesCount: 0,
     peopleCount: 0,
@@ -64,7 +67,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
     errors: []
   };
 
-  if (!IS_SUPABASE_CONFIGURED) {
+  if (!isConfigured) {
     summary.errors.push('Supabase is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
     return summary;
   }
@@ -84,7 +87,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
       active: m.active !== false
     }));
 
-    const { error: minErr } = await supabase.from('nedelje_ministries').upsert(ministryRows);
+    const { error: minErr } = await client.from('nedelje_ministries').upsert(ministryRows);
     if (minErr) summary.errors.push(`Ministries: ${minErr.message}`);
     else summary.ministriesCount = ministryRows.length;
 
@@ -115,14 +118,16 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
         name: rawName,
         email: p.email || (isSuperAdmin ? 'ales.lajlar@gmail.com' : null),
         phone: p.phone || null,
+        avatar_url: p.avatarUrl || p.avatar_url || p.photoUrl || p.photoURL || null,
         role: isSuperAdmin ? 'Admin' : (p.role || 'Servant'),
         preferred_ministries: p.preferredMinistries || p.preferred_ministries || [],
+        led_ministries: p.ledMinistries || p.led_ministries || [],
         family_members: p.familyMembers || p.family_members || [],
-        is_exempt_from_burnout: Boolean(p.isExemptFromBurnout || p.is_exempt_from_burnout || isSuperAdmin)
+        is_exempt_from_burnout: Boolean(p.isExemptFromBurnout || p.is_exempt_from_burnout || p.isPastorOrStaff || isSuperAdmin)
       };
     });
 
-    const { error: peopleErr } = await supabase.from('profiles').upsert(profileRows);
+    const { error: peopleErr } = await client.from('profiles').upsert(profileRows);
     if (peopleErr) summary.errors.push(`Profiles: ${peopleErr.message}`);
     else summary.peopleCount = profileRows.length;
 
@@ -150,7 +155,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
       worship_setlist: s.worshipSetlist || s.worship_setlist || []
     }));
 
-    const { error: sunErr } = await supabase.from('nedelje_services').upsert(sundayRows);
+    const { error: sunErr } = await client.from('nedelje_services').upsert(sundayRows);
     if (sunErr) {
       summary.errors.push(`Sundays: ${sunErr.message}`);
     } else {
@@ -166,8 +171,10 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
                 if (name && typeof name === 'string' && name.trim()) {
                   const token = generateConfirmationToken(s.id, mId, name.trim());
                   const matchedP = profileRows.find(p => p.name.toLowerCase().trim() === name.trim().toLowerCase());
+                  const cleanNameSlug = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
 
                   assignmentRows.push({
+                    id: `${s.id}_${mId}_${cleanNameSlug}`,
                     sunday_id: s.id,
                     ministry_id: mId,
                     person_name: name.trim(),
@@ -183,9 +190,12 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
       });
 
       if (assignmentRows.length > 0) {
-        const { error: assignErr } = await supabase.from('nedelje_assignments').upsert(assignmentRows);
+        const uniqueAssignments = Array.from(
+          new Map(assignmentRows.map((item) => [item.id, item])).values()
+        );
+        const { error: assignErr } = await client.from('nedelje_assignments').upsert(uniqueAssignments, { onConflict: 'id' });
         if (assignErr) summary.errors.push(`Assignments: ${assignErr.message}`);
-        else summary.assignmentsCount = assignmentRows.length;
+        else summary.assignmentsCount = uniqueAssignments.length;
       }
     }
 
@@ -193,8 +203,8 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
     const fsBlackouts = await fetchFirestoreCollection('blackout_dates');
     const blackoutList = fsBlackouts.length > 0 ? fsBlackouts : [];
     if (blackoutList.length > 0) {
-      const blackoutRows = blackoutList.map(b => ({
-        id: b.id.length >= 30 ? b.id : undefined,
+      const blackoutRows = blackoutList.map((b, idx) => ({
+        id: b.id || `bo-${b.personName ? b.personName.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'p'}-${b.startDate || idx}`,
         person_name: b.personName || b.person_name,
         person_id: b.personId || b.person_id || null,
         start_date: b.startDate || b.start_date,
@@ -202,7 +212,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
         reason: b.reason || null
       }));
 
-      const { error: bErr } = await supabase.from('nedelje_blackout_dates').upsert(blackoutRows);
+      const { error: bErr } = await client.from('nedelje_blackout_dates').upsert(blackoutRows);
       if (bErr) summary.errors.push(`Blackouts: ${bErr.message}`);
       else summary.blackoutsCount = blackoutRows.length;
     }
@@ -210,8 +220,8 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
     // 5. PULL OR PREPARE SHIFT SWAPS
     const fsSwaps = await fetchFirestoreCollection('shift_swaps');
     if (fsSwaps.length > 0) {
-      const swapRows = fsSwaps.map(s => ({
-        id: s.id.length >= 30 ? s.id : undefined,
+      const swapRows = fsSwaps.map((s, idx) => ({
+        id: s.id || `swap-${s.sundayId || s.sunday_id || idx}-${s.ministryId || s.ministry_id || idx}`,
         sunday_id: s.sundayId || s.sunday_id,
         sunday_date: s.sundayDate || s.sunday_date,
         ministry_id: s.ministryId || s.ministry_id,
@@ -222,7 +232,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
         accepted_by_name: s.acceptedByName || s.accepted_by_name || null
       }));
 
-      const { error: swapErr } = await supabase.from('nedelje_shift_swaps').upsert(swapRows);
+      const { error: swapErr } = await client.from('nedelje_shift_swaps').upsert(swapRows);
       if (swapErr) summary.errors.push(`Shift swaps: ${swapErr.message}`);
       else summary.swapsCount = swapRows.length;
     }
@@ -247,7 +257,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
       sunday_school: w.sundaySchool || w.sunday_school || ''
     }));
 
-    const { error: worshipErr } = await supabase.from('nedelje_worship_schedules').upsert(worshipRows);
+    const { error: worshipErr } = await client.from('nedelje_worship_schedules').upsert(worshipRows);
     if (worshipErr) summary.errors.push(`Worship: ${worshipErr.message}`);
     else summary.worshipCount = worshipRows.length;
 
@@ -271,7 +281,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
       status: l.status || 'planned'
     }));
 
-    const { error: lessonErr } = await supabase.from('nedelje_school_lessons').upsert(lessonRows);
+    const { error: lessonErr } = await client.from('nedelje_school_lessons').upsert(lessonRows);
     if (lessonErr) summary.errors.push(`Sunday School: ${lessonErr.message}`);
     else summary.lessonsCount = lessonRows.length;
 
@@ -292,7 +302,7 @@ export async function migrateFirestoreToSupabase(): Promise<MigrationSummary> {
       coffee_shop_notes: v.coffeeShopNotes || v.coffee_shop_notes || ''
     }));
 
-    const { error: visErr } = await supabase.from('nedelje_visitors').upsert(visitorRows);
+    const { error: visErr } = await client.from('nedelje_visitors').upsert(visitorRows);
     if (visErr) summary.errors.push(`Visitors: ${visErr.message}`);
     else summary.visitorsCount = visitorRows.length;
 

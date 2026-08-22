@@ -21,6 +21,7 @@ import {
   INITIAL_SETUP_STEPS, 
   INITIAL_TEARDOWN_STEPS 
 } from '../data/worshipData';
+import { INITIAL_PEOPLE } from '../data/initialData';
 import { matchWorshipRosterEntry, syncSundayFromWorshipRosterEntry } from '../utils/worshipSync';
 import { SASU_ALL_SONGS, SASU_GOOGLE_SHEETS_URL } from '../data/sasuSongsData';
 import { 

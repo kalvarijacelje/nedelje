@@ -142,7 +142,7 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
       const now = Date.now();
       const expiredEmails: string[] = [];
 
-      Object.entries(batches).forEach(([email, batch]) => {
+      (Object.entries(batches) as [string, QueuedRecipientBatch][]).forEach(([email, batch]) => {
         if (batch.timerExpiresAt <= now) {
           expiredEmails.push(email);
         }
@@ -169,7 +169,7 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
   // Warn on tab closing if there are pending queued assignments
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      const count = Object.values(batches).reduce((acc, b) => acc + b.items.length, 0);
+      const count = (Object.values(batches) as QueuedRecipientBatch[]).reduce((acc: number, b: QueuedRecipientBatch) => acc + (b.items ? b.items.length : 0), 0);
       if (count > 0) {
         e.preventDefault();
         e.returnValue = 'Imate čakajoča e-poštna obvestila, ki še niso bila odposlana.';
@@ -303,7 +303,7 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
     });
   }, []);
 
-  const totalQueuedCount = Object.values(batches).reduce((acc, b) => acc + b.items.length, 0);
+  const totalQueuedCount = (Object.values(batches) as QueuedRecipientBatch[]).reduce((acc: number, b: QueuedRecipientBatch) => acc + (b.items ? b.items.length : 0), 0);
 
   return (
     <NotificationQueueContext.Provider

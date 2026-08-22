@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase, IS_SUPABASE_CONFIGURED } from '../supabaseClient';
 import { Person, User, UserRole } from '../types';
+import { upsertPersonToSupabase, deletePersonFromSupabase } from './supabaseDataService';
 
 /**
- * Sanitizes an object before persisting to Firestore (strips undefined values).
+ * Sanitizes an object before persisting (strips undefined values).
  */
 export function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Record<string, any> {
   const result: Record<string, any> = {};
@@ -29,105 +29,107 @@ export function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Rec
  */
 export function findPersonByAuthUser(
   people: Person[],
-  authUser: { uid?: string; email?: string | null; displayName?: string | null }
+  authUser: { uid?: string; id?: string; email?: string | null; displayName?: string | null; user_metadata?: any }
 ): Person | undefined {
   if (!people || people.length === 0) return undefined;
 
   const authEmail = (authUser.email || '').toLowerCase().trim();
-  const authUid = authUser.uid;
-  const authName = (authUser.displayName || '').toLowerCase().trim();
+  const authUid = authUser.uid || authUser.id;
+  const authName = (authUser.displayName || authUser.user_metadata?.full_name || authUser.user_metadata?.name || '').toLowerCase().trim();
 
-  // 1. Direct ID / UID match
+  // 1. Superadmin special matching for ales.lajlar@gmail.com or name Aleš / Ales
+  if (
+    authEmail === 'ales.lajlar@gmail.com' ||
+    authName === 'aleš' ||
+    authName === 'ales' ||
+    authName.includes('aleš lajlar') ||
+    authName.includes('ales lajlar')
+  ) {
+    const alesMatch = people.find(p => p && (
+      p.id === 'p-ales' ||
+      p.id === 'p1' ||
+      p.id === 'ales-lajlar' ||
+      (p.name && (p.name.trim() === 'Aleš' || p.name.trim() === 'Aleš Lajlar' || p.name.toLowerCase().trim() === 'aleš')) ||
+      (p.email && p.email.toLowerCase().trim() === 'ales.lajlar@gmail.com')
+    ));
+    if (alesMatch) return alesMatch;
+  }
+
+  // 2. Direct ID / UID match
   if (authUid) {
-    const idMatch = people.find(p => p && p.id === authUid);
+    const idMatch = people.find(p => p && (p.id === authUid || (p as any).auth_user_id === authUid));
     if (idMatch) return idMatch;
   }
 
-  // 2. Exact email match (highest confidence)
+  // 3. Exact email match (highest confidence)
   if (authEmail) {
     const emailMatch = people.find(p => p && p.email && p.email.toLowerCase().trim() === authEmail);
     if (emailMatch) return emailMatch;
   }
 
-  // 3. Exact full display name match
+  // 4. Exact full display name match
   if (authName) {
     const nameMatch = people.find(p => p && p.name && p.name.toLowerCase().trim() === authName);
     if (nameMatch) return nameMatch;
-  }
-
-  // 4. Superadmin fallback matching for ales.lajlar@gmail.com
-  if (authEmail === 'ales.lajlar@gmail.com') {
-    const alesMatch = people.find(p => p && p.name && p.name.toLowerCase().includes('aleš'));
-    if (alesMatch) return alesMatch;
   }
 
   return undefined;
 }
 
 /**
- * Updates a Person document in place by its immutable ID without duplicating or creating clones.
+ * Updates a Person document in place by its immutable ID in Supabase profiles.
  */
 export async function updatePersonRecord(personId: string, updatedPerson: Person): Promise<void> {
   if (!personId || !updatedPerson) return;
-  if (!db) return;
-
-  const docRef = doc(db, 'people', personId);
-  await setDoc(docRef, sanitizeForFirestore({ ...updatedPerson, id: personId }), { merge: true });
+  const personWithId: Person = { ...updatedPerson, id: personId };
+  await upsertPersonToSupabase(personWithId);
 }
 
 /**
- * Creates a new Person document in Firestore using a dedicated immutable ID.
+ * Creates a new Person document in Supabase profiles using a dedicated immutable ID.
  */
 export async function createPersonRecord(newPerson: Person): Promise<void> {
   if (!newPerson || !newPerson.id) return;
-  if (!db) return;
-
-  const docRef = doc(db, 'people', newPerson.id);
-  await setDoc(docRef, sanitizeForFirestore(newPerson));
+  await upsertPersonToSupabase(newPerson);
 }
 
 /**
- * Deletes a Person document by its immutable ID.
+ * Deletes a Person document by its immutable ID in Supabase profiles.
  */
 export async function deletePersonRecord(personId: string): Promise<void> {
-  if (!personId || !db) return;
-
-  const docRef = doc(db, 'people', personId);
-  await deleteDoc(docRef);
+  if (!personId) return;
+  await deletePersonFromSupabase(personId);
 }
 
 /**
- * Links a registered Firebase User account to a Person document, synchronizing roles without clobbering.
+ * Links a registered User account to a Person document in Supabase, synchronizing roles without clobbering.
  */
 export async function linkUserToPerson(
   userId: string,
   person: Person | undefined,
   targetRole?: UserRole
 ): Promise<void> {
-  if (!userId || !db) return;
+  if (!userId || !IS_SUPABASE_CONFIGURED) return;
 
-  const userDocRef = doc(db, 'users', userId);
-  const updatePayload: Record<string, any> = {
-    personName: person?.name || null,
-    personId: person?.id || null
-  };
+  const roleToApply = targetRole || person?.role || 'Servant';
+  const personName = person?.name || null;
+  const personId = person?.id || null;
 
-  if (targetRole) {
-    updatePayload.role = targetRole;
-  } else if (person?.role) {
-    updatePayload.role = person.role;
-  }
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        role: roleToApply,
+        name: personName,
+        full_name: personName,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
 
-  await setDoc(userDocRef, sanitizeForFirestore(updatePayload), { merge: true });
-
-  // If person exists and doesn't have an email, update the person's email with user's email
-  if (person && person.id) {
-    const userSnap = await getDoc(userDocRef);
-    if (userSnap.exists()) {
-      const userData = userSnap.data() as User;
-      if (userData.email && (!person.email || person.email.trim() === '')) {
-        await updatePersonRecord(person.id, { ...person, email: userData.email });
-      }
+    if (error) {
+      console.warn('[Supabase] linkUserToPerson notice:', error.message);
     }
+  } catch (err) {
+    console.warn('[Supabase] linkUserToPerson error:', err);
   }
 }

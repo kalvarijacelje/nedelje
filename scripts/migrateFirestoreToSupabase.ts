@@ -2,16 +2,31 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config();
 
-import { migrateFirestoreToSupabase } from '../src/utils/firestoreMigrationBridge';
+import { createClient } from '@supabase/supabase-js';
 
 async function main() {
+  const { migrateFirestoreToSupabase } = await import('../src/utils/firestoreMigrationBridge');
+
+  const url = process.env.VITE_SUPABASE_URL || '';
+  const key = process.env.VITE_SUPABASE_ANON_KEY || '';
+
   console.log('================================================================');
   console.log('🚀 FIRESTORE TO SUPABASE ONE-TIME MIGRATION BRIDGE');
   console.log('================================================================');
-  
-  const summary = await migrateFirestoreToSupabase();
+  console.log(`• Target Supabase URL:  ${url ? url : '⚠️ Missing (Check .env.local)'}`);
+  console.log(`• Supabase Key Loaded:  ${key ? 'Yes (Length: ' + key.length + ')' : '⚠️ Missing'}`);
+  console.log('----------------------------------------------------------------');
+
+  if (!url || !key) {
+    console.error('❌ Supabase URL or Anon Key is missing from process.env');
+    process.exit(1);
+  }
+
+  const supabaseClient = createClient(url, key);
+  const summary = await migrateFirestoreToSupabase(supabaseClient);
   
   console.log('\n📊 Migration Report:');
   console.log('----------------------------------------------------------------');

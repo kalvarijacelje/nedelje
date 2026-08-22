@@ -677,9 +677,13 @@ export default function App() {
   const ministries: Ministry[] = INITIAL_MINISTRIES;
 
   // Active person object safely guarded against missing or null array elements
-  const activePerson: Person | null = (people || []).find(p => p && typeof p === 'object' && p.name === activePersonName) 
-    || (people || []).find(p => p && typeof p === 'object' && p.name) 
-    || null;
+  const activePerson: Person | null = (people || []).find(p => {
+    if (!p || typeof p !== 'object' || !p.name) return false;
+    if (p.name === activePersonName) return true;
+    if ((activePersonName === 'Aleš' || activePersonName === 'Aleš Lajlar') && (p.name === 'Aleš' || p.name === 'Aleš Lajlar' || p.id === 'p-ales' || p.id === 'p1')) return true;
+    if (authUser?.email && p.email && p.email.toLowerCase().trim() === authUser.email.toLowerCase().trim()) return true;
+    return false;
+  }) || (people || []).find(p => p && (p.name === 'Aleš' || p.name === 'Aleš Lajlar' || p.id === 'p-ales' || p.id === 'p1')) || null;
 
   // Active upcoming duty count for active person & unread volunteer responses
   const unreadAppNotifsCount = (() => {
@@ -749,16 +753,26 @@ export default function App() {
       setAuthUser(sessionUser);
       const userEmail = (sessionUser.email || '').toLowerCase().trim();
       const isAles = userEmail === 'ales.lajlar@gmail.com';
+      const userFullName = sessionUser.user_metadata?.full_name || sessionUser.user_metadata?.name || '';
 
       // 1. Direct superadmin override for Ales
       if (isAles) {
-        setActivePersonName('Aleš Lajlar');
+        const alesPerson = (people || INITIAL_PEOPLE).find(p => p && (
+          p.id === 'p-ales' || 
+          p.id === 'p1' || 
+          p.id === 'ales-lajlar' || 
+          p.name === 'Aleš' || 
+          p.name === 'Aleš Lajlar' || 
+          (p.email && p.email.toLowerCase() === 'ales.lajlar@gmail.com')
+        ));
+        const alesName = alesPerson?.name || 'Aleš';
+        setActivePersonName(alesName);
         setUserDbProfile({
           uid: sessionUser.id,
           email: sessionUser.email || '',
-          displayName: sessionUser.user_metadata?.full_name || 'Aleš Lajlar (Pastor/Admin)',
+          displayName: userFullName || 'Aleš Lajlar (Pastor/Admin)',
           role: 'Admin',
-          personName: 'Aleš Lajlar'
+          personName: alesName
         });
         setAuthLoading(false);
         return;
@@ -767,7 +781,8 @@ export default function App() {
       // 2. Check in loaded people list
       let matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
         (p.email && p.email.toLowerCase().trim() === userEmail) ||
-        (sessionUser.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === sessionUser.user_metadata.full_name.toLowerCase().trim())
+        (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim()) ||
+        (p.id && (p.id === sessionUser.id || p.id === sessionUser.uid))
       ));
 
       let resolvedRole: UserRole = matchedPerson?.role || 'Servant';
@@ -778,7 +793,7 @@ export default function App() {
           const { data: dbProfile } = await supabase
             .from('profiles')
             .select('*')
-            .or(`email.ilike.${userEmail},full_name.ilike.${sessionUser.user_metadata?.full_name || userEmail}`)
+            .or(`email.ilike.${userEmail},full_name.ilike.${userFullName || userEmail}`)
             .maybeSingle();
 
           if (dbProfile) {
@@ -786,6 +801,19 @@ export default function App() {
             if (dbProfile.name || dbProfile.full_name) {
               setActivePersonName(dbProfile.full_name || dbProfile.name);
             }
+          } else {
+            // Auto-create initial profile row in Supabase
+            await supabase.from('profiles').upsert({
+              id: sessionUser.id,
+              auth_user_id: sessionUser.id,
+              full_name: userFullName || userEmail.split('@')[0],
+              name: userFullName || userEmail.split('@')[0],
+              email: userEmail,
+              role: resolvedRole,
+              preferred_ministries: [],
+              family_members: [],
+              is_exempt_from_burnout: false
+            });
           }
         } catch (e) { /* ignore */ }
       } else if (matchedPerson.name) {
@@ -795,7 +823,7 @@ export default function App() {
       setUserDbProfile({
         uid: sessionUser.id,
         email: sessionUser.email || '',
-        displayName: sessionUser.user_metadata?.full_name || sessionUser.email || 'Volunteer',
+        displayName: userFullName || sessionUser.email || 'Volunteer',
         role: resolvedRole,
         personName: matchedPerson?.name
       });
@@ -931,6 +959,17 @@ export default function App() {
           const merged = mergePeopleWithDefaults(remotePeople, localPeople);
           setPeople(merged);
           try { localStorage.setItem('church_roster_people_v2', JSON.stringify(merged)); } catch (e) {}
+
+          const mappedUsers: User[] = merged
+            .filter(p => p.email)
+            .map(p => ({
+              uid: p.id,
+              email: p.email || '',
+              displayName: p.name,
+              role: p.role || 'Viewer',
+              personName: p.name
+            }));
+          setUsers(mappedUsers);
         }
 
         if (remoteBlackouts.length > 0) {
@@ -964,6 +1003,16 @@ export default function App() {
         if (freshPeople.length > 0) {
           setPeople(freshPeople);
           try { localStorage.setItem('church_roster_people_v2', JSON.stringify(freshPeople)); } catch (e) {}
+          const mappedUsers: User[] = freshPeople
+            .filter(p => p.email)
+            .map(p => ({
+              uid: p.id,
+              email: p.email || '',
+              displayName: p.name,
+              role: p.role || 'Viewer',
+              personName: p.name
+            }));
+          setUsers(mappedUsers);
         }
       },
       async () => {
@@ -1080,13 +1129,32 @@ export default function App() {
 
   // --- Role Promotion Callback (Used by Admin in People View) ---
   const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
-    if (!db) return;
-    try {
-      const docRef = doc(db, 'users', userId);
-      await setDoc(docRef, sanitizeForFirestore({ role: newRole }), { merge: true });
-    } catch (err) {
-      console.error('Failed to promote user role:', err);
-      alert('Error: Missing permission or incorrect operation.');
+    // 1. Optimistic React state update
+    setUsers(prev => prev.map(u => u.uid === userId ? { ...u, role: newRole } : u));
+
+    // 2. Persist to Supabase
+    if (IS_SUPABASE_CONFIGURED) {
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ role: newRole, updated_at: new Date().toISOString() })
+          .eq('id', userId);
+
+        if (error) {
+          console.warn('[Supabase] Role update notice:', error.message);
+        }
+      } catch (err) {
+        console.error('Failed to promote user role in Supabase:', err);
+      }
+    }
+
+    if (IS_FIREBASE_ENABLED && db) {
+      try {
+        const docRef = doc(db, 'users', userId);
+        await setDoc(docRef, sanitizeForFirestore({ role: newRole }), { merge: true });
+      } catch (err) {
+        console.error('Failed to promote user role in Firestore:', err);
+      }
     }
   };
 
@@ -1116,16 +1184,22 @@ export default function App() {
       }
     }
 
-    // 2. Persist to Firestore if available
+    // 2. Persist to Supabase
+    if (IS_SUPABASE_CONFIGURED) {
+      linkUserToPerson(userId, targetPerson).catch(console.warn);
+      if (authUser && (authUser.uid === userId || authUser.id === userId) && targetPerson?.name) {
+        setActivePersonName(targetPerson.name);
+      }
+    }
+
     if (IS_FIREBASE_ENABLED && db) {
       try {
         await linkUserToPerson(userId, targetPerson);
-
         if (authUser && (authUser.uid === userId || authUser.id === userId) && targetPerson?.name) {
           setActivePersonName(targetPerson.name);
         }
       } catch (err) {
-        console.error('Failed to link user profile to person:', err);
+        console.error('Failed to link user profile in Firestore:', err);
       }
     }
   };
@@ -1154,12 +1228,21 @@ export default function App() {
       }));
     }
 
-    // 3. Firestore deletion
+    // 3. Supabase deletion
+    if (IS_SUPABASE_CONFIGURED) {
+      try {
+        await supabase.from('profiles').delete().eq('id', userId);
+      } catch (err) {
+        console.warn('[Supabase] Delete user profile error:', err);
+      }
+    }
+
+    // 4. Firestore deletion
     if (IS_FIREBASE_ENABLED && db) {
       try {
         await deleteDoc(doc(db, 'users', userId));
       } catch (err) {
-        console.error('Failed to delete user document:', err);
+        console.error('Failed to delete user document in Firestore:', err);
       }
     }
   };
@@ -1505,6 +1588,32 @@ export default function App() {
       return;
     }
 
+    setSundays(prev => {
+      const updated = [...prev, ...newSundaysToAdd];
+      localStorage.setItem('church_roster_sundays_v2', JSON.stringify(updated));
+      return updated;
+    });
+
+    if (IS_SUPABASE_CONFIGURED) {
+      try {
+        const rows = newSundaysToAdd.map(s => ({
+          id: s.id,
+          date: s.date,
+          theme_sl: s.themeSl || '',
+          theme_en: s.themeEn || '',
+          status: s.status || 'draft',
+          guest: s.guest || '',
+          absent_or_notes: s.absentOrNotes || '',
+          special_focus: s.specialFocus || null,
+          worship_setlist: s.worshipSetlist || [],
+          updated_at: new Date().toISOString()
+        }));
+        await supabase.from('nedelje_services').upsert(rows);
+      } catch (e) {
+        console.warn('[Supabase] batch academic year upsert error:', e);
+      }
+    }
+
     if (IS_FIREBASE_ENABLED && db) {
       try {
         const batch = writeBatch(db);
@@ -1512,16 +1621,9 @@ export default function App() {
           batch.set(doc(db, 'sundays', s.id), s);
         });
         await batch.commit();
-        setSundays(prev => [...prev, ...newSundaysToAdd]);
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, 'sundays/batch_academic_year');
       }
-    } else {
-      setSundays(prev => {
-        const updated = [...prev, ...newSundaysToAdd];
-        localStorage.setItem('church_roster_sundays_v2', JSON.stringify(updated));
-        return updated;
-      });
     }
   };
 
@@ -2175,6 +2277,7 @@ export default function App() {
                 users={users}
                 userRole={activeRole}
                 activePerson={activePerson}
+                authUser={authUser}
                 translations={translations}
                 currentLanguage={currentLanguage}
                 onAddPerson={handleAddPerson}

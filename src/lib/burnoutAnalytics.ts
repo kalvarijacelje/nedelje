@@ -25,15 +25,24 @@ export function isExemptFromBurnout(personNameOrObj: string | Person, people?: P
   let personObj = typeof personNameOrObj === 'object' ? personNameOrObj : (people || []).find(p => p && p.name === name);
 
   if (personObj) {
-    if (personObj.isPastorOrStaff || personObj.excludeFromBurnout) return true;
+    if (
+      personObj.isExemptFromBurnout || 
+      personObj.isPastorOrStaff || 
+      personObj.excludeFromBurnout ||
+      (personObj as any).is_exempt_from_burnout
+    ) return true;
+    if (personObj.email && personObj.email.toLowerCase().trim() === 'ales.lajlar@gmail.com') return true;
+    if (personObj.role === 'Admin' && (name.toLowerCase().includes('aleš') || name.toLowerCase().includes('ales'))) return true;
   }
 
-  const lowerName = name.toLowerCase();
+  const lowerName = name.toLowerCase().trim();
   // Known default pastors / full-time ministers
   if (
+    lowerName === 'aleš' ||
+    lowerName === 'ales' ||
+    lowerName === 'aleš lajlar' ||
+    lowerName === 'ales lajlar' ||
     lowerName.includes('pastor') ||
-    lowerName.includes('aleš lajlar') ||
-    lowerName.includes('ales lajlar') ||
     lowerName.includes('pridigar') ||
     lowerName.includes('glavni pastor')
   ) {

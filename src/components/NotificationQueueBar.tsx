@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useNotificationQueue } from '../hooks/useNotificationQueue';
+import { useNotificationQueue, QueuedRecipientBatch } from '../hooks/useNotificationQueue';
 import { Clock, Send, X, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function NotificationQueueBar() {
@@ -29,7 +29,7 @@ export default function NotificationQueueBar() {
     return () => clearInterval(interval);
   }, []);
 
-  const batchList = Object.values(batches);
+  const batchList: QueuedRecipientBatch[] = Object.values(batches);
 
   if (batchList.length === 0 && !queueToast) {
     return null;
@@ -43,8 +43,8 @@ export default function NotificationQueueBar() {
   };
 
   // Find the earliest expiring batch for multi-item countdown
-  const earliestExpiry = batchList.reduce(
-    (min, b) => (b.timerExpiresAt < min ? b.timerExpiresAt : min),
+  const earliestExpiry: number = batchList.reduce(
+    (min: number, b: QueuedRecipientBatch) => (b.timerExpiresAt < min ? b.timerExpiresAt : min),
     batchList[0]?.timerExpiresAt || Date.now()
   );
 

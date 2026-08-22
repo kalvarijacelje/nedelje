@@ -43,7 +43,7 @@ export const canAccessPersonalData = (
 export const canViewPersonContactInfo = (
   currentUserRole?: UserRole | string | null,
   myPersonName?: string | null,
-  targetPerson?: { id?: string; name?: string; email?: string; role?: UserRole | string; ledMinistries?: string[] } | string | null,
+  targetPerson?: { id?: string; name?: string; phone?: string; email?: string; role?: UserRole | string; ledMinistries?: string[] } | string | null,
   currentUserEmail?: string | null,
   currentUserId?: string | null
 ): boolean => {
@@ -89,11 +89,17 @@ export type ServiceStatus = 'draft' | 'ready' | 'completed';
 
 export interface Ministry {
   id: string;
+  name?: string;
   nameSl: string;
   nameEn: string;
   category: 'cleaning' | 'hospitality' | 'sermon_prayer' | 'av_tech' | 'kids' | 'other';
   color: string; // Tailwind class color for visual indication
   icon?: string; // Lucide icon name for visual representation
+  leader?: string;
+  defaultLeader?: string;
+  requiredCount?: number;
+  active?: boolean;
+  description?: string;
 }
 
 export type AssignmentStatus = 'pending' | 'confirmed' | 'declined' | 'tentative';
@@ -223,6 +229,7 @@ export interface VisitorConnection {
 export interface Person {
   id: string; // Permanent, immutable unique entity identifier
   name: string;
+  full_name?: string;
   avatarUrl?: string;
   preferredMinistries: string[]; // ministryIds
   role?: UserRole; // 'Admin' | 'Leader' | 'Servant'
@@ -232,8 +239,28 @@ export interface Person {
   email?: string;
   notificationSettings?: NotificationSettings;
   isPastorOrStaff?: boolean; // Exclude from volunteer burnout alerts (e.g. main pastor / full-time ministers)
+  isExemptFromBurnout?: boolean;
   excludeFromBurnout?: boolean;
   isArchived?: boolean; // Flag indicating if volunteer profile is archived
+}
+
+export interface NotificationBatchItem {
+  id: string;
+  sundayId?: string;
+  sundayDate: string;
+  ministryId: string;
+  ministryName: string;
+  token: string;
+  assignedAt: string;
+}
+
+export interface NotificationBatch {
+  volunteerName: string;
+  volunteerEmail: string;
+  leaderName: string;
+  items: NotificationBatchItem[];
+  timerExpiresAt: number;
+  createdAt: number;
 }
 
 export interface NotificationSettings {
@@ -354,6 +381,7 @@ export interface ShiftSwapRequest {
 export interface BlackoutDate {
   id: string;
   personName: string;
+  personId?: string;
   startDate: string; // YYYY-MM-DD or DD. MM. YYYY
   endDate: string;
   reason?: string;

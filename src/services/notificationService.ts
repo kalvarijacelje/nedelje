@@ -8,7 +8,11 @@ import { ServiceSunday, MinistryAssignment, Ministry, Person } from '../types';
 /**
  * Generates a unique, secure confirmation token for one-click URL responses without login
  */
-export function generateConfirmationToken(): string {
+export function generateConfirmationToken(sundayId?: string, ministryId?: string, personName?: string): string {
+  if (sundayId && ministryId && personName) {
+    const slug = `${sundayId}_${ministryId}_${personName}`.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    return `tok_${slug}_${Math.random().toString(36).substring(2, 8)}`;
+  }
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID().replace(/-/g, '') + Math.random().toString(36).substring(2, 10);
   }

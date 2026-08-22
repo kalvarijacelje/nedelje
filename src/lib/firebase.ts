@@ -7,7 +7,10 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const env = (import.meta as any).env || {};
+const env = 
+  (typeof import.meta !== 'undefined' && (import.meta as any).env) || 
+  (typeof process !== 'undefined' && process.env) || 
+  {};
 
 // Environment variable fallbacks for production deployments
 const resolvedConfig = {

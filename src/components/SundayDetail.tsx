@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { ServiceSunday, Ministry, Person, UserRole, Translation, MinistryAssignment, AssignmentStatus, BlackoutDate, canAccessPersonalData, canViewPersonContactInfo } from '../types';
+import { ServiceSunday, Ministry, Person, UserRole, Translation, MinistryAssignment, AssignmentStatus, BlackoutDate, WorshipRosterEntry, SundaySchoolLesson, canAccessPersonalData, canViewPersonContactInfo } from '../types';
 import { ArrowLeft, ArrowRight, UserPlus, Trash2, Check, CheckCircle2, AlertTriangle, Copy, Save, BookOpen, AlertCircle, HelpCircle, FileText, Loader2, Calendar, MessageSquare, Send, Lock, Music, Clock, Tv, ExternalLink, Youtube, Sparkles, Coffee, ClipboardCheck, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Layers, Heart, HeartHandshake, Crown, Phone, PhoneCall, Mail, X, Home, Unlock, Utensils, CupSoda, Volume2, Camera, Sliders, Monitor, Film, Smile, GraduationCap, Globe, Coins, Wine, Repeat, MoreVertical } from 'lucide-react';
 import ServiceRundownModal from './ServiceRundownModal';
 import HeroHeaderBanner from './HeroHeaderBanner';
@@ -833,7 +833,8 @@ export default function SundayDetail({
       resolvedName = personOrName.name.trim();
       matchedRosterPerson = personOrName;
     } else {
-      const trimmed = (personOrName || '').trim();
+      const rawStr = typeof personOrName === 'string' ? personOrName : ((personOrName as Person)?.name || '');
+      const trimmed = rawStr.trim();
       if (!trimmed) return;
       matchedRosterPerson = (people || []).find(p => p && p.name && p.name.toLowerCase() === trimmed.toLowerCase());
       resolvedName = matchedRosterPerson ? matchedRosterPerson.name : trimmed;
@@ -1010,7 +1011,7 @@ export default function SundayDetail({
     const currentDetails = getAssignmentDetails(ministryId);
     const updated = currentDetails.map(d => {
       if (d.personName === personName) {
-        const nextStatus = d.status === 'confirmed' ? 'pending' : 'confirmed';
+        const nextStatus: AssignmentStatus = d.status === 'confirmed' ? 'pending' : 'confirmed';
         return {
           ...d,
           status: nextStatus,

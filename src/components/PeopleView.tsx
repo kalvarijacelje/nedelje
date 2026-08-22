@@ -12,6 +12,7 @@ import HeroHeaderBanner from './HeroHeaderBanner';
 import PhotoCropperModal from './PhotoCropperModal';
 import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
+import { supabase } from '../supabaseClient';
 
 interface PeopleViewProps {
   sundays: ServiceSunday[];
@@ -20,6 +21,7 @@ interface PeopleViewProps {
   users?: User[];
   userRole: UserRole;
   activePerson?: Person | null;
+  authUser?: any;
   translations: Translation;
   currentLanguage: 'sl' | 'en';
   onAddPerson: (newPerson: Person) => void;
@@ -34,6 +36,7 @@ interface PeopleViewProps {
 }
 
 interface PendingUserItemCardProps {
+  key?: React.Key;
   user: User;
   people: Person[];
   currentLanguage: 'sl' | 'en';
@@ -359,6 +362,7 @@ export default function PeopleView({
   users = [],
   userRole,
   activePerson,
+  authUser,
   translations,
   currentLanguage,
   onAddPerson,
@@ -374,13 +378,17 @@ export default function PeopleView({
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
 
   const handleConnectGoogle = async () => {
-    if (!auth || !onSetGoogleToken) return;
     setIsConnectingGoogle(true);
     try {
-      const result = await signInWithPopup(auth, workspaceGoogleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        onSetGoogleToken(credential.accessToken);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.create',
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) {
+        console.error('Google connect error:', error);
       }
     } catch (err: any) {
       console.error('Google connect error:', err);
@@ -588,6 +596,7 @@ export default function PeopleView({
       email: editEmail.trim() || undefined,
       role: editRole,
       isPastorOrStaff: editPastorOrStaff,
+      isExemptFromBurnout: editPastorOrStaff,
       preferredMinistries: editPrefs,
       ledMinistries: editLedMinistries,
       familyMembers: editFamilyMembers,
@@ -1378,8 +1387,8 @@ export default function PeopleView({
                     userRole, 
                     myPersonCard?.name, 
                     person, 
-                    auth.currentUser?.email, 
-                    auth.currentUser?.uid
+                    authUser?.email, 
+                    authUser?.id || authUser?.uid
                   );
 
                   if (!isContactVisible) {
@@ -1690,8 +1699,8 @@ export default function PeopleView({
                       userRole, 
                       myPersonCard?.name, 
                       person, 
-                      auth.currentUser?.email, 
-                      auth.currentUser?.uid
+                      authUser?.email, 
+                      authUser?.id || authUser?.uid
                     );
 
                     if (!isContactVisible) {

@@ -107,7 +107,9 @@ export async function seedSupabaseDatabase(
                 const details = s.assignmentDetails?.[mId] || [];
                 const detail = details.find(d => d.personName.toLowerCase().trim() === name.toLowerCase().trim());
 
+                const cleanSlug = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
                 allAssignments.push({
+                  id: `${s.id}_${mId}_${cleanSlug}`,
                   sunday_id: s.id,
                   ministry_id: mId,
                   person_name: name,
@@ -126,7 +128,10 @@ export async function seedSupabaseDatabase(
       });
 
       if (allAssignments.length > 0) {
-        const { error: assignErr } = await supabase.from('nedelje_assignments').upsert(allAssignments);
+        const uniqueAssignments = Array.from(
+          new Map(allAssignments.map((item) => [item.id, item])).values()
+        );
+        const { error: assignErr } = await supabase.from('nedelje_assignments').upsert(uniqueAssignments, { onConflict: 'id' });
         if (assignErr) summary.errors.push(`Assignments error: ${assignErr.message}`);
       }
     }

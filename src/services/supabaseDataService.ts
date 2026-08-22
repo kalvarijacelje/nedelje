@@ -236,10 +236,13 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
       name: row.full_name || row.name || '',
       email: row.email || undefined,
       phone: row.phone || undefined,
+      avatarUrl: row.avatar_url || undefined,
       role: row.role || 'Viewer',
       preferredMinistries: row.preferred_ministries || [],
+      ledMinistries: row.led_ministries || row.ledMinistries || [],
       familyMembers: row.family_members || [],
-      isExemptFromBurnout: Boolean(row.is_exempt_from_burnout)
+      isExemptFromBurnout: Boolean(row.is_exempt_from_burnout),
+      isPastorOrStaff: Boolean(row.is_exempt_from_burnout)
     }));
   } catch (err) {
     console.warn('[Supabase] Error in fetchPeopleFromSupabase:', err);
@@ -256,14 +259,17 @@ export async function upsertPersonToSupabase(person: Person): Promise<boolean> {
       .upsert({
         id: cleanId,
         full_name: person.name,
+        name: person.name,
         email: person.email || null,
         phone: person.phone || null,
+        avatar_url: person.avatarUrl || null,
         role: person.role || 'Viewer',
         preferred_ministries: person.preferredMinistries || [],
+        led_ministries: person.ledMinistries || [],
         family_members: person.familyMembers || [],
-        is_exempt_from_burnout: Boolean(person.isExemptFromBurnout),
+        is_exempt_from_burnout: Boolean(person.isExemptFromBurnout || person.isPastorOrStaff),
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'id' });
 
     if (error) {
       console.warn('[Supabase] upsertPerson error:', error.message);

@@ -10,6 +10,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "seed:direct": "tsx scripts/seedDirectToSupabase.ts",
     "migrate": "tsx scripts/migrateFirestoreToSupabase.ts"
   },
   "dependencies": {

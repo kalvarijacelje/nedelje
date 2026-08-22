@@ -202,6 +202,7 @@ const parseSheetDate = (dateStr: string): Date => {
 };
 
 interface MinistryCardProps {
+  key?: React.Key;
   ministry: Ministry;
   allUpcomingSundays: ServiceSunday[];
   worshipRoster?: WorshipRosterEntry[];
