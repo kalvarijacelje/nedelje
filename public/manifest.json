@@ -1,0 +1,22 @@
+{
+  "short_name": "KCK Nedelje",
+  "name": "KCK Organizacija Nedelje",
+  "icons": [
+    {
+      "src": "pwa-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "pwa-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#034C3C",
+  "theme_color": "#034C3C",
+  "display": "standalone",
+  "orientation": "portrait"
+}

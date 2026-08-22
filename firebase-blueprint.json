@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "Ministry": {
+      "title": "Ministry",
+      "description": "A ministry role in the church",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nameSl": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "category": { "type": "string", "enum": ["cleaning", "hospitality", "sermon_prayer", "av_tech", "kids", "other"] },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "nameSl", "nameEn", "category", "color"]
+    },
+    "MinistryAssignment": {
+      "title": "MinistryAssignment",
+      "description": "Details of a single volunteer assigned to a ministry",
+      "type": "object",
+      "properties": {
+        "personName": { "type": "string" },
+        "status": { "type": "string", "enum": ["confirmed", "tentative"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["personName", "status"]
+    },
+    "ServiceSunday": {
+      "title": "ServiceSunday",
+      "description": "A Sunday worship service roster and setup",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "themeSl": { "type": "string" },
+        "themeEn": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "ready", "completed"] },
+        "guest": { "type": "string" },
+        "assignments": { "type": "object" },
+        "assignmentDetails": { "type": "object" },
+        "absentOrNotes": { "type": "string" }
+      },
+      "required": ["id", "date", "themeSl", "themeEn", "status", "guest", "assignments", "absentOrNotes"]
+    },
+    "Person": {
+      "title": "Person",
+      "description": "A church volunteer",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "preferredMinistries": { "type": "array" }
+      },
+      "required": ["name", "preferredMinistries"]
+    },
+    "User": {
+      "title": "User",
+      "description": "An authenticated user profile and security role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["Admin", "Coordinator", "Viewer"] }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/sundays/{sundayId}": {
+      "schema": "ServiceSunday",
+      "description": "Sunday service schedules"
+    },
+    "/people/{personName}": {
+      "schema": "Person",
+      "description": "Church volunteers dictionary"
+    },
+    "/ministries/{ministryId}": {
+      "schema": "Ministry",
+      "description": "Pre-defined church ministries"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User roles and permissions"
+    }
+  }
+}

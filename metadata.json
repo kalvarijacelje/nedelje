@@ -1,0 +1,8 @@
+{
+  "name": "Church Ministry Planner",
+  "description": "A mobile-first Sunday worship schedule and volunteer planning web application modeled after church organizational spreadsheets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

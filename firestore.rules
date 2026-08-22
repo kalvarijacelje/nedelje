@@ -1,0 +1,161 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Hardened Primitive Reusable Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    // Admin Bootstrap logic - MUST be email verified to avoid spoofing
+    function isEmailAdmin() {
+      return isSignedIn() && request.auth.token.email == "ales.lajlar@gmail.com" && request.auth.token.email_verified == true;
+    }
+
+    // Role Lookup
+    function getUserRole() {
+      return isEmailAdmin() ? "Admin" 
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+          ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role 
+          : "Viewer");
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && getUserRole() == "Admin";
+    }
+
+    function isCoordinator() {
+      return isEmailVerified() && (getUserRole() == "Leader" || getUserRole() == "Servant" || getUserRole() == "Admin");
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ID Format match check
+    function isValidId(id) {
+      return id is string && id.size() <= 128;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128 
+        && data.email is string && data.email.size() <= 256
+        && data.displayName is string && data.displayName.size() <= 256
+        && (data.role == "Admin" || data.role == "Leader" || data.role == "Servant" || data.role == "Viewer")
+        && (!('personName' in data) || (data.personName is string && data.personName.size() <= 200));
+    }
+
+    function isValidSunday(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.date is string && data.date.size() <= 100
+        && data.themeSl is string && data.themeSl.size() <= 500
+        && data.themeEn is string && data.themeEn.size() <= 500
+        && (data.status == "draft" || data.status == "ready" || data.status == "completed")
+        && data.guest is string && data.guest.size() <= 500
+        && data.assignments is map
+        && (!('assignmentDetails' in data) || data.assignmentDetails is map)
+        && (!('attendanceRecords' in data) || data.attendanceRecords is map)
+        && (!('headcount' in data) || data.headcount is map)
+        && (!('worshipSetlist' in data) || data.worshipSetlist is list)
+        && (!('serviceRundown' in data) || data.serviceRundown is list)
+        && (!('specialFocus' in data) || data.specialFocus is map)
+        && data.absentOrNotes is string && data.absentOrNotes.size() <= 3000
+        && (!('googleEventId' in data) || (data.googleEventId is string && data.googleEventId.size() <= 500))
+        && (!('googleEventHtmlLink' in data) || (data.googleEventHtmlLink is string && data.googleEventHtmlLink.size() <= 1000))
+        && (!('googleRehearsalEventId' in data) || (data.googleRehearsalEventId is string && data.googleRehearsalEventId.size() <= 500))
+        && (!('googleRehearsalEventHtmlLink' in data) || (data.googleRehearsalEventHtmlLink is string && data.googleRehearsalEventHtmlLink.size() <= 1000));
+    }
+
+    // Person profile schema - size-protected lists and strings to prevent denial of wallet attacks
+    function isValidPerson(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 128
+        && data.preferredMinistries is list
+        && data.preferredMinistries.size() <= 50
+        && (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 1000))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 100))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 256))
+        && (!('role' in data) || (data.role is string && data.role.size() <= 100))
+        && (!('isPastorOrStaff' in data) || (data.isPastorOrStaff is bool))
+        && (!('excludeFromBurnout' in data) || (data.excludeFromBurnout is bool))
+        && (!('familyMembers' in data) || (data.familyMembers is list))
+        && (!('ledMinistries' in data) || (data.ledMinistries is list))
+        && (!('notificationSettings' in data) || (data.notificationSettings is map));
+    }
+
+    // Ministry metadata schema
+    function isValidMinistry(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.nameSl is string && data.nameSl.size() <= 200
+        && data.nameEn is string && data.nameEn.size() <= 200
+        && (data.category == "cleaning" || data.category == "hospitality" || data.category == "sermon_prayer" || data.category == "av_tech" || data.category == "kids" || data.category == "other")
+        && data.color is string && data.color.size() <= 128;
+    }
+
+    // --- Collection Routes ---
+
+    // Connection Test Collection for client verification
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && request.auth.uid == userId 
+        && isValidUser(incoming())
+        && (incoming().role == "Viewer" || isEmailAdmin()); // Strictly forbid privilege self-escalation on creation
+      allow update: if isEmailVerified() && (
+        isAdmin() || (
+          request.auth.uid == userId 
+          && isValidUser(incoming()) 
+          && incoming().role == existing().role // Strictly forbid role self-promotion
+          && incoming().uid == existing().uid   // Keep UID immutable
+          && incoming().email == existing().email // Keep Email immutable
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // SUNDAYS COLLECTION
+    match /sundays/{sundayId} {
+      allow read: if true;
+      allow create, update: if isCoordinator();
+      allow delete: if isAdmin();
+    }
+
+    // PEOPLE COLLECTION
+    match /people/{personId} {
+      allow read: if true;
+      allow create, update, delete: if isCoordinator();
+    }
+
+    // VISITOR RECORDS & CONNECTIONS COLLECTION (Strictly locked from Viewers/Public)
+    match /visitor_records/{recordId} {
+      allow read, write: if isCoordinator();
+    }
+    match /visitors/{visitorId} {
+      allow read, write: if isCoordinator();
+    }
+
+    // MINISTRIES COLLECTION
+    match /ministries/{ministryId} {
+      allow read: if true;
+      allow create, update, delete: if isCoordinator();
+    }
+  }
+}
