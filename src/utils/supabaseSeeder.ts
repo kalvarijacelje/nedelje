@@ -25,7 +25,7 @@ export interface SeedSummary {
 }
 
 /**
- * Idempotently seeds default data and local storage cache into Supabase PostgreSQL tables.
+ * Idempotently seeds default data into Supabase PostgreSQL prefixed tables and shared profiles.
  */
 export async function seedSupabaseDatabase(
   customSundays?: ServiceSunday[],
@@ -42,24 +42,25 @@ export async function seedSupabaseDatabase(
   };
 
   try {
-    // 1. Seed Ministries
+    // 1. Seed Ministries -> nedelje_ministries
     const ministryRows = INITIAL_MINISTRIES.map(m => ({
       id: m.id,
-      name_sl: m.nameSl,
-      name_en: m.nameEn,
-      category: m.category || 'other',
+      name: m.nameSl,
+      description: m.nameEn || m.nameSl,
+      icon: m.icon || 'Sparkles',
       color: m.color || 'indigo',
-      required_count: 1
+      active: true
     }));
 
-    const { error: minErr } = await supabase.from('ministries').upsert(ministryRows);
+    const { error: minErr } = await supabase.from('nedelje_ministries').upsert(ministryRows);
     if (minErr) summary.errors.push(`Ministries error: ${minErr.message}`);
     else summary.ministriesCount = ministryRows.length;
 
-    // 2. Seed People / Profiles
+    // 2. Seed People / Profiles -> public.profiles
     const peopleList = customPeople && customPeople.length > 0 ? customPeople : INITIAL_PEOPLE;
     const profileRows = peopleList.map(p => ({
       id: p.id || ('p-' + p.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_')),
+      full_name: p.name,
       name: p.name,
       email: p.email || null,
       phone: p.phone || null,
@@ -70,14 +71,16 @@ export async function seedSupabaseDatabase(
     }));
 
     const { error: peopleErr } = await supabase.from('profiles').upsert(profileRows);
-    if (peopleErr) summary.errors.push(`People error: ${peopleErr.message}`);
+    if (peopleErr) summary.errors.push(`Profiles error: ${peopleErr.message}`);
     else summary.peopleCount = profileRows.length;
 
-    // 3. Seed Sundays & Assignments
+    // 3. Seed Sundays & Assignments -> nedelje_services & nedelje_assignments
     const sundaysList = customSundays && customSundays.length > 0 ? customSundays : INITIAL_SUNDAYS;
     const sundayRows = sundaysList.map(s => ({
       id: s.id,
       date: s.date,
+      service_date: s.date,
+      title: s.themeSl || 'Nedeljsko bogoslužje',
       theme_sl: s.themeSl || '',
       theme_en: s.themeEn || '',
       status: s.status || 'draft',
@@ -87,7 +90,7 @@ export async function seedSupabaseDatabase(
       worship_setlist: s.worshipSetlist || []
     }));
 
-    const { error: sunErr } = await supabase.from('service_sundays').upsert(sundayRows);
+    const { error: sunErr } = await supabase.from('nedelje_services').upsert(sundayRows);
     if (sunErr) {
       summary.errors.push(`Sundays error: ${sunErr.message}`);
     } else {
@@ -123,53 +126,72 @@ export async function seedSupabaseDatabase(
       });
 
       if (allAssignments.length > 0) {
-        const { error: assignErr } = await supabase.from('sunday_assignments').upsert(allAssignments);
+        const { error: assignErr } = await supabase.from('nedelje_assignments').upsert(allAssignments);
         if (assignErr) summary.errors.push(`Assignments error: ${assignErr.message}`);
       }
     }
 
-    // 4. Seed Worship Roster
+    // 4. Seed Worship Roster -> nedelje_worship_schedules
     const worshipRows = INITIAL_WORSHIP_ROSTER.map(w => ({
       id: w.id,
       date: w.date,
-      worship_leader: w.worshipLeader,
-      band_members: w.bandMembers || [],
-      vocalists: w.vocalists || [],
-      notes: w.notes || null
+      worship_leader: w.leader || '',
+      leader: w.leader || '',
+      acoustic: w.acoustic || '',
+      drums: w.drums || '',
+      bass: w.bass || '',
+      keys: w.keys || '',
+      vocals: w.vocals || '',
+      sound: w.sound || '',
+      slides: w.slides || '',
+      vocal_tech_absent: w.vocalTechAbsent || '',
+      monitors: w.monitors || '',
+      sunday_school: w.sundaySchool || ''
     }));
 
-    const { error: worErr } = await supabase.from('worship_schedules').upsert(worshipRows);
+    const { error: worErr } = await supabase.from('nedelje_worship_schedules').upsert(worshipRows);
     if (worErr) summary.errors.push(`Worship error: ${worErr.message}`);
     else summary.worshipCount = worshipRows.length;
 
-    // 5. Seed Sunday School
+    // 5. Seed Sunday School -> nedelje_school_lessons
     const lessonRows = INITIAL_SUNDAY_SCHOOL_LESSONS.map(l => ({
       id: l.id,
-      date: l.date,
+      sunday_id: l.sundayId,
+      sunday_date: l.sundayDate,
+      group_name: l.group,
       topic_sl: l.topicSl || '',
-      topic_en: l.topicEn || '',
-      teachers_younger: l.teachersYounger || [],
-      teachers_older: l.teachersOlder || [],
+      bible_story_sl: l.bibleStorySl || '',
+      memory_verse_sl: l.memoryVerseSl || '',
+      craft_and_games_sl: l.craftAndGamesSl || '',
       materials_needed: l.materialsNeeded || [],
-      notes: l.notes || null
+      google_doc_url: l.googleDocUrl || '',
+      teachers: l.teachers || [],
+      helpers: l.helpers || [],
+      notes: l.notes || '',
+      status: l.status || 'planned'
     }));
 
-    const { error: nslErr } = await supabase.from('sunday_school_lessons').upsert(lessonRows);
+    const { error: nslErr } = await supabase.from('nedelje_school_lessons').upsert(lessonRows);
     if (nslErr) summary.errors.push(`Sunday School error: ${nslErr.message}`);
     else summary.lessonsCount = lessonRows.length;
 
-    // 6. Seed Visitors
+    // 6. Seed Visitors -> nedelje_visitors
     const visitorRows = INITIAL_VISITOR_CONNECTIONS.map(v => ({
       id: v.id,
-      full_name: v.fullName,
-      contact_info: v.contactInfo || null,
-      notes: v.notes || null,
-      visited_date: v.visitedDate || null,
-      status: v.status || 'new',
-      assigned_to: v.assignedTo || null
+      sunday_id: v.sundayId,
+      sunday_date: v.sundayDate,
+      visitor_name: v.visitorName,
+      contact_info: v.contactInfo || '',
+      invited_by: v.invitedBy || '',
+      notes: v.notes || '',
+      interests: v.interests || [],
+      assigned_follow_up_person: v.assignedFollowUpPerson || '',
+      follow_up_status: v.followUpStatus || 'new',
+      coffee_shop_notes: v.coffeeShopNotes || '',
+      created_at: v.createdAt || new Date().toISOString()
     }));
 
-    const { error: visErr } = await supabase.from('visitor_connections').upsert(visitorRows);
+    const { error: visErr } = await supabase.from('nedelje_visitors').upsert(visitorRows);
     if (visErr) summary.errors.push(`Visitors error: ${visErr.message}`);
     else summary.visitorsCount = visitorRows.length;
 
@@ -178,4 +200,9 @@ export async function seedSupabaseDatabase(
   }
 
   return summary;
+}
+
+// Expose seeder on window object for browser console execution
+if (typeof window !== 'undefined') {
+  (window as any).seedSupabaseDatabase = seedSupabaseDatabase;
 }

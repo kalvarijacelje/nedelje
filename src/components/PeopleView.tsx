@@ -5,8 +5,6 @@
 
 import React, { useState, useMemo } from 'react';
 import { ServiceSunday, Ministry, Person, Translation, UserRole, User, canAccessPersonalData, canViewPersonContactInfo } from '../types';
-import { auth, workspaceGoogleProvider } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { 
   Plus, Search, Phone, Mail, UserCheck, ShieldAlert, X, Crown, Pencil, Trash2, Link as LinkIcon, Unlink, AlertTriangle, Camera, Star, Award, HeartPulse, BatteryCharging, Info, MessageSquare, Send, Copy, ExternalLink, Link2, CheckCircle2, Check, Users, Archive, RotateCcw, Bell, Lock, Sliders, Loader2
 } from 'lucide-react';

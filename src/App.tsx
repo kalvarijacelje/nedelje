@@ -76,14 +76,7 @@ import {
 } from './lib/firebase';
 import { 
   signInWithPopup, 
-  signInWithRedirect, 
-  getRedirectResult, 
-  signOut, 
-  onAuthStateChanged, 
-  GoogleAuthProvider,
-  setPersistence,
-  browserLocalPersistence,
-  indexedDBLocalPersistence
+  GoogleAuthProvider 
 } from 'firebase/auth';
 import { 
   findPersonByAuthUser, 
@@ -100,6 +93,8 @@ import {
   deleteDoc, 
   getDocs, 
   writeBatch 
+} from 'firebase/firestore';
+import { supabase } from './supabaseClient';
 import { 
   fetchSundaysFromSupabase, 
   upsertSundayToSupabase, 
@@ -643,7 +638,7 @@ export default function App() {
   // --- Auth states ---
   const [authUser, setAuthUser] = useState<any>(null);
   const [userDbProfile, setUserDbProfile] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState<boolean>(IS_FIREBASE_ENABLED);
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
   const [googleToken, setGoogleToken] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -737,9 +732,9 @@ export default function App() {
     }
   }, [legacyRole]);
 
-  // --- Firebase Authentication State Subscription ---
+  // --- Supabase Authentication State Subscription ---
   useEffect(() => {
-    if (!IS_FIREBASE_ENABLED || !auth) {
+    if (!IS_SUPABASE_CONFIGURED) {
       setSundays(prev => prev.length > 0 ? prev : INITIAL_SUNDAYS);
       setPeople(prev => prev.length > 0 ? prev : INITIAL_PEOPLE);
       setAuthLoading(false);
@@ -747,55 +742,17 @@ export default function App() {
       return;
     }
 
-    let isMounted = true;
-    let unsubProfile: (() => void) | null = null;
-
-    // Safety fallback timeout (5 seconds max for mobile redirects) to force-hide loading screen if Firebase stalls
-    const authTimer = setTimeout(() => {
-      if (isMounted) {
-        setAuthLoading(false);
-        setDataLoading(false);
-      }
-    }, 5000);
-
-    // Guarantee IndexedDB persistence is set for mobile Safari / Chrome
-    setPersistence(auth, indexedDBLocalPersistence).catch(() => {
-      setPersistence(auth, browserLocalPersistence).catch(console.warn);
-    });
-
-    // Handle mobile redirect result on mount FIRST before marking auth as ready
-    getRedirectResult(auth)
-      .then((result) => {
-        if (!isMounted) return;
-        if (result?.user) {
-          console.log('Mobile OAuth redirect login completed successfully:', result.user);
-          const credential = GoogleAuthProvider.credentialFromResult(result);
-          if (credential?.accessToken) {
-            setGoogleToken(credential.accessToken);
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Error processing mobile auth redirect result:', err);
-      });
-
-    // Auth state listener
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (!isMounted) return;
-      clearTimeout(authTimer);
-
-      if (unsubProfile) {
-        unsubProfile();
-        unsubProfile = null;
-      }
-
-      if (firebaseUser) {
-        setAuthUser(firebaseUser);
-        
-        const userEmail = (firebaseUser.email || '').toLowerCase().trim();
+    // 1. Initial user session check from Supabase
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user ?? null;
+      if (user) {
+        setAuthUser(user);
+        const userEmail = (user.email || '').toLowerCase().trim();
         const isAles = userEmail === 'ales.lajlar@gmail.com';
-
-        const matchedPerson = findPersonByAuthUser(people || INITIAL_PEOPLE, firebaseUser);
+        const matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
+          (p.email && p.email.toLowerCase().trim() === userEmail) ||
+          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim())
+        ));
 
         if (matchedPerson?.name) {
           setActivePersonName(matchedPerson.name);
@@ -803,76 +760,58 @@ export default function App() {
 
         const initialRole: UserRole = matchedPerson?.role || (isAles ? 'Admin' : 'Viewer');
 
-        setUserDbProfile(prev => prev || {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          displayName: firebaseUser.displayName || 'Volunteer',
+        setUserDbProfile({
+          uid: user.id,
+          email: user.email || '',
+          displayName: user.user_metadata?.full_name || user.email || 'Volunteer',
           role: initialRole,
           personName: matchedPerson?.name
         });
-
-        setAuthLoading(false);
-
-        if (db) {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          unsubProfile = onSnapshot(userDocRef, async (docSnap) => {
-            if (!isMounted) return;
-            if (docSnap.exists()) {
-              const profileData = docSnap.data() as User;
-              setUserDbProfile(profileData);
-              if (profileData.personName) {
-                setActivePersonName(profileData.personName);
-              }
-            } else {
-              const newProfile: User = {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email || '',
-                displayName: firebaseUser.displayName || 'Volunteer',
-                role: initialRole,
-                personName: matchedPerson?.name
-              };
-              try {
-                await setDoc(userDocRef, sanitizeForFirestore(newProfile));
-                if (isMounted) setUserDbProfile(newProfile);
-
-                // Auto link person's email if missing
-                if (matchedPerson && (!matchedPerson.email || matchedPerson.email.trim() === '') && firebaseUser.email) {
-                  await updatePersonRecord(matchedPerson.id, { ...matchedPerson, email: firebaseUser.email });
-                }
-              } catch (err) {
-                console.error('Failed to register user database profile:', err);
-                if (isMounted) setUserDbProfile(newProfile);
-              }
-            }
-          }, (error) => {
-            console.warn('Profile sync observer warning:', error);
-            if (isMounted) {
-              setUserDbProfile({
-                uid: firebaseUser.uid,
-                email: firebaseUser.email || '',
-                displayName: firebaseUser.displayName || 'Volunteer',
-                role: initialRole,
-                personName: matchedPerson?.name
-              });
-            }
-          });
-        }
       } else {
         setAuthUser(null);
         setUserDbProfile(null);
-        setAuthLoading(false);
       }
+      setAuthLoading(false);
+    }).catch(() => {
+      setAuthLoading(false);
+    });
+
+    // 2. Supabase Auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user ?? null;
+      if (user) {
+        setAuthUser(user);
+        const userEmail = (user.email || '').toLowerCase().trim();
+        const isAles = userEmail === 'ales.lajlar@gmail.com';
+        const matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
+          (p.email && p.email.toLowerCase().trim() === userEmail) ||
+          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim())
+        ));
+
+        if (matchedPerson?.name) {
+          setActivePersonName(matchedPerson.name);
+        }
+
+        const initialRole: UserRole = matchedPerson?.role || (isAles ? 'Admin' : 'Viewer');
+
+        setUserDbProfile({
+          uid: user.id,
+          email: user.email || '',
+          displayName: user.user_metadata?.full_name || user.email || 'Volunteer',
+          role: initialRole,
+          personName: matchedPerson?.name
+        });
+      } else {
+        setAuthUser(null);
+        setUserDbProfile(null);
+      }
+      setAuthLoading(false);
     });
 
     return () => {
-      isMounted = false;
-      clearTimeout(authTimer);
-      unsubscribe();
-      if (unsubProfile) {
-        unsubProfile();
-      }
+      subscription.unsubscribe();
     };
-  }, []);
+  }, [people]);
 
   // --- Firestore Realtime Data Synchronizer (Single Source of Truth) ---
   useEffect(() => {
@@ -999,6 +938,8 @@ export default function App() {
         }
       } catch (err) {
         console.warn('[Supabase] Initial data fetch notice:', err);
+      } finally {
+        setDataLoading(false);
       }
     };
 
@@ -1095,15 +1036,28 @@ export default function App() {
     if (typeof window !== 'undefined') {
       (window as any).seedChurchDatabaseManually = seedInitialCollections;
       (window as any).restoreFullRoster = handleRestoreFullRoster;
-      (window as any).seedSupabaseDatabase = () => seedSupabaseDatabase(sundays, people);
+      (window as any).seedSupabaseDatabase = (customS?: any, customP?: any) => seedSupabaseDatabase(customS || sundays, customP || people);
     }
   }, [sundays, people]);
 
   const handleGoogleLogin = async () => {
-    if (!auth || !googleProvider) return;
     try {
+      if (IS_SUPABASE_CONFIGURED) {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin
+          }
+        });
+        if (error) {
+          console.error('Supabase Google OAuth error:', error);
+          alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + error.message);
+        }
+        return;
+      }
+
+      if (!auth || !googleProvider) return;
       googleProvider.setCustomParameters({ prompt: 'select_account' });
-      // Call signInWithPopup directly on user tap event without async delay
       const result = await signInWithPopup(auth, googleProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
@@ -1114,7 +1068,7 @@ export default function App() {
       if (err?.code === 'auth/popup-blocked') {
         console.warn('Popup blocked, falling back to signInWithRedirect...');
         try {
-          await signInWithRedirect(auth, googleProvider);
+          await signInWithRedirect(auth!, googleProvider!);
         } catch (redirectErr: any) {
           alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + (redirectErr?.message || redirectErr));
         }
@@ -1125,9 +1079,13 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
-    if (!auth) return;
     try {
-      await signOut(auth);
+      if (IS_SUPABASE_CONFIGURED) {
+        await supabase.auth.signOut();
+      }
+      if (auth) {
+        await signOut(auth);
+      }
       setUserDbProfile(null);
       setAuthUser(null);
       setGoogleToken(null);
@@ -1181,7 +1139,7 @@ export default function App() {
       try {
         await linkUserToPerson(userId, targetPerson);
 
-        if (authUser && authUser.uid === userId && targetPerson?.name) {
+        if (authUser && (authUser.uid === userId || authUser.id === userId) && targetPerson?.name) {
           setActivePersonName(targetPerson.name);
         }
       } catch (err) {
@@ -1600,8 +1558,8 @@ export default function App() {
     );
   }
 
-  // Active secure sign in check
-  if (IS_FIREBASE_ENABLED && !authUser) {
+  // Active secure sign in check (legacy firebase gating only)
+  if (IS_FIREBASE_ENABLED && !IS_SUPABASE_CONFIGURED && !authUser) {
     return (
       <div className="flex flex-col min-h-screen bg-[#F3F4F6] font-sans">
         {/* Banner with language change */}
@@ -2033,8 +1991,8 @@ export default function App() {
               <span>{currentLanguage === 'sl' ? 'EN' : 'SL'}</span>
             </button>
 
-            {/* If Firebase is active: show compact role badge & signout button */}
-            {IS_FIREBASE_ENABLED ? (
+            {/* If Supabase or Firebase is active: show compact role badge & signout button, or Google Login button */}
+            {(IS_SUPABASE_CONFIGURED || IS_FIREBASE_ENABLED) && authUser ? (
               <div className="flex items-center gap-1 shrink-0">
                 <span className="text-[9px] font-mono font-bold bg-slate-100 border border-slate-200/90 text-slate-700 px-1.5 py-0.5 rounded-md select-none leading-none">
                   {userDbProfile?.role === 'Admin' ? 'Admin' : userDbProfile?.role === 'Leader' ? 'Vodja' : userDbProfile?.role === 'Servant' ? 'Služabnik' : 'Viewer'}
@@ -2047,6 +2005,14 @@ export default function App() {
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
+            ) : (IS_SUPABASE_CONFIGURED || IS_FIREBASE_ENABLED) ? (
+              <button
+                onClick={handleGoogleLogin}
+                className="text-[10px] font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg transition shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+                title={currentLanguage === 'sl' ? 'Prijava z Google računom' : 'Sign in with Google'}
+              >
+                <span>{currentLanguage === 'sl' ? 'Prijava' : 'Sign In'}</span>
+              </button>
             ) : (
               <select
                 value={legacyRole}

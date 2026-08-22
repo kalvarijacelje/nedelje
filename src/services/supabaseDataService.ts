@@ -17,21 +17,31 @@ import {
   VisitorConnection 
 } from '../types';
 
+const envUrl = 
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
+  (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) ||
+  '';
+
+const envKey = 
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+  (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) ||
+  '';
+
 export const IS_SUPABASE_CONFIGURED = Boolean(
-  import.meta.env.VITE_SUPABASE_URL && 
-  import.meta.env.VITE_SUPABASE_ANON_KEY &&
-  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder')
+  envUrl && 
+  envKey &&
+  !envUrl.includes('placeholder')
 );
 
 // ==============================================================================
-// 1. SUNDAYS & ASSIGNMENTS SERVICE
+// 1. SUNDAYS & ASSIGNMENTS SERVICE (nedelje_services, nedelje_assignments)
 // ==============================================================================
 
 export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
   if (!IS_SUPABASE_CONFIGURED) return [];
   try {
     const { data: sundaysData, error: sundaysErr } = await supabase
-      .from('service_sundays')
+      .from('nedelje_services')
       .select('*')
       .order('date', { ascending: true });
 
@@ -43,7 +53,7 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
     if (!sundaysData || sundaysData.length === 0) return [];
 
     const { data: assignmentsData, error: assignErr } = await supabase
-      .from('sunday_assignments')
+      .from('nedelje_assignments')
       .select('*');
 
     if (assignErr) {
@@ -103,7 +113,7 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
     const { error: sundayErr } = await supabase
-      .from('service_sundays')
+      .from('nedelje_services')
       .upsert({
         id: sunday.id,
         date: sunday.date,
@@ -147,9 +157,9 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
       });
 
       // Clear existing assignments for this sunday and re-insert
-      await supabase.from('sunday_assignments').delete().eq('sunday_id', sunday.id);
+      await supabase.from('nedelje_assignments').delete().eq('sunday_id', sunday.id);
       if (assignmentRows.length > 0) {
-        await supabase.from('sunday_assignments').insert(assignmentRows);
+        await supabase.from('nedelje_assignments').insert(assignmentRows);
       }
     }
 
@@ -173,7 +183,7 @@ export async function confirmAssignmentByToken(
 
   try {
     const { data: matched, error: findErr } = await supabase
-      .from('sunday_assignments')
+      .from('nedelje_assignments')
       .select('*')
       .eq('confirmation_token', token)
       .single();
@@ -183,7 +193,7 @@ export async function confirmAssignmentByToken(
     }
 
     const { data: updated, error: updateErr } = await supabase
-      .from('sunday_assignments')
+      .from('nedelje_assignments')
       .update({
         status: newStatus,
         decline_reason: declineReason || null,
@@ -205,7 +215,7 @@ export async function confirmAssignmentByToken(
 }
 
 // ==============================================================================
-// 2. PEOPLE & PROFILES SERVICE
+// 2. PEOPLE & PROFILES SERVICE (public.profiles)
 // ==============================================================================
 
 export async function fetchPeopleFromSupabase(): Promise<Person[]> {
@@ -214,7 +224,7 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .order('name', { ascending: true });
+      .order('full_name', { ascending: true });
 
     if (error) {
       console.warn('[Supabase] fetchPeople notice:', error.message);
@@ -223,7 +233,7 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
 
     return (data || []).map((row: any) => ({
       id: row.id,
-      name: row.name,
+      name: row.full_name || row.name || '',
       email: row.email || undefined,
       phone: row.phone || undefined,
       role: row.role || 'Viewer',
@@ -245,7 +255,7 @@ export async function upsertPersonToSupabase(person: Person): Promise<boolean> {
       .from('profiles')
       .upsert({
         id: cleanId,
-        name: person.name,
+        full_name: person.name,
         email: person.email || null,
         phone: person.phone || null,
         role: person.role || 'Viewer',
@@ -280,14 +290,14 @@ export async function deletePersonFromSupabase(personId: string): Promise<boolea
 }
 
 // ==============================================================================
-// 3. BLACKOUT DATES / VACATIONS SERVICE
+// 3. BLACKOUT DATES / VACATIONS SERVICE (nedelje_blackout_dates)
 // ==============================================================================
 
 export async function fetchBlackoutsFromSupabase(): Promise<BlackoutDate[]> {
   if (!IS_SUPABASE_CONFIGURED) return [];
   try {
     const { data, error } = await supabase
-      .from('blackout_dates')
+      .from('nedelje_blackout_dates')
       .select('*')
       .order('start_date', { ascending: true });
 
@@ -310,7 +320,7 @@ export async function insertBlackoutToSupabase(b: Omit<BlackoutDate, 'id' | 'cre
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
     const { error } = await supabase
-      .from('blackout_dates')
+      .from('nedelje_blackout_dates')
       .insert({
         person_name: b.personName,
         person_id: b.personId || null,
@@ -328,7 +338,7 @@ export async function deleteBlackoutFromSupabase(id: string): Promise<boolean> {
   if (!IS_SUPABASE_CONFIGURED || !id) return false;
   try {
     const { error } = await supabase
-      .from('blackout_dates')
+      .from('nedelje_blackout_dates')
       .delete()
       .eq('id', id);
     return !error;
@@ -338,14 +348,14 @@ export async function deleteBlackoutFromSupabase(id: string): Promise<boolean> {
 }
 
 // ==============================================================================
-// 4. SHIFT SWAPS SERVICE
+// 4. SHIFT SWAPS SERVICE (nedelje_shift_swaps)
 // ==============================================================================
 
 export async function fetchShiftSwapsFromSupabase(): Promise<ShiftSwapRequest[]> {
   if (!IS_SUPABASE_CONFIGURED) return [];
   try {
     const { data, error } = await supabase
-      .from('shift_swaps')
+      .from('nedelje_shift_swaps')
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -371,7 +381,7 @@ export async function upsertShiftSwapToSupabase(swap: ShiftSwapRequest): Promise
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
     const { error } = await supabase
-      .from('shift_swaps')
+      .from('nedelje_shift_swaps')
       .upsert({
         id: swap.id.startsWith('swap-') ? undefined : swap.id,
         sunday_id: swap.sundayId,
@@ -391,7 +401,67 @@ export async function upsertShiftSwapToSupabase(swap: ShiftSwapRequest): Promise
 }
 
 // ==============================================================================
-// 5. REALTIME SUBSCRIPTIONS HELPER
+// 5. WORSHIP SCHEDULES, LESSONS, VISITORS, INSPECTIONS
+// ==============================================================================
+
+export async function fetchWorshipSchedulesFromSupabase(): Promise<WorshipRosterEntry[]> {
+  if (!IS_SUPABASE_CONFIGURED) return [];
+  try {
+    const { data, error } = await supabase
+      .from('nedelje_worship_schedules')
+      .select('*');
+
+    if (error) return [];
+    return (data || []).map((w: any) => ({
+      id: w.id,
+      date: w.date,
+      leader: w.worship_leader || w.leader || '',
+      acoustic: w.acoustic || '',
+      drums: w.drums || '',
+      bass: w.bass || '',
+      keys: w.keys || '',
+      vocals: Array.isArray(w.vocalists) ? w.vocalists.join(', ') : (w.vocals || ''),
+      sound: w.sound || '',
+      slides: w.slides || '',
+      vocalTechAbsent: w.vocal_tech_absent || '',
+      monitors: w.monitors || '',
+      sundaySchool: w.sunday_school || ''
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchSundaySchoolLessonsFromSupabase(): Promise<SundaySchoolLesson[]> {
+  if (!IS_SUPABASE_CONFIGURED) return [];
+  try {
+    const { data, error } = await supabase
+      .from('nedelje_school_lessons')
+      .select('*');
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchVisitorsFromSupabase(): Promise<VisitorConnection[]> {
+  if (!IS_SUPABASE_CONFIGURED) return [];
+  try {
+    const { data, error } = await supabase
+      .from('nedelje_visitors')
+      .select('*');
+
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+// ==============================================================================
+// 6. REALTIME SUBSCRIPTIONS HELPER (public:nedelje_*, public:profiles)
 // ==============================================================================
 
 export function subscribeToSupabaseRealtime(
@@ -404,11 +474,11 @@ export function subscribeToSupabaseRealtime(
 
   const channel = supabase
     .channel('kck-app-realtime')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'service_sundays' }, onSundayChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'sunday_assignments' }, onSundayChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'nedelje_services' }, onSundayChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'nedelje_assignments' }, onSundayChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, onPeopleChange)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'blackout_dates' }, () => onBlackoutChange?.())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_swaps' }, () => onSwapChange?.())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'nedelje_blackout_dates' }, () => onBlackoutChange?.())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'nedelje_shift_swaps' }, () => onSwapChange?.())
     .subscribe();
 
   return () => {
