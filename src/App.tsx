@@ -64,20 +64,14 @@ import {
   Trash2
 } from 'lucide-react';
 
-// Import Firebase SDK elements conditionally
+// Import Firebase Firestore utilities conditionally (fallback)
 import { 
-  auth, 
   db, 
-  googleProvider, 
   IS_FIREBASE_ENABLED, 
   handleFirestoreError, 
   OperationType,
   sanitizeForFirestore
 } from './lib/firebase';
-import { 
-  signInWithPopup, 
-  GoogleAuthProvider 
-} from 'firebase/auth';
 import { 
   findPersonByAuthUser, 
   updatePersonRecord, 
@@ -744,76 +738,80 @@ export default function App() {
       return;
     }
 
-    // 1. Initial user session check from Supabase
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const user = session?.user ?? null;
-      if (user) {
-        setAuthUser(user);
-        const userEmail = (user.email || '').toLowerCase().trim();
-        const isAles = userEmail === 'ales.lajlar@gmail.com';
-        const matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
-          (p.email && p.email.toLowerCase().trim() === userEmail) ||
-          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim()) ||
-          (isAles && p.name && p.name.toLowerCase().includes('aleš'))
-        ));
-
-        if (matchedPerson?.name) {
-          setActivePersonName(matchedPerson.name);
-        } else if (isAles) {
-          setActivePersonName('Aleš Lajlar');
-        }
-
-        const initialRole: UserRole = isAles ? 'Admin' : (matchedPerson?.role || 'Servant');
-
-        setUserDbProfile({
-          uid: user.id,
-          email: user.email || '',
-          displayName: user.user_metadata?.full_name || (isAles ? 'Aleš Lajlar (Pastor/Admin)' : (user.email || 'Volunteer')),
-          role: initialRole,
-          personName: matchedPerson?.name || (isAles ? 'Aleš Lajlar' : undefined)
-        });
-      } else {
+    const syncUserSession = async (sessionUser: any) => {
+      if (!sessionUser) {
         setAuthUser(null);
         setUserDbProfile(null);
+        setAuthLoading(false);
+        return;
       }
+
+      setAuthUser(sessionUser);
+      const userEmail = (sessionUser.email || '').toLowerCase().trim();
+      const isAles = userEmail === 'ales.lajlar@gmail.com';
+
+      // 1. Direct superadmin override for Ales
+      if (isAles) {
+        setActivePersonName('Aleš Lajlar');
+        setUserDbProfile({
+          uid: sessionUser.id,
+          email: sessionUser.email || '',
+          displayName: sessionUser.user_metadata?.full_name || 'Aleš Lajlar (Pastor/Admin)',
+          role: 'Admin',
+          personName: 'Aleš Lajlar'
+        });
+        setAuthLoading(false);
+        return;
+      }
+
+      // 2. Check in loaded people list
+      let matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
+        (p.email && p.email.toLowerCase().trim() === userEmail) ||
+        (sessionUser.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === sessionUser.user_metadata.full_name.toLowerCase().trim())
+      ));
+
+      let resolvedRole: UserRole = matchedPerson?.role || 'Servant';
+
+      // 3. Query role from public.profiles table in Supabase if not found in memory
+      if (!matchedPerson) {
+        try {
+          const { data: dbProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .or(`email.ilike.${userEmail},full_name.ilike.${sessionUser.user_metadata?.full_name || userEmail}`)
+            .maybeSingle();
+
+          if (dbProfile) {
+            resolvedRole = (dbProfile.role as UserRole) || 'Servant';
+            if (dbProfile.name || dbProfile.full_name) {
+              setActivePersonName(dbProfile.full_name || dbProfile.name);
+            }
+          }
+        } catch (e) { /* ignore */ }
+      } else if (matchedPerson.name) {
+        setActivePersonName(matchedPerson.name);
+      }
+
+      setUserDbProfile({
+        uid: sessionUser.id,
+        email: sessionUser.email || '',
+        displayName: sessionUser.user_metadata?.full_name || sessionUser.email || 'Volunteer',
+        role: resolvedRole,
+        personName: matchedPerson?.name
+      });
       setAuthLoading(false);
+    };
+
+    // 1. Initial user session check from Supabase
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      syncUserSession(session?.user ?? null);
     }).catch(() => {
       setAuthLoading(false);
     });
 
     // 2. Supabase Auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const user = session?.user ?? null;
-      if (user) {
-        setAuthUser(user);
-        const userEmail = (user.email || '').toLowerCase().trim();
-        const isAles = userEmail === 'ales.lajlar@gmail.com';
-        const matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
-          (p.email && p.email.toLowerCase().trim() === userEmail) ||
-          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim()) ||
-          (isAles && p.name && p.name.toLowerCase().includes('aleš'))
-        ));
-
-        if (matchedPerson?.name) {
-          setActivePersonName(matchedPerson.name);
-        } else if (isAles) {
-          setActivePersonName('Aleš Lajlar');
-        }
-
-        const initialRole: UserRole = isAles ? 'Admin' : (matchedPerson?.role || 'Servant');
-
-        setUserDbProfile({
-          uid: user.id,
-          email: user.email || '',
-          displayName: user.user_metadata?.full_name || (isAles ? 'Aleš Lajlar (Pastor/Admin)' : (user.email || 'Volunteer')),
-          role: initialRole,
-          personName: matchedPerson?.name || (isAles ? 'Aleš Lajlar' : undefined)
-        });
-      } else {
-        setAuthUser(null);
-        setUserDbProfile(null);
-      }
-      setAuthLoading(false);
+      syncUserSession(session?.user ?? null);
     });
 
     return () => {
@@ -1051,50 +1049,25 @@ export default function App() {
 
   const handleGoogleLogin = async () => {
     try {
-      if (IS_SUPABASE_CONFIGURED) {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: window.location.origin
-          }
-        });
-        if (error) {
-          console.error('Supabase Google OAuth error:', error);
-          alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + error.message);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
         }
-        return;
-      }
-
-      if (!auth || !googleProvider) return;
-      googleProvider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, googleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        setGoogleToken(credential.accessToken);
+      });
+      if (error) {
+        console.error('Supabase Google OAuth error:', error);
+        alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + error.message);
       }
     } catch (err: any) {
       console.error('Failed signing in with Google provider:', err);
-      if (err?.code === 'auth/popup-blocked') {
-        console.warn('Popup blocked, falling back to signInWithRedirect...');
-        try {
-          await signInWithRedirect(auth!, googleProvider!);
-        } catch (redirectErr: any) {
-          alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + (redirectErr?.message || redirectErr));
-        }
-      } else if (err?.code !== 'auth/popup-closed-by-user') {
-        alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + (err?.message || err));
-      }
+      alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + (err?.message || err));
     }
   };
 
   const handleSignOut = async () => {
     try {
-      if (IS_SUPABASE_CONFIGURED) {
-        await supabase.auth.signOut();
-      }
-      if (auth) {
-        await signOut(auth);
-      }
+      await supabase.auth.signOut();
       setUserDbProfile(null);
       setAuthUser(null);
       setGoogleToken(null);
@@ -2000,18 +1973,37 @@ export default function App() {
               <span>{currentLanguage === 'sl' ? 'EN' : 'SL'}</span>
             </button>
 
-            {/* If Supabase or Firebase is active: show compact role badge & signout button, or Google Login button */}
-            {(IS_SUPABASE_CONFIGURED || IS_FIREBASE_ENABLED) && authUser ? (
-              <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[9px] font-mono font-bold bg-slate-100 border border-slate-200/90 text-slate-700 px-1.5 py-0.5 rounded-md select-none leading-none">
-                  {userDbProfile?.role === 'Admin' ? 'Admin' : userDbProfile?.role === 'Leader' ? 'Vodja' : userDbProfile?.role === 'Servant' ? 'Služabnik' : 'Viewer'}
+            {/* Supabase User Authentication Pill / Role Badge & Sign Out / Sign In Button */}
+            {authUser ? (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="hidden sm:flex flex-col items-end leading-tight mr-0.5">
+                  <span className="text-[11px] font-bold text-slate-800 truncate max-w-[120px]">
+                    {userDbProfile?.displayName || userDbProfile?.personName || authUser.email?.split('@')[0]}
+                  </span>
+                  <span className="text-[9px] font-mono text-slate-500 truncate max-w-[120px]">
+                    {authUser.email}
+                  </span>
+                </div>
+                <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md select-none leading-none border ${
+                  isAlesLoggedIn
+                    ? 'bg-purple-100 text-purple-900 border-purple-300 shadow-2xs font-extrabold'
+                    : activeRole === 'Admin'
+                    ? 'bg-rose-100 text-rose-900 border-rose-300'
+                    : activeRole === 'Leader'
+                    ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
+                    : activeRole === 'Servant'
+                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                }`}>
+                  {isAlesLoggedIn ? '⚡ Superadmin' : activeRole === 'Admin' ? 'Admin' : activeRole === 'Leader' ? 'Vodja' : activeRole === 'Servant' ? 'Služabnik' : 'Viewer'}
                 </span>
                 <button
                   onClick={handleSignOut}
-                  className="p-1.5 bg-slate-100 hover:bg-rose-100 hover:text-rose-700 rounded-lg text-slate-500 transition cursor-pointer"
+                  className="p-1.5 bg-slate-100 hover:bg-rose-100 hover:text-rose-700 rounded-lg text-slate-600 transition cursor-pointer flex items-center gap-1"
                   title={currentLanguage === 'sl' ? 'Odjava' : 'Log Out'}
                 >
                   <LogOut className="w-4 h-4" />
+                  <span className="hidden md:inline text-[10px] font-semibold">{currentLanguage === 'sl' ? 'Odjava' : 'Sign Out'}</span>
                 </button>
               </div>
             ) : (IS_SUPABASE_CONFIGURED || IS_FIREBASE_ENABLED) ? (
@@ -2038,8 +2030,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Roster Alert Info (If user is viewing read-only, give elegant heads up toast) */}
-      {activeRole === 'Viewer' && (
+      {/* Roster Alert Info (Hidden for logged in leaders/admins/superadmin) */}
+      {!isAlesLoggedIn && activeRole === 'Viewer' && !authUser && (
         <div className="bg-amber-500/10 border-b border-amber-500/10 py-1.5 px-4 text-center">
           <div className="max-w-7xl mx-auto flex items-center justify-center gap-1 text-[11px] font-medium text-amber-800">
             <span className="shrink-0">⚠️</span>

@@ -8,8 +8,7 @@ import { ServiceSunday, Ministry, Person, UserRole, Translation, MinistryAssignm
 import { ArrowLeft, ArrowRight, UserPlus, Trash2, Check, CheckCircle2, AlertTriangle, Copy, Save, BookOpen, AlertCircle, HelpCircle, FileText, Loader2, Calendar, MessageSquare, Send, Lock, Music, Clock, Tv, ExternalLink, Youtube, Sparkles, Coffee, ClipboardCheck, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Layers, Heart, HeartHandshake, Crown, Phone, PhoneCall, Mail, X, Home, Unlock, Utensils, CupSoda, Volume2, Camera, Sliders, Monitor, Film, Smile, GraduationCap, Globe, Coins, Wine, Repeat, MoreVertical } from 'lucide-react';
 import ServiceRundownModal from './ServiceRundownModal';
 import HeroHeaderBanner from './HeroHeaderBanner';
-import { auth, workspaceGoogleProvider } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { supabase } from '../supabaseClient';
 import { generateGoogleDoc } from '../lib/googleDocs';
 import { createOrUpdateServiceEvent, createOrUpdateRehearsalEvent, deleteCalendarEvent } from '../lib/googleCalendar';
 import { listChatSpaces, sendChatMessage, buildWorkflowMessage } from '../lib/googleChat';
@@ -501,30 +500,23 @@ export default function SundayDetail({
   const [showIntegrationsSection, setShowIntegrationsSection] = useState(false);
 
   const handleConnectGoogle = async () => {
-    if (!auth) return;
     setIsConnectingGoogle(true);
     setGoogleConnectError(null);
     setGenerationError(null);
     try {
-      const googleProvider = new GoogleAuthProvider();
-      googleProvider.addScope('https://www.googleapis.com/auth/calendar');
-      googleProvider.addScope('https://www.googleapis.com/auth/chat.spaces.readonly');
-      googleProvider.addScope('https://www.googleapis.com/auth/chat.messages.create');
-
-      const result = await signInWithPopup(auth, googleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        onSetGoogleToken(credential.accessToken);
-        setGoogleConnectError(null);
-      } else {
-        setGoogleConnectError(currentLanguage === 'sl' ? 'Povezava ni uspela (žeton ni najden).' : 'Connection failed (access token missing).');
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.create',
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) {
+        setGoogleConnectError(error.message);
       }
     } catch (err: any) {
       console.error('Google Auth cancelled or failed:', err);
-      const msg = err?.code === 'auth/popup-blocked'
-        ? (currentLanguage === 'sl' ? 'Brskalnik je blokiral pojavno okno. Prosimo omogočite pop-up okna.' : 'Popup was blocked by browser. Please allow popups.')
-        : (currentLanguage === 'sl' ? 'Povezava z Google računom ni uspela.' : 'Failed to authenticate Google account.');
-      setGoogleConnectError(msg);
+      setGoogleConnectError(err?.message || (currentLanguage === 'sl' ? 'Povezava z Google računom ni uspela.' : 'Failed to authenticate Google account.'));
     } finally {
       setIsConnectingGoogle(false);
     }
