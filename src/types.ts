@@ -5,14 +5,28 @@
 
 export type UserRole = 'Admin' | 'Leader' | 'Servant' | 'Viewer';
 
+export const SUPERADMIN_EMAIL = 'ales.lajlar@gmail.com';
+
+/**
+ * Checks if given email or user object corresponds to the church superadmin & pastor (ales.lajlar@gmail.com).
+ */
+export const isSuperAdmin = (emailOrUser?: string | { email?: string | null } | null): boolean => {
+  if (!emailOrUser) return false;
+  const email = typeof emailOrUser === 'string' ? emailOrUser : emailOrUser.email;
+  return (email || '').toLowerCase().trim() === SUPERADMIN_EMAIL;
+};
+
 /**
  * Utility helper to determine if a user role or user profile has authorization to view personal contact data.
  * Only approved Admin, Leader, and Servant roles have access to personal contact details.
  */
 export const canAccessPersonalData = (
-  userOrRole?: UserRole | { role?: UserRole | string } | string | null
+  userOrRole?: UserRole | { role?: UserRole | string; email?: string } | string | null,
+  userEmail?: string | null
 ): boolean => {
+  if (userEmail && isSuperAdmin(userEmail)) return true;
   if (!userOrRole) return false;
+  if (typeof userOrRole === 'object' && isSuperAdmin(userOrRole.email)) return true;
   const role = typeof userOrRole === 'string' ? userOrRole : userOrRole.role;
   if (!role) return false;
   return ['Admin', 'Leader', 'Servant'].includes(role);
@@ -33,6 +47,7 @@ export const canViewPersonContactInfo = (
   currentUserEmail?: string | null,
   currentUserId?: string | null
 ): boolean => {
+  if (currentUserEmail && isSuperAdmin(currentUserEmail)) return true;
   if (!currentUserRole || currentUserRole === 'Viewer') return false;
 
   // 1. Admin and Leader can see contact details for everyone

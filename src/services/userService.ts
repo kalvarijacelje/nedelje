@@ -55,6 +55,12 @@ export function findPersonByAuthUser(
     if (nameMatch) return nameMatch;
   }
 
+  // 4. Superadmin fallback matching for ales.lajlar@gmail.com
+  if (authEmail === 'ales.lajlar@gmail.com') {
+    const alesMatch = people.find(p => p && p.name && p.name.toLowerCase().includes('aleš'));
+    if (alesMatch) return alesMatch;
+  }
+
   return undefined;
 }
 

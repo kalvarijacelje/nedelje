@@ -110,6 +110,7 @@ import {
   IS_SUPABASE_CONFIGURED 
 } from './services/supabaseDataService';
 import { seedSupabaseDatabase } from './utils/supabaseSeeder';
+import { migrateFirestoreToSupabase } from './utils/firestoreMigrationBridge';
 
 type TabType = 'home' | 'sundays' | 'statistics' | 'sunday_school' | 'worship' | 'ministries' | 'people';
 
@@ -717,9 +718,10 @@ export default function App() {
   };
 
   // Active role depending on authentication state or active persona
-  const activeRole: UserRole = IS_FIREBASE_ENABLED 
-    ? (userDbProfile?.role || 'Viewer') 
-    : (activePerson?.role || legacyRole);
+  const isAlesLoggedIn = (authUser?.email || '').toLowerCase().trim() === 'ales.lajlar@gmail.com';
+  const activeRole: UserRole = isAlesLoggedIn
+    ? 'Admin'
+    : (userDbProfile?.role || (IS_SUPABASE_CONFIGURED || IS_FIREBASE_ENABLED ? (authUser ? 'Servant' : 'Viewer') : (activePerson?.role || legacyRole)));
 
   // Save changes to localStorage in legacy offline fallback mode
   useEffect(() => {
@@ -751,21 +753,24 @@ export default function App() {
         const isAles = userEmail === 'ales.lajlar@gmail.com';
         const matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
           (p.email && p.email.toLowerCase().trim() === userEmail) ||
-          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim())
+          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim()) ||
+          (isAles && p.name && p.name.toLowerCase().includes('aleš'))
         ));
 
         if (matchedPerson?.name) {
           setActivePersonName(matchedPerson.name);
+        } else if (isAles) {
+          setActivePersonName('Aleš Lajlar');
         }
 
-        const initialRole: UserRole = matchedPerson?.role || (isAles ? 'Admin' : 'Viewer');
+        const initialRole: UserRole = isAles ? 'Admin' : (matchedPerson?.role || 'Servant');
 
         setUserDbProfile({
           uid: user.id,
           email: user.email || '',
-          displayName: user.user_metadata?.full_name || user.email || 'Volunteer',
+          displayName: user.user_metadata?.full_name || (isAles ? 'Aleš Lajlar (Pastor/Admin)' : (user.email || 'Volunteer')),
           role: initialRole,
-          personName: matchedPerson?.name
+          personName: matchedPerson?.name || (isAles ? 'Aleš Lajlar' : undefined)
         });
       } else {
         setAuthUser(null);
@@ -785,21 +790,24 @@ export default function App() {
         const isAles = userEmail === 'ales.lajlar@gmail.com';
         const matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
           (p.email && p.email.toLowerCase().trim() === userEmail) ||
-          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim())
+          (user.user_metadata?.full_name && p.name && p.name.toLowerCase().trim() === user.user_metadata.full_name.toLowerCase().trim()) ||
+          (isAles && p.name && p.name.toLowerCase().includes('aleš'))
         ));
 
         if (matchedPerson?.name) {
           setActivePersonName(matchedPerson.name);
+        } else if (isAles) {
+          setActivePersonName('Aleš Lajlar');
         }
 
-        const initialRole: UserRole = matchedPerson?.role || (isAles ? 'Admin' : 'Viewer');
+        const initialRole: UserRole = isAles ? 'Admin' : (matchedPerson?.role || 'Servant');
 
         setUserDbProfile({
           uid: user.id,
           email: user.email || '',
-          displayName: user.user_metadata?.full_name || user.email || 'Volunteer',
+          displayName: user.user_metadata?.full_name || (isAles ? 'Aleš Lajlar (Pastor/Admin)' : (user.email || 'Volunteer')),
           role: initialRole,
-          personName: matchedPerson?.name
+          personName: matchedPerson?.name || (isAles ? 'Aleš Lajlar' : undefined)
         });
       } else {
         setAuthUser(null);
@@ -1037,6 +1045,7 @@ export default function App() {
       (window as any).seedChurchDatabaseManually = seedInitialCollections;
       (window as any).restoreFullRoster = handleRestoreFullRoster;
       (window as any).seedSupabaseDatabase = (customS?: any, customP?: any) => seedSupabaseDatabase(customS || sundays, customP || people);
+      (window as any).migrateFirestoreToSupabase = migrateFirestoreToSupabase;
     }
   }, [sundays, people]);
 
