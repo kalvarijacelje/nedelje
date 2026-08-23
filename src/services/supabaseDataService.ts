@@ -242,7 +242,8 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
       ledMinistries: row.led_ministries || row.ledMinistries || [],
       familyMembers: row.family_members || [],
       isExemptFromBurnout: Boolean(row.is_exempt_from_burnout),
-      isPastorOrStaff: Boolean(row.is_exempt_from_burnout)
+      isPastorOrStaff: Boolean(row.is_exempt_from_burnout),
+      auth_user_id: row.auth_user_id || undefined
     }));
   } catch (err) {
     console.warn('[Supabase] Error in fetchPeopleFromSupabase:', err);

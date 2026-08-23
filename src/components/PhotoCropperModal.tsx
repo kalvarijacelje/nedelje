@@ -127,55 +127,69 @@ export default function PhotoCropperModal({
     });
   };
 
-  // Export 300x300 Cropped Canvas
+  // Export 250x250 Lightweight Cropped Canvas (~15-20 KB)
   const handleApplyCrop = () => {
-    const img = imageRef.current;
-    if (!img) return;
+    let img = imageRef.current;
+    
+    const proceedWithCrop = (sourceImg: HTMLImageElement) => {
+      try {
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = 250;
+        exportCanvas.height = 250;
+        const ctx = exportCanvas.getContext('2d');
+        if (!ctx) return;
 
-    const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = 300;
-    exportCanvas.height = 300;
-    const ctx = exportCanvas.getContext('2d');
-    if (!ctx) return;
+        // Clear background
+        ctx.clearRect(0, 0, 250, 250);
 
-    // Clear background
-    ctx.clearRect(0, 0, 300, 300);
+        // Fill background with clean white
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, 250, 250);
 
-    // Create circular clip path on the 300x300 canvas
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(150, 150, 150, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
+        // Translate to canvas center (125, 125)
+        ctx.translate(125, 125);
 
-    // Fill background with clean white/slate
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, 300, 300);
+        // Rotate
+        ctx.rotate((rotation * Math.PI) / 180);
 
-    // Translate to canvas center (150, 150)
-    ctx.translate(150, 150);
+        // Scaling factor (Preview container is 240px, output canvas is 250px)
+        const previewSize = 240;
+        const scaleFactor = 250 / previewSize;
 
-    // Rotate
-    ctx.rotate((rotation * Math.PI) / 180);
+        // Calculate dimensions
+        const baseScale = Math.min(previewSize / (sourceImg.width || 1), previewSize / (sourceImg.height || 1));
+        const drawWidth = (sourceImg.width || 1) * baseScale * zoom * scaleFactor;
+        const drawHeight = (sourceImg.height || 1) * baseScale * zoom * scaleFactor;
+        const drawX = position.x * scaleFactor - drawWidth / 2;
+        const drawY = position.y * scaleFactor - drawHeight / 2;
 
-    // Scaling factor (Preview container is 240px, output canvas is 300px => 300 / 240 = 1.25 multiplier)
-    const previewSize = 240;
-    const scaleFactor = 300 / previewSize;
+        ctx.drawImage(sourceImg, drawX, drawY, drawWidth, drawHeight);
 
-    // Calculate dimensions
-    const baseScale = Math.min(previewSize / img.width, previewSize / img.height);
-    const drawWidth = img.width * baseScale * zoom * scaleFactor;
-    const drawHeight = img.height * baseScale * zoom * scaleFactor;
-    const drawX = position.x * scaleFactor - drawWidth / 2;
-    const drawY = position.y * scaleFactor - drawHeight / 2;
+        // Export as ultra-lightweight JPEG (250x250 compressed ~12-18KB)
+        const croppedDataUrl = exportCanvas.toDataURL('image/jpeg', 0.80);
+        onCropComplete(croppedDataUrl);
+        onClose();
+      } catch (err: any) {
+        console.warn('Crop canvas export fallback:', err);
+        if (imageSrc) {
+          onCropComplete(imageSrc);
+          onClose();
+        }
+      }
+    };
 
-    ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-    ctx.restore();
-
-    // Export as lightweight JPEG (300x300 compressed ~20-30KB)
-    const croppedDataUrl = exportCanvas.toDataURL('image/jpeg', 0.82);
-    onCropComplete(croppedDataUrl);
-    onClose();
+    if (img && img.complete) {
+      proceedWithCrop(img);
+    } else if (imageSrc) {
+      const fallbackImg = new Image();
+      fallbackImg.crossOrigin = 'anonymous';
+      fallbackImg.onload = () => proceedWithCrop(fallbackImg);
+      fallbackImg.onerror = () => {
+        onCropComplete(imageSrc);
+        onClose();
+      };
+      fallbackImg.src = imageSrc;
+    }
   };
 
   useBackdropHistory(isOpen, onClose, 'photo-cropper-modal');

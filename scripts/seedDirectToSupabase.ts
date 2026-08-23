@@ -103,9 +103,31 @@ async function main() {
   } else {
     console.log(`   ✅ Seeded ${sundayRows.length} Sunday services`);
 
-    // Relational assignments
+    // Relational assignments (parsing both assignmentDetails and assignments)
     const allAssignments: any[] = [];
     INITIAL_SUNDAYS.forEach(s => {
+      if (s.assignmentDetails && Object.keys(s.assignmentDetails).length > 0) {
+        Object.entries(s.assignmentDetails).forEach(([mId, detailsList]: [string, any]) => {
+          if (Array.isArray(detailsList)) {
+            detailsList.forEach(det => {
+              if (!det || !det.personName || det.personName === '/' || det.personName.toLowerCase() === 'all') return;
+              const token = det.confirmationToken || generateConfirmationToken(s.id, mId, det.personName.trim());
+              const matchedP = profileRows.find(p => p.name.toLowerCase().trim() === det.personName.trim().toLowerCase());
+              const cleanSlug = det.personName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+              allAssignments.push({
+                id: `${s.id}_${mId}_${cleanSlug}`,
+                sunday_id: s.id,
+                ministry_id: mId,
+                person_name: det.personName.trim(),
+                person_id: matchedP?.id || null,
+                status: det.status || 'confirmed',
+                confirmation_token: token
+              });
+            });
+          }
+        });
+      }
       if (s.assignments) {
         Object.entries(s.assignments).forEach(([mId, names]) => {
           if (Array.isArray(names)) {

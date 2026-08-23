@@ -288,16 +288,34 @@ const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] =>
     return deletedKeys.has(idKey) || (p.email ? deletedKeys.has('email:' + p.email.toLowerCase().trim()) : false);
   };
 
-  // If live Firestore returned records, it is the SINGLE source of truth!
-  if (fetched && fetched.length > 0) {
-    const validFetched = fetched.filter(p => !isDeleted(p)).map(ensurePersonId);
-    return deduplicatePeopleList(validFetched);
-  }
+  const map = new Map<string, Person>();
 
-  // Fallback when Firestore is offline or empty
-  const validBase = (base && base.length > 0) ? base : INITIAL_PEOPLE;
-  const filtered = validBase.filter(p => !isDeleted(p)).map(ensurePersonId);
-  return deduplicatePeopleList(filtered);
+  // 1. Always seed with all INITIAL_PEOPLE defaults so roster members are never dropped
+  INITIAL_PEOPLE.forEach(p => {
+    if (p && p.id && !isDeleted(p)) {
+      map.set(p.id, ensurePersonId(p));
+    }
+  });
+
+  // 2. Overlay local memory/saved records
+  (base || []).forEach(p => {
+    if (p && p.id && !isDeleted(p)) {
+      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase() === p.name.toLowerCase()) : null);
+      const targetId = existing?.id || p.id;
+      map.set(targetId, { ...(existing || {}), ...ensurePersonId(p), id: targetId });
+    }
+  });
+
+  // 3. Overlay fetched remote database records
+  (fetched || []).forEach(p => {
+    if (p && p.id && !isDeleted(p)) {
+      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase() === p.name.toLowerCase()) : null);
+      const targetId = existing?.id || p.id;
+      map.set(targetId, { ...(existing || {}), ...ensurePersonId(p), id: targetId });
+    }
+  });
+
+  return deduplicatePeopleList(Array.from(map.values()));
 };
 
 const mergeSundaysWithDefaults = (fetched: ServiceSunday[], base: ServiceSunday[]): ServiceSunday[] => {
@@ -332,7 +350,9 @@ export default function App() {
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return mergePeopleWithDefaults([], parsed);
+        }
       } catch (e) { /* ignore */ }
     }
     return INITIAL_PEOPLE;
@@ -767,13 +787,31 @@ export default function App() {
         ));
         const alesName = alesPerson?.name || 'Aleš';
         setActivePersonName(alesName);
-        setUserDbProfile({
+        const alesUserObj: User = {
           uid: sessionUser.id,
-          email: sessionUser.email || '',
+          email: sessionUser.email || 'ales.lajlar@gmail.com',
           displayName: userFullName || 'Aleš Lajlar (Pastor/Admin)',
           role: 'Admin',
           personName: alesName
+        };
+        setUserDbProfile(alesUserObj);
+        setUsers(prev => {
+          const filtered = prev.filter(u => u.uid !== sessionUser.id && u.email !== sessionUser.email);
+          return [alesUserObj, ...filtered];
         });
+
+        // Set auth_user_id on p-ales and delete any duplicate UUID row
+        try {
+          await supabase.from('profiles').update({
+            auth_user_id: sessionUser.id,
+            email: 'ales.lajlar@gmail.com',
+            role: 'Admin'
+          }).eq('id', 'p-ales');
+          if (sessionUser.id !== 'p-ales') {
+            await supabase.from('profiles').delete().eq('id', sessionUser.id);
+          }
+        } catch (e) { /* ignore */ }
+
         setAuthLoading(false);
         return;
       }
@@ -782,12 +820,9 @@ export default function App() {
       let matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
         (p.email && p.email.toLowerCase().trim() === userEmail) ||
         (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim()) ||
-        (p.id && (p.id === sessionUser.id || p.id === sessionUser.uid))
+        (p.id && (p.id === sessionUser.id || (p as any).auth_user_id === sessionUser.id))
       ));
 
-      let resolvedRole: UserRole = matchedPerson?.role || 'Servant';
-
-      // 3. Query role from public.profiles table in Supabase if not found in memory
       if (!matchedPerson) {
         try {
           const { data: dbProfile } = await supabase
@@ -797,35 +832,65 @@ export default function App() {
             .maybeSingle();
 
           if (dbProfile) {
-            resolvedRole = (dbProfile.role as UserRole) || 'Servant';
-            if (dbProfile.name || dbProfile.full_name) {
-              setActivePersonName(dbProfile.full_name || dbProfile.name);
-            }
-          } else {
-            // Auto-create initial profile row in Supabase
-            await supabase.from('profiles').upsert({
-              id: sessionUser.id,
-              auth_user_id: sessionUser.id,
-              full_name: userFullName || userEmail.split('@')[0],
-              name: userFullName || userEmail.split('@')[0],
-              email: userEmail,
-              role: resolvedRole,
-              preferred_ministries: [],
-              family_members: [],
-              is_exempt_from_burnout: false
-            });
+            matchedPerson = {
+              id: dbProfile.id,
+              name: dbProfile.full_name || dbProfile.name,
+              email: dbProfile.email,
+              phone: dbProfile.phone,
+              role: (dbProfile.role as UserRole) || 'Servant',
+              preferredMinistries: dbProfile.preferred_ministries || [],
+              ledMinistries: dbProfile.led_ministries || [],
+              familyMembers: dbProfile.family_members || []
+            };
           }
         } catch (e) { /* ignore */ }
-      } else if (matchedPerson.name) {
-        setActivePersonName(matchedPerson.name);
       }
 
-      setUserDbProfile({
+      let resolvedRole: UserRole = matchedPerson?.role || 'Servant';
+
+      if (matchedPerson) {
+        setActivePersonName(matchedPerson.name);
+        resolvedRole = (matchedPerson.role as UserRole) || 'Servant';
+        // Auto-link this user to their canonical card row & remove any duplicate row!
+        try {
+          await supabase.from('profiles').update({
+            auth_user_id: sessionUser.id,
+            email: sessionUser.email || matchedPerson.email,
+            role: resolvedRole
+          }).eq('id', matchedPerson.id);
+
+          if (matchedPerson.id !== sessionUser.id) {
+            await supabase.from('profiles').delete().eq('id', sessionUser.id);
+          }
+        } catch (e) { /* ignore */ }
+      } else {
+        // Only create a new profile row if this person is genuinely brand new!
+        try {
+          await supabase.from('profiles').upsert({
+            id: sessionUser.id,
+            auth_user_id: sessionUser.id,
+            full_name: userFullName || userEmail.split('@')[0],
+            name: userFullName || userEmail.split('@')[0],
+            email: userEmail,
+            role: resolvedRole,
+            preferred_ministries: [],
+            family_members: [],
+            is_exempt_from_burnout: false
+          });
+        } catch (e) { /* ignore */ }
+      }
+
+      const activeUserObj: User = {
         uid: sessionUser.id,
         email: sessionUser.email || '',
         displayName: userFullName || sessionUser.email || 'Volunteer',
         role: resolvedRole,
         personName: matchedPerson?.name
+      };
+      setUserDbProfile(activeUserObj);
+      setUsers(prev => {
+        const filtered = prev.filter(u => u.uid !== sessionUser.id && u.email !== sessionUser.email);
+        return [activeUserObj, ...filtered];
       });
       setAuthLoading(false);
     };
@@ -847,15 +912,9 @@ export default function App() {
     };
   }, [people]);
 
-  // --- Firestore Realtime Data Synchronizer (Single Source of Truth) ---
+  // --- Firestore Realtime Data Synchronizer (Disabled when Supabase is active) ---
   useEffect(() => {
-
-    if (!IS_FIREBASE_ENABLED || !db) {
-      const localSundays = safeParseSundays(localStorage.getItem('church_roster_sundays_v2'));
-      const localPeople = safeParsePeople(localStorage.getItem('church_roster_people_v2'));
-      setSundays(mergeSundaysWithDefaults([], localSundays));
-      setPeople(mergePeopleWithDefaults([], localPeople));
-      setDataLoading(false);
+    if (!IS_FIREBASE_ENABLED || !db || IS_SUPABASE_CONFIGURED) {
       return;
     }
 
@@ -960,16 +1019,21 @@ export default function App() {
           setPeople(merged);
           try { localStorage.setItem('church_roster_people_v2', JSON.stringify(merged)); } catch (e) {}
 
-          const mappedUsers: User[] = merged
-            .filter(p => p.email)
-            .map(p => ({
-              uid: p.id,
+          const registeredUsers: User[] = (merged || [])
+            .filter((p: any) => p.auth_user_id)
+            .map((p: any) => ({
+              uid: (p as any).auth_user_id,
               email: p.email || '',
               displayName: p.name,
               role: p.role || 'Viewer',
               personName: p.name
             }));
-          setUsers(mappedUsers);
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            registeredUsers.forEach(u => map.set(u.uid, u));
+            prev.forEach(u => map.set(u.uid, u));
+            return Array.from(map.values());
+          });
         }
 
         if (remoteBlackouts.length > 0) {
@@ -1003,16 +1067,21 @@ export default function App() {
         if (freshPeople.length > 0) {
           setPeople(freshPeople);
           try { localStorage.setItem('church_roster_people_v2', JSON.stringify(freshPeople)); } catch (e) {}
-          const mappedUsers: User[] = freshPeople
-            .filter(p => p.email)
-            .map(p => ({
-              uid: p.id,
+          const registeredUsers: User[] = (freshPeople || [])
+            .filter((p: any) => p.auth_user_id)
+            .map((p: any) => ({
+              uid: (p as any).auth_user_id,
               email: p.email || '',
               displayName: p.name,
               role: p.role || 'Viewer',
               personName: p.name
             }));
-          setUsers(mappedUsers);
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            registeredUsers.forEach(u => map.set(u.uid, u));
+            prev.forEach(u => map.set(u.uid, u));
+            return Array.from(map.values());
+          });
         }
       },
       async () => {
@@ -1642,8 +1711,27 @@ export default function App() {
     );
   }
 
-  // Active secure sign in check (legacy firebase gating only)
-  if (IS_FIREBASE_ENABLED && !IS_SUPABASE_CONFIGURED && !authUser) {
+  // If user is confirming via token link, let them confirm without login
+  if (isConfirmView) {
+    return (
+      <ConfirmPage
+        sundays={sundays}
+        ministries={ministries}
+        people={people}
+        onUpdateSunday={handleUpdateSunday}
+        onNavigateHome={() => {
+          setIsConfirmView(false);
+          setActiveTab('home');
+          if (typeof window !== 'undefined') {
+            window.history.pushState({ tab: 'home' }, '', '/domov');
+          }
+        }}
+      />
+    );
+  }
+
+  // Active secure sign in check: ALWAYS require login if not authenticated!
+  if (!authUser) {
     return (
       <div className="flex flex-col min-h-screen bg-[#F3F4F6] font-sans">
         {/* Banner with language change */}
@@ -1659,7 +1747,7 @@ export default function App() {
             </div>
             <button
               onClick={() => setCurrentLanguage(prev => prev === 'sl' ? 'en' : 'sl')}
-              className="text-[11px] font-mono font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-md transition flex items-center gap-1"
+              className="text-[11px] font-mono font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-md transition flex items-center gap-1 cursor-pointer"
             >
               <Globe className="w-3.5 h-3.5" />
               <span>{currentLanguage === 'sl' ? 'EN' : 'SL'}</span>
@@ -1680,13 +1768,13 @@ export default function App() {
               <p className="text-xs text-slate-500 max-w-xs mx-auto">
                 {currentLanguage === 'sl' 
                   ? 'Za dostop do nedeljskih razporedov in pokritosti služb se prijavite s svojim Googlovim računom.' 
-                  : 'To view community rosters, absent notes, and live coverage plans, please auth with Google.'}
+                  : 'To view community rosters, absent notes, and live coverage plans, please sign in with Google.'}
               </p>
             </div>
 
             <button
               onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-2 bg-slate-950 text-white hover:bg-slate-850 px-4 py-3 rounded-xl transition duration-150 font-semibold text-xs border border-slate-950 shadow-sm cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 bg-slate-950 text-white hover:bg-slate-850 px-4 py-3 rounded-xl transition duration-150 font-semibold text-xs border border-slate-950 shadow-sm cursor-pointer active:scale-95"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path
@@ -1711,24 +1799,6 @@ export default function App() {
           </div>
         </main>
       </div>
-    );
-  }
-
-  if (isConfirmView) {
-    return (
-      <ConfirmPage
-        sundays={sundays}
-        ministries={ministries}
-        people={people}
-        onUpdateSunday={handleUpdateSunday}
-        onNavigateHome={() => {
-          setIsConfirmView(false);
-          setActiveTab('home');
-          if (typeof window !== 'undefined') {
-            window.history.pushState({ tab: 'home' }, '', '/domov');
-          }
-        }}
-      />
     );
   }
 

@@ -13,6 +13,13 @@ import PhotoCropperModal from './PhotoCropperModal';
 import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import { supabase } from '../supabaseClient';
+import { INITIAL_PEOPLE } from '../data/initialData';
+import { 
+  fetchGoogleContacts, 
+  parseGoogleContactsCSV, 
+  matchContactsWithPeople, 
+  MatchedContact 
+} from '../services/userService';
 
 interface PeopleViewProps {
   sundays: ServiceSunday[];
@@ -440,6 +447,101 @@ export default function PeopleView({
   useBackdropHistory(!!reminderModalPerson, () => setReminderModalPerson(null), 'people-reminder-modal');
   useBackdropHistory(showPendingUsersModal, () => setShowPendingUsersModal(false), 'people-pending-users-modal');
 
+  // Google Contacts sync / CSV import state
+  const [showGoogleContactsModal, setShowGoogleContactsModal] = useState<boolean>(false);
+  const [contactsSyncLoading, setContactsSyncLoading] = useState<boolean>(false);
+  const [contactsSyncError, setContactsSyncError] = useState<string | null>(null);
+  const [matchedContacts, setMatchedContacts] = useState<MatchedContact[]>([]);
+  const [contactsSyncSuccessCount, setContactsSyncSuccessCount] = useState<number | null>(null);
+
+  useBackdropHistory(showGoogleContactsModal, () => setShowGoogleContactsModal(false), 'people-contacts-modal');
+
+  const handleSyncWithGoogleApi = async () => {
+    if (!googleToken) {
+      setContactsSyncError(
+        currentLanguage === 'sl'
+          ? 'Google račun ni povezan. Prosimo, da najprej povežete Google račun v Centru za obveščanje ali naložite CSV datoteko.'
+          : 'Google token missing. Please connect Google in Notification Center or upload a CSV file.'
+      );
+      return;
+    }
+    setContactsSyncLoading(true);
+    setContactsSyncError(null);
+    setContactsSyncSuccessCount(null);
+    try {
+      const raw = await fetchGoogleContacts(googleToken);
+      const matches = matchContactsWithPeople(raw, people);
+      setMatchedContacts(matches);
+      if (matches.length === 0) {
+        setContactsSyncError(
+          currentLanguage === 'sl'
+            ? 'V vaših Google Stikih nismo našli ujemajočih se oseb po imenu.'
+            : 'No matching contacts found in your Google Contacts.'
+        );
+      }
+    } catch (err: any) {
+      setContactsSyncError(err.message || 'Napaka pri branju Google Stikov');
+    } finally {
+      setContactsSyncLoading(false);
+    }
+  };
+
+  const handleImportContactsCSV = (file: File) => {
+    setContactsSyncLoading(true);
+    setContactsSyncError(null);
+    setContactsSyncSuccessCount(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const parsed = parseGoogleContactsCSV(text);
+        const matches = matchContactsWithPeople(parsed, people);
+        setMatchedContacts(matches);
+        if (matches.length === 0) {
+          setContactsSyncError(
+            currentLanguage === 'sl'
+              ? 'V naloženi CSV datoteki nismo našli nobenega ujemajočega se imena.'
+              : 'No matching names found in the uploaded CSV file.'
+          );
+        }
+      } catch (err: any) {
+        setContactsSyncError(err.message || 'Napaka pri branju CSV datoteke');
+      } finally {
+        setContactsSyncLoading(false);
+      }
+    };
+    reader.onerror = () => {
+      setContactsSyncError('Napaka pri branju datoteke');
+      setContactsSyncLoading(false);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleApplyMatchedContacts = () => {
+    if (!onUpdatePerson) return;
+    const selectedMatches = matchedContacts.filter(m => m.selected);
+    let count = 0;
+    for (const match of selectedMatches) {
+      onUpdatePerson(match.person.id, {
+        ...match.person,
+        email: match.suggestedEmail || match.person.email,
+        phone: match.suggestedPhone || match.person.phone,
+      });
+      count++;
+    }
+    setContactsSyncSuccessCount(count);
+  };
+
+  const handleRestoreAllPeople = () => {
+    if (!onUpdatePerson) return;
+    INITIAL_PEOPLE.forEach(p => {
+      onUpdatePerson(p.id, p);
+    });
+    setContactsSyncSuccessCount(INITIAL_PEOPLE.length);
+    setContactsSyncError(null);
+    setMatchedContacts([]);
+  };
+
   const isAdmin = userRole === 'Admin';
   const isLeader = userRole === 'Leader';
   const canEdit = isAdmin || isLeader;
@@ -791,7 +893,7 @@ export default function PeopleView({
             <span className="px-2.5 py-1 bg-slate-800/90 text-slate-300 border border-slate-700 rounded-lg flex items-center gap-1">
               ⚪ {burnoutStats.availableCount} {currentLanguage === 'sl' ? 'Na voljo' : 'Available'}
             </span>
-            <span className="px-2.5 py-1 bg-purple-950/80 text-purple-300 border border-purple-700/80 rounded-lg flex items-center gap-1" title="Glavni pastor ali stalno osebje">
+            <span className="px-2.5 py-1 bg-purple-950/80 text-purple-300 border border-purple-700/80 rounded-lg flex items-center gap-1" title="Vodstvo (Leader)">
               👑 {burnoutStats.exemptCount} {currentLanguage === 'sl' ? 'Izvzeti' : 'Exempt'}
             </span>
           </div>
@@ -1023,7 +1125,7 @@ export default function PeopleView({
             />
             <label htmlFor="newPastorOrStaff" className="text-xs font-semibold text-purple-900 cursor-pointer flex items-center gap-1.5">
               <Crown className="w-3.5 h-3.5 text-purple-600" />
-              <span>{currentLanguage === 'sl' ? 'Izvzemi iz preobremenjenosti (Glavni pastor / stalno osebje)' : 'Exempt from fatigue alerts (Main Pastor / Full-time staff)'}</span>
+              <span>{currentLanguage === 'sl' ? 'Izvzemi iz preobremenjenosti (Vodstvo / Leader)' : 'Exempt from fatigue alerts (Leadership / Leader)'}</span>
             </label>
           </div>
 
@@ -1236,6 +1338,28 @@ export default function PeopleView({
             {archivedPeopleCount}
           </span>
         </button>
+
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              setContactsSyncError(null);
+              setContactsSyncSuccessCount(null);
+              setMatchedContacts([]);
+              setShowGoogleContactsModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-250 transition shadow-2xs cursor-pointer active:scale-95"
+            title={currentLanguage === 'sl' ? 'Sinhroniziraj ali uvozi telefonske številke in e-pošte iz Google Stikov ali CSV' : 'Sync or import phone numbers & emails from Google Contacts or CSV'}
+          >
+            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+            </svg>
+            <span>{currentLanguage === 'sl' ? 'Uvozi iz Google Stikov' : 'Sync Google Contacts'}</span>
+          </button>
+        )}
 
         {onOpenNotificationModal && (
           <button
@@ -2278,44 +2402,78 @@ export default function PeopleView({
                       );
                     }
 
+                    const availableUsers = (users || []).filter(
+                      u => !(u as any).personId || (u as any).personId === editingPerson.id || u.personName === editingPerson.name
+                    );
+
                     return (
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] text-slate-500">
-                          {currentLanguage === 'sl'
-                            ? 'Povežite ta profil z registriranim Google računom:'
-                            : 'Link this profile to a registered Google account:'}
-                        </p>
-                        <select
-                          onChange={(e) => {
-                            const selectedUid = e.target.value;
-                            if (selectedUid) {
-                              const selectedUser = users.find(u => u.uid === selectedUid);
-                              if (selectedUser) {
-                                // 1. Immediately update form input states!
-                                if (selectedUser.email) {
-                                  setEditEmail(selectedUser.email);
+                      <div className="space-y-2 pt-1">
+                        {availableUsers.length > 0 ? (
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-slate-500 font-medium">
+                              {currentLanguage === 'sl'
+                                ? 'Povežite ta profil z registriranim Google računom:'
+                                : 'Link this profile to a registered Google account:'}
+                            </p>
+                            <select
+                              onChange={(e) => {
+                                const selectedUid = e.target.value;
+                                if (selectedUid) {
+                                  const selectedUser = users.find(u => u.uid === selectedUid);
+                                  if (selectedUser) {
+                                    if (selectedUser.email) {
+                                      setEditEmail(selectedUser.email);
+                                    }
+                                    if (selectedUser.displayName && selectedUser.displayName.trim()) {
+                                      setEditName(selectedUser.displayName.trim());
+                                    }
+                                  }
+                                  if (onLinkUserPerson) {
+                                    onLinkUserPerson(selectedUid, editingPerson.id);
+                                  }
                                 }
-                                if (selectedUser.displayName && selectedUser.displayName.trim()) {
-                                  setEditName(selectedUser.displayName.trim());
-                                }
-                              }
-                              if (onLinkUserPerson) {
-                                onLinkUserPerson(selectedUid, editingPerson.id);
-                              }
+                              }}
+                              defaultValue=""
+                              className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer"
+                            >
+                              <option value="">{currentLanguage === 'sl' ? '-- Izberite Google račun --' : '-- Choose Google Account --'}</option>
+                              {availableUsers.map(u => (
+                                <option key={u.uid} value={u.uid}>
+                                  {u.displayName ? `${u.displayName} (${u.email})` : u.email}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 bg-white p-2 rounded-lg border border-slate-200 leading-relaxed">
+                            {currentLanguage === 'sl'
+                              ? 'ℹ️ Trenutno v sistemu ni nepovezanih Google računov. Ko se sodelavec prijavi z Google računom (ali če se ujema e-pošta), se bo povezava vzpostavila samodejno.'
+                              : 'ℹ️ No unlinked Google accounts registered yet. When this member signs in with Google, they will be paired automatically by email.'}
+                          </p>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await supabase.auth.signInWithOAuth({
+                                provider: 'google',
+                                options: { redirectTo: window.location.href }
+                              });
+                            } catch (err) {
+                              console.warn('OAuth sign-in error:', err);
                             }
                           }}
-                          defaultValue=""
-                          className="w-full text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer"
+                          className="w-full py-1.5 px-3 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs active:scale-95"
                         >
-                          <option value="">{currentLanguage === 'sl' ? '-- Izberite Google račun --' : '-- Choose Google Account --'}</option>
-                          {users
-                            .filter(u => !(u as any).personId || (u as any).personId === editingPerson.id || u.personName === editingPerson.name)
-                            .map(u => (
-                              <option key={u.uid} value={u.uid}>
-                                {u.displayName ? `${u.displayName} (${u.email})` : u.email}
-                              </option>
-                            ))}
-                        </select>
+                          <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
+                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                          </svg>
+                          <span>{currentLanguage === 'sl' ? 'Prijavi se / Poveži z Google računom' : 'Sign in / Link with Google'}</span>
+                        </button>
                       </div>
                     );
                   })()}
@@ -2350,7 +2508,7 @@ export default function PeopleView({
                 />
                 <label htmlFor="editPastorOrStaff" className="text-xs font-semibold text-purple-900 cursor-pointer flex items-center gap-1.5">
                   <Crown className="w-3 h-3 text-purple-600 shrink-0" />
-                  <span>{currentLanguage === 'sl' ? 'Izvzemi iz opozoril preobremenjenosti (Glavni pastor / stalno osebje)' : 'Exempt from fatigue alerts (Main Pastor / Full-time staff)'}</span>
+                  <span>{currentLanguage === 'sl' ? 'Izvzemi iz opozoril preobremenjenosti (Vodstvo / Leader)' : 'Exempt from fatigue alerts (Leadership / Leader)'}</span>
                 </label>
               </div>
 
@@ -2535,6 +2693,14 @@ export default function PeopleView({
             setNewAvatarUrl(croppedDataUrl);
           } else {
             setEditAvatarUrl(croppedDataUrl);
+            if (editingPerson && onUpdatePerson) {
+              const updated = {
+                ...editingPerson,
+                avatarUrl: croppedDataUrl,
+              };
+              setEditingPerson(updated);
+              onUpdatePerson(editingPerson.id, updated);
+            }
           }
           setShowCropperModal(false);
           setCropperTarget(null);
@@ -2544,6 +2710,14 @@ export default function PeopleView({
             setNewAvatarUrl(undefined);
           } else {
             setEditAvatarUrl(undefined);
+            if (editingPerson && onUpdatePerson) {
+              const updated = {
+                ...editingPerson,
+                avatarUrl: undefined,
+              };
+              setEditingPerson(updated);
+              onUpdatePerson(editingPerson.id, updated);
+            }
           }
         }}
       />
@@ -2799,6 +2973,277 @@ export default function PeopleView({
               >
                 {currentLanguage === 'sl' ? 'Zapri' : 'Close'}
               </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Google Contacts Sync & CSV Import Modal */}
+      {showGoogleContactsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-scale-up">
+            
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-base text-white">
+                    {currentLanguage === 'sl' ? 'Uvoz kontaktov iz Google Računa' : 'Import Contacts from Google'}
+                  </h3>
+                  <p className="text-xs text-indigo-200">
+                    {currentLanguage === 'sl'
+                      ? 'Samodejno poišči in posodobi telefonske številke ter e-pošte za sodelavce v bazi'
+                      : 'Automatically match and update volunteer phone numbers and emails in database'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowGoogleContactsModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs font-sans text-slate-700">
+              
+              {/* Option Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Option 1: Direct API Sync */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 flex flex-col justify-between">
+                  <div className="space-y-1">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                      <span>1️⃣ Neposredno branje (API)</span>
+                    </span>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      {currentLanguage === 'sl'
+                        ? 'Preberi stike neposredno iz vašega povezanega Google računa.'
+                        : 'Read contacts directly from your connected Google account.'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSyncWithGoogleApi}
+                    disabled={contactsSyncLoading}
+                    className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    {contactsSyncLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Users className="w-3.5 h-3.5" />
+                    )}
+                    <span>{currentLanguage === 'sl' ? 'Preberi Google Stike' : 'Fetch Google Contacts'}</span>
+                  </button>
+                </div>
+
+                {/* Option 2: CSV File Drop */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 flex flex-col justify-between">
+                  <div className="space-y-1">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                      <span>2️⃣ Naloži Google CSV datoteko</span>
+                    </span>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      {currentLanguage === 'sl' ? (
+                        <>
+                          Pojdite na{' '}
+                          <a
+                            href="https://contacts.google.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 underline font-semibold"
+                          >
+                            contacts.google.com
+                          </a>
+                          {' '}→ Izvozi → Google CSV in jo spustite tukaj.
+                        </>
+                      ) : (
+                        <>
+                          Visit{' '}
+                          <a
+                            href="https://contacts.google.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 underline font-semibold"
+                          >
+                            contacts.google.com
+                          </a>
+                          {' '}→ Export → Google CSV and drop it here.
+                        </>
+                      )}
+                    </p>
+                  </div>
+
+                  <label className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs rounded-lg transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 text-center">
+                    <Copy className="w-3.5 h-3.5 text-slate-600" />
+                    <span>{currentLanguage === 'sl' ? 'Izberi .CSV datoteko' : 'Select .CSV file'}</span>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleImportContactsCSV(file);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Error Notice */}
+              {contactsSyncError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-bold block">{contactsSyncError}</span>
+                    {contactsSyncError.includes('Google') && (
+                      <p className="text-[11px] text-rose-700">
+                        {currentLanguage === 'sl'
+                          ? 'Priporočilo: Odprite contacts.google.com, kliknite Izvozi (Google CSV) in naložite datoteko z zgornjim gumbom (Opcija 2).'
+                          : 'Tip: Open contacts.google.com, click Export (Google CSV), and upload the file with Option 2.'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Success Notice */}
+              {contactsSyncSuccessCount !== null && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span className="font-bold">
+                    {currentLanguage === 'sl'
+                      ? `🎉 Uspešno posodobljenih ${contactsSyncSuccessCount} sodelavcev v bazi!`
+                      : `🎉 Successfully updated ${contactsSyncSuccessCount} volunteers in database!`}
+                  </span>
+                </div>
+              )}
+
+              {/* Preview & Match Table */}
+              {matchedContacts.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 text-xs">
+                      {currentLanguage === 'sl' ? 'Najdena ujemanja v stikih:' : 'Matched Contacts Preview:'} ({matchedContacts.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allSelected = matchedContacts.every(m => m.selected);
+                        setMatchedContacts(matchedContacts.map(m => ({ ...m, selected: !allSelected })));
+                      }}
+                      className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                    >
+                      {matchedContacts.every(m => m.selected)
+                        ? (currentLanguage === 'sl' ? 'Odznači vse' : 'Deselect all')
+                        : (currentLanguage === 'sl' ? 'Izberi vse' : 'Select all')}
+                    </button>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                    <table className="w-full text-[11px] text-left">
+                      <thead className="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200 sticky top-0">
+                        <tr>
+                          <th className="p-2 w-8 text-center">✓</th>
+                          <th className="p-2">Sodelavec v aplikaciji</th>
+                          <th className="p-2">Google Stik</th>
+                          <th className="p-2">Telefon</th>
+                          <th className="p-2">E-pošta</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {matchedContacts.map((match, idx) => (
+                          <tr
+                            key={match.person.id || idx}
+                            className={`hover:bg-slate-50 transition ${match.selected ? 'bg-indigo-50/40' : ''}`}
+                          >
+                            <td className="p-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={match.selected}
+                                onChange={(e) => {
+                                  const updated = [...matchedContacts];
+                                  updated[idx].selected = e.target.checked;
+                                  setMatchedContacts(updated);
+                                }}
+                                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                            </td>
+                            <td className="p-2 font-bold text-slate-900">
+                              {match.person.name}
+                            </td>
+                            <td className="p-2 text-slate-600 font-mono text-[10px]">
+                              {match.matchedName}
+                            </td>
+                            <td className="p-2 font-mono text-[10px] text-slate-700">
+                              {match.suggestedPhone || <span className="text-slate-400">/</span>}
+                            </td>
+                            <td className="p-2 font-mono text-[10px] text-slate-700">
+                              {match.suggestedEmail || <span className="text-slate-400">/</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-500 font-mono">
+                {matchedContacts.filter(m => m.selected).length} {currentLanguage === 'sl' ? 'izbranih za posodobitev' : 'selected for update'}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRestoreAllPeople}
+                  className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                  title="Povrni vseh 42 sodelavcev na privzeto stanje z vsemi vlogami in podatki"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                  <span>{currentLanguage === 'sl' ? 'Povrni vseh 42 sodelavcev' : 'Restore All 42 Profiles'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowGoogleContactsModal(false)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  {currentLanguage === 'sl' ? 'Zapri' : 'Close'}
+                </button>
+
+                {matchedContacts.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleApplyMatchedContacts}
+                    disabled={matchedContacts.filter(m => m.selected).length === 0}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>
+                      {currentLanguage === 'sl'
+                        ? `Posodobi (${matchedContacts.filter(m => m.selected).length}) sodelavcev v bazi`
+                        : `Update (${matchedContacts.filter(m => m.selected).length}) in database`}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
 
           </div>
