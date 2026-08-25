@@ -9,10 +9,10 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 );
 
-if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((err) => {
-      console.error('ServiceWorker registration failed: ', err);
+      console.warn('PWA service worker registration error:', err);
     });
   });
 }

@@ -1,17 +1,6 @@
 import React from 'react';
+import { BrandLogo, BrandLogoProps } from './BrandLogo';
 
-interface KcKalvarijaLogoProps {
-  className?: string;
-  id?: string;
-}
-
-export default function KcKalvarijaLogo({ className = "w-14 h-14", id = "kc-kalvarija-logo" }: KcKalvarijaLogoProps) {
-  return (
-    <img 
-      src="/kck-logo-rdec-sekundaren.png" 
-      alt="KC Kalvarija Logo" 
-      className={`${className} object-contain shrink-0 select-none`} 
-      id={id}
-    />
-  );
+export default function KcKalvarijaLogo(props: BrandLogoProps) {
+  return <BrandLogo variant="responsive" subAppTitle="NEDELJE" {...props} />;
 }

@@ -6,7 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { ServiceSunday, Ministry, Person, Translation, UserRole, User, canAccessPersonalData, canViewPersonContactInfo } from '../types';
 import { 
-  Plus, Search, Phone, Mail, UserCheck, ShieldAlert, X, Crown, Pencil, Trash2, Link as LinkIcon, Unlink, AlertTriangle, Camera, Star, Award, HeartPulse, BatteryCharging, Info, MessageSquare, Send, Copy, ExternalLink, Link2, CheckCircle2, Check, Users, Archive, RotateCcw, Bell, Lock, Sliders, Loader2
+  Plus, Search, Phone, Mail, UserCheck, ShieldAlert, X, Crown, Pencil, Trash2, Link as LinkIcon, Unlink, AlertTriangle, Camera, Star, Award, HeartPulse, BatteryCharging, Info, MessageSquare, Send, Copy, ExternalLink, Link2, CheckCircle2, Check, Users, Archive, RotateCcw, Bell, Lock, Sliders, Loader2, Smile, GraduationCap, Footprints, Building2
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import PhotoCropperModal from './PhotoCropperModal';
@@ -14,12 +14,6 @@ import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurno
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import { supabase } from '../supabaseClient';
 import { INITIAL_PEOPLE } from '../data/initialData';
-import { 
-  fetchGoogleContacts, 
-  parseGoogleContactsCSV, 
-  matchContactsWithPeople, 
-  MatchedContact 
-} from '../services/userService';
 
 interface PeopleViewProps {
   sundays: ServiceSunday[];
@@ -424,7 +418,7 @@ export default function PeopleView({
   const [reminderModalPerson, setReminderModalPerson] = useState<Person | null>(null);
   const [copiedReminderText, setCopiedReminderText] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
-  const [activePeopleTab, setActivePeopleTab] = useState<'active' | 'archived'>('active');
+  const [activePeopleTab, setActivePeopleTab] = useState<'active' | 'members' | 'youth' | 'visitors'>('active');
   const [showPendingUsersModal, setShowPendingUsersModal] = useState<boolean>(false);
 
   // Quick edit member state
@@ -433,6 +427,7 @@ export default function PeopleView({
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editRole, setEditRole] = useState<UserRole>('Servant');
+  const [editMemberType, setEditMemberType] = useState<'adult' | 'minor' | 'youth' | 'visitor' | 'member'>('adult');
   const [editPastorOrStaff, setEditPastorOrStaff] = useState<boolean>(false);
   const [editAvatarUrl, setEditAvatarUrl] = useState<string | undefined>(undefined);
   const [showCropperModal, setShowCropperModal] = useState<boolean>(false);
@@ -446,101 +441,6 @@ export default function PeopleView({
   useBackdropHistory(!!personToDelete, () => setPersonToDelete(null), 'people-delete-person');
   useBackdropHistory(!!reminderModalPerson, () => setReminderModalPerson(null), 'people-reminder-modal');
   useBackdropHistory(showPendingUsersModal, () => setShowPendingUsersModal(false), 'people-pending-users-modal');
-
-  // Google Contacts sync / CSV import state
-  const [showGoogleContactsModal, setShowGoogleContactsModal] = useState<boolean>(false);
-  const [contactsSyncLoading, setContactsSyncLoading] = useState<boolean>(false);
-  const [contactsSyncError, setContactsSyncError] = useState<string | null>(null);
-  const [matchedContacts, setMatchedContacts] = useState<MatchedContact[]>([]);
-  const [contactsSyncSuccessCount, setContactsSyncSuccessCount] = useState<number | null>(null);
-
-  useBackdropHistory(showGoogleContactsModal, () => setShowGoogleContactsModal(false), 'people-contacts-modal');
-
-  const handleSyncWithGoogleApi = async () => {
-    if (!googleToken) {
-      setContactsSyncError(
-        currentLanguage === 'sl'
-          ? 'Google račun ni povezan. Prosimo, da najprej povežete Google račun v Centru za obveščanje ali naložite CSV datoteko.'
-          : 'Google token missing. Please connect Google in Notification Center or upload a CSV file.'
-      );
-      return;
-    }
-    setContactsSyncLoading(true);
-    setContactsSyncError(null);
-    setContactsSyncSuccessCount(null);
-    try {
-      const raw = await fetchGoogleContacts(googleToken);
-      const matches = matchContactsWithPeople(raw, people);
-      setMatchedContacts(matches);
-      if (matches.length === 0) {
-        setContactsSyncError(
-          currentLanguage === 'sl'
-            ? 'V vaših Google Stikih nismo našli ujemajočih se oseb po imenu.'
-            : 'No matching contacts found in your Google Contacts.'
-        );
-      }
-    } catch (err: any) {
-      setContactsSyncError(err.message || 'Napaka pri branju Google Stikov');
-    } finally {
-      setContactsSyncLoading(false);
-    }
-  };
-
-  const handleImportContactsCSV = (file: File) => {
-    setContactsSyncLoading(true);
-    setContactsSyncError(null);
-    setContactsSyncSuccessCount(null);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        const parsed = parseGoogleContactsCSV(text);
-        const matches = matchContactsWithPeople(parsed, people);
-        setMatchedContacts(matches);
-        if (matches.length === 0) {
-          setContactsSyncError(
-            currentLanguage === 'sl'
-              ? 'V naloženi CSV datoteki nismo našli nobenega ujemajočega se imena.'
-              : 'No matching names found in the uploaded CSV file.'
-          );
-        }
-      } catch (err: any) {
-        setContactsSyncError(err.message || 'Napaka pri branju CSV datoteke');
-      } finally {
-        setContactsSyncLoading(false);
-      }
-    };
-    reader.onerror = () => {
-      setContactsSyncError('Napaka pri branju datoteke');
-      setContactsSyncLoading(false);
-    };
-    reader.readAsText(file);
-  };
-
-  const handleApplyMatchedContacts = () => {
-    if (!onUpdatePerson) return;
-    const selectedMatches = matchedContacts.filter(m => m.selected);
-    let count = 0;
-    for (const match of selectedMatches) {
-      onUpdatePerson(match.person.id, {
-        ...match.person,
-        email: match.suggestedEmail || match.person.email,
-        phone: match.suggestedPhone || match.person.phone,
-      });
-      count++;
-    }
-    setContactsSyncSuccessCount(count);
-  };
-
-  const handleRestoreAllPeople = () => {
-    if (!onUpdatePerson) return;
-    INITIAL_PEOPLE.forEach(p => {
-      onUpdatePerson(p.id, p);
-    });
-    setContactsSyncSuccessCount(INITIAL_PEOPLE.length);
-    setContactsSyncError(null);
-    setMatchedContacts([]);
-  };
 
   const isAdmin = userRole === 'Admin';
   const isLeader = userRole === 'Leader';
@@ -609,6 +509,7 @@ export default function PeopleView({
       phone: newPersonPhone.trim() || undefined,
       email: newPersonEmail.trim() || undefined,
       role: newPersonRole,
+      memberType: newPersonRole === 'Minor' ? 'minor' : (newPersonRole === 'Visitor' ? 'visitor' : (newPersonRole === 'Viewer' ? 'member' : 'adult')),
       isPastorOrStaff: newPastorOrStaff,
       preferredMinistries: selectedPrefs,
       ledMinistries: selectedLedMinistries,
@@ -658,6 +559,7 @@ export default function PeopleView({
     setEditPhone(person.phone || '');
     setEditEmail(person.email || '');
     setEditRole(person.role || 'Servant');
+    setEditMemberType(person.memberType || (person.role === 'Minor' ? 'minor' : (person.role === 'Visitor' ? 'visitor' : 'adult')));
     setEditPastorOrStaff(person.isPastorOrStaff || isExemptFromBurnout(person.name));
     setEditAvatarUrl(person.avatarUrl);
     setEditPrefs([...person.preferredMinistries]);
@@ -665,6 +567,31 @@ export default function PeopleView({
     setEditFamilyMembers([...(person.familyMembers || [])]);
     setEditError('');
   };
+
+  const handleCancelEditPerson = () => {
+    if (editingPerson) {
+      if (window.confirm(currentLanguage === 'sl' ? 'Spremembe niso bile shranjene. Ali ste prepričani, da želite zapustiti urejanje?' : 'Changes have not been saved. Are you sure you want to close?')) {
+        setEditingPerson(null);
+        setEditError('');
+      }
+    } else {
+      setEditingPerson(null);
+      setEditError('');
+    }
+  };
+
+  // Protect against accidental tab closing or navigation when form is open
+  React.useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (editingPerson || showAddForm) {
+        e.preventDefault();
+        e.returnValue = currentLanguage === 'sl' ? 'Spremembe niso bile shranjene. Ali ste prepričani, da želite zapustiti stran?' : 'Changes have not been saved. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [editingPerson, showAddForm, currentLanguage]);
 
   const handleSaveEditPerson = (e: React.FormEvent) => {
     e.preventDefault();
@@ -697,6 +624,7 @@ export default function PeopleView({
       phone: editPhone.trim() || undefined,
       email: editEmail.trim() || undefined,
       role: editRole,
+      memberType: editMemberType || (editRole === 'Minor' ? 'minor' : (editRole === 'Visitor' ? 'visitor' : (editRole === 'Viewer' ? 'member' : 'adult'))),
       isPastorOrStaff: editPastorOrStaff,
       isExemptFromBurnout: editPastorOrStaff,
       preferredMinistries: editPrefs,
@@ -759,23 +687,66 @@ export default function PeopleView({
     : null;
 
   const pendingUsers = useMemo(() => {
-    return (users || []).filter(u => !u.personName || u.role === 'Viewer');
-  }, [users]);
+    return (users || []).filter(u => {
+      const isMatched = (people || []).some(p => p && (
+        (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
+        (u.personName && p.name && p.name.toLowerCase().trim() === u.personName.toLowerCase().trim()) ||
+        (u.displayName && p.name && (u.displayName.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(u.displayName.toLowerCase()))) ||
+        ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
+      ));
+      return !isMatched;
+    });
+  }, [users, people]);
 
-  const activePeopleCount = (people || []).filter(p => p && p.name && !p.isArchived).length;
-  const archivedPeopleCount = (people || []).filter(p => p && p.name && p.isArchived).length;
+  const KNOWN_MINOR_IDS = useMemo(() => new Set([
+    'p-tian_knap', 'p-hana_knap', 'p-natan_knap',
+    'p-iva_kolar', 'p-mila_kolar',
+    'p-jona_oreskovic', 'p-ronja_oreskovic',
+    'p-emanuel_pratneker', 'p-jakob_pratneker', 'p-luka_pratneker',
+    'p-lucija_srebot', 'p-leon_srebot',
+    'p-masa_stefancic', 'p-mia_stefancic',
+    'p-david_vuleta', 'p-izak_vuleta',
+    'p-arne_zunec', 'p-pia_princic',
+    'p-adonijah_lajlar', 'p-daniel_lajlar',
+    'p-huntley_james_hupp', 'p-kenzley_franceen_hupp'
+  ]), []);
+
+  const getPersonCategory = (p: Person): 'active' | 'members' | 'youth' | 'visitors' => {
+    if (!p) return 'members';
+    if (p.isArchived || p.role === 'Visitor' || p.memberType === 'visitor' || p.isVisitor) {
+      return 'visitors';
+    }
+    if (p.memberType === 'minor' || p.memberType === 'youth' || p.role === 'Minor' || (p.id && KNOWN_MINOR_IDS.has(p.id))) {
+      return 'youth';
+    }
+    const isServing = (p.preferredMinistries && p.preferredMinistries.length > 0) ||
+      (p.ledMinistries && p.ledMinistries.length > 0) ||
+      p.role === 'Admin' ||
+      p.role === 'Leader';
+    
+    if (isServing) {
+      return 'active';
+    }
+    return 'members';
+  };
+
+  const activeServantsCount = (people || []).filter(p => p && p.name && getPersonCategory(p) === 'active').length;
+  const churchMembersCount = (people || []).filter(p => p && p.name && getPersonCategory(p) === 'members').length;
+  const youthAndChildrenCount = (people || []).filter(p => p && p.name && getPersonCategory(p) === 'youth').length;
+  const visitorsCount = (people || []).filter(p => p && p.name && getPersonCategory(p) === 'visitors').length;
 
   const filteredPeople = (people || []).filter((p) => {
     if (!p || typeof p !== 'object' || !p.name) return false;
-    const matchesTab = activePeopleTab === 'archived' ? Boolean(p.isArchived) : !p.isArchived;
-    if (!matchesTab) return false;
+    const cat = getPersonCategory(p);
+    if (cat !== activePeopleTab) return false;
 
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     return (
       p.name.toLowerCase().includes(q) ||
       (p.phone && p.phone.toLowerCase().includes(q)) ||
-      (p.email && p.email.toLowerCase().includes(q))
+      (p.email && p.email.toLowerCase().includes(q)) ||
+      (p.familyMembers && p.familyMembers.some(f => f.toLowerCase().includes(q)))
     );
   });
 
@@ -854,77 +825,63 @@ export default function PeopleView({
         </div>
       )}
 
-      {/* Hero Header Banner */}
+      {/* Hero Header Banner with subtle serving balance integration */}
       <HeroHeaderBanner
         variant="people"
         eyebrow={currentLanguage === 'sl' ? '👤 BAZA SODELAVCEV • KC KALVARIJA' : '👤 VOLUNTEER ROSTER • KC KALVARIJA'}
         title={translations.people}
-        subtitle={currentLanguage === 'sl' ? 'Baza služabnikov, vloge, kontakti, družinske povezave ter spremljanje uravnoteženosti službe.' : 'Servant database, team roles, contacts, family linkages, and serving balance tracker.'}
+        subtitle={currentLanguage === 'sl' ? 'Baza članov cerkve, vloge, kontakti, družinske povezave ter pregled služb.' : 'Servant database, team roles, contacts, family linkages, and serving balance tracker.'}
         icon={Users}
-      />
+      >
+        {/* Subtle Serving Balance & Roster Summary */}
+        <div className="pt-2.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-white/85 font-medium flex items-center gap-1.5 text-xs">
+              <HeartPulse className="w-3.5 h-3.5 text-rose-300 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'Uravnoteženost služb:' : 'Serving balance:'}</span>
+            </span>
 
-      {/* Burnout Prevention & Serving Balance Analytics Widget */}
-      <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl shadow-md border border-indigo-800/80 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5 border-b border-indigo-800/60">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-xl">
-              <HeartPulse className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white font-display flex items-center gap-2">
-                <span>{currentLanguage === 'sl' ? 'Preprečevanje izgorelosti in uravnoteženost službe' : 'Burnout Prevention & Serving Balance'}</span>
-              </h3>
-              <p className="text-xs text-slate-300">
-                {currentLanguage === 'sl' 
-                  ? 'Spremljanje pogostosti službe po nedeljah – preprečite preobremenjenost prostovoljcev' 
-                  : 'Track serving frequency per Sunday – avoid volunteer fatigue'}
-              </p>
-            </div>
+            {burnoutStats.overloadedCount > 0 ? (
+              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/40">
+                🔴 {burnoutStats.overloadedCount} {currentLanguage === 'sl' ? 'preobremenjenih' : 'overloaded'}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+                🟢 {currentLanguage === 'sl' ? 'Uravnotežen urnik' : 'Balanced schedule'}
+              </span>
+            )}
           </div>
 
-          {/* Indicators Summary Pills */}
-          <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono font-bold">
-            <span className="px-2.5 py-1 bg-rose-950/80 text-rose-300 border border-rose-700/80 rounded-lg flex items-center gap-1">
-              🔴 {burnoutStats.overloadedCount} {currentLanguage === 'sl' ? 'Preobremenjeni' : 'Overloaded'}
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-white/85">
+            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10">
+              👥 {activeServantsCount} {currentLanguage === 'sl' ? 'aktivnih' : 'active'}
             </span>
-            <span className="px-2.5 py-1 bg-emerald-950/80 text-emerald-300 border border-emerald-700/80 rounded-lg flex items-center gap-1">
-              🟢 {burnoutStats.balancedCount} {currentLanguage === 'sl' ? 'Uravnoteženi' : 'Balanced'}
+            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10">
+              🏛️ {churchMembersCount} {currentLanguage === 'sl' ? 'članov' : 'members'}
             </span>
-            <span className="px-2.5 py-1 bg-slate-800/90 text-slate-300 border border-slate-700 rounded-lg flex items-center gap-1">
-              ⚪ {burnoutStats.availableCount} {currentLanguage === 'sl' ? 'Na voljo' : 'Available'}
+            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10">
+              👶 {youthAndChildrenCount} {currentLanguage === 'sl' ? 'mladih' : 'youth'}
             </span>
-            <span className="px-2.5 py-1 bg-purple-950/80 text-purple-300 border border-purple-700/80 rounded-lg flex items-center gap-1" title="Vodstvo (Leader)">
-              👑 {burnoutStats.exemptCount} {currentLanguage === 'sl' ? 'Izvzeti' : 'Exempt'}
-            </span>
+            {visitorsCount > 0 && (
+              <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10">
+                🌿 {visitorsCount} {currentLanguage === 'sl' ? 'obiskovalcev' : 'visitors'}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Dynamic Alert Banner if anyone is overloaded */}
-        {burnoutStats.overloadedCount > 0 ? (
-          <div className="p-3 bg-rose-950/90 border border-rose-800 text-rose-200 rounded-xl text-xs flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold">
-                {currentLanguage === 'sl' ? 'Opozorilo za voditelje: ' : 'Leader Fatigue Alert: '}
-              </span>
-              <span>
-                {currentLanguage === 'sl'
-                  ? `${burnoutStats.overloadedPeople.map(p => `${p.name} (${p.consecutive}x zapored)`).join(', ')} strežejo 3 ali več nedelj zapored. Priporočamo, da jim namenite 1 teden počitka.`
-                  : `${burnoutStats.overloadedPeople.map(p => `${p.name} (${p.consecutive}x consecutive)`).join(', ')} served 3+ consecutive Sundays. Rest is suggested.`}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="p-2.5 bg-emerald-950/60 border border-emerald-800/60 text-emerald-200 rounded-xl text-xs flex items-center gap-2">
-            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+        {/* Dynamic Alert Banner only if anyone is overloaded */}
+        {burnoutStats.overloadedCount > 0 && (
+          <div className="mt-2 p-2.5 bg-rose-950/80 border border-rose-500/40 text-rose-200 rounded-xl text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
             <span>
               {currentLanguage === 'sl'
-                ? 'Odlično! Vsi služabniki imajo uravnotežen urnik in nihče od prostovoljcev ni preobremenjen.'
-                : 'Great job! All volunteers have a balanced schedule with no fatigue detected.'}
+                ? `Opozorilo za voditelje: ${burnoutStats.overloadedPeople.map(p => `${p.name} (${p.consecutive}x)`).join(', ')} strežejo 3+ nedelj zapored.`
+                : `Leader Fatigue Alert: ${burnoutStats.overloadedPeople.map(p => `${p.name} (${p.consecutive}x)`).join(', ')} served 3+ consecutive Sundays.`}
             </span>
           </div>
         )}
-      </div>
+      </HeroHeaderBanner>
 
       {/* Add New Person Drawer Form (Admin only) */}
       {showAddForm && (
@@ -1109,8 +1066,10 @@ export default function PeopleView({
             >
               <option value="Admin">🛠️ Admin (Poln nadzor)</option>
               <option value="Leader">📋 Leader / Vodja službe (Urejanje svojih služb)</option>
-              <option value="Servant">👤 Servant / Služabnik (Prijava sebe in družine)</option>
-              <option value="Viewer">👁️ Viewer / Gledalec (Le branje)</option>
+              <option value="Servant">🤝 Servant / Služabnik (Služenje v ekipi)</option>
+              <option value="Viewer">👤 Member / Član (Član cerkve)</option>
+              <option value="Visitor">👋 Visitor / Obiskovalec (Občasen obisk / Gost)</option>
+              <option value="Minor">👶 Minor / Mladoletni član</option>
             </select>
           </div>
 
@@ -1220,61 +1179,105 @@ export default function PeopleView({
             </div>
           </div>
 
-          {/* If Leader or Admin role, select led ministries */}
-          {(newPersonRole === 'Leader' || newPersonRole === 'Admin') && (
-            <div className="space-y-1.5 p-3 bg-indigo-50/50 border border-indigo-150 rounded-xl">
-              <label className="block text-[10px] font-bold uppercase tracking-wide text-indigo-900 font-mono">
-                👑 {currentLanguage === 'sl' ? 'Službe, ki jih vodi ta vodja' : 'Ministries Led by this Leader'}
+          {/* Unified 6-Category Grid for Ministries & Leadership */}
+          <div className="space-y-3 pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-1 pb-1 border-b border-slate-200">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 font-mono">
+                📅 {currentLanguage === 'sl' ? 'Nedeljske Službe & Področja Vodenja' : 'Sunday Ministries & Leadership'}
               </label>
-              <div className="flex flex-wrap gap-1.5">
-                {ministries.map(m => {
-                  const isLed = selectedLedMinistries.includes(m.id);
-                  return (
-                    <button
-                      type="button"
-                      key={m.id}
-                      onClick={() => {
-                        if (isLed) {
-                          setSelectedLedMinistries(selectedLedMinistries.filter(id => id !== m.id));
-                        } else {
-                          setSelectedLedMinistries([...selectedLedMinistries, m.id]);
-                        }
-                      }}
-                      className={`text-[10px] px-2.5 py-1 rounded-lg transition border font-mono font-bold cursor-pointer ${
-                        isLed
-                          ? 'bg-indigo-700 text-white border-indigo-700 shadow-2xs'
-                          : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
-                      }`}
-                    >
-                      👑 {currentLanguage === 'sl' ? m.nameSl : m.nameEn}
-                    </button>
-                  );
-                })}
-              </div>
+              <span className="text-[11px] text-slate-500 font-mono">
+                {currentLanguage === 'sl' ? 'Izberite službe (kljukica) in vodje (gumb 👑 Vodja)' : 'Select serving (check) and leadership (👑 Leader)'}
+              </span>
             </div>
-          )}
 
-          {/* Preferred Areas of Service */}
-          <div className="space-y-1.5">
-            <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-500 font-mono">
-              {currentLanguage === 'sl' ? 'Prednostne službe (Označi vse)' : 'Preferred Areas of Service'}
-            </label>
-            <div className="flex flex-wrap gap-1.5 border border-gray-200 p-2.5 rounded-xl bg-gray-50/80">
-              {ministries.map((m) => {
-                const isSelected = selectedPrefs.includes(m.id);
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[
+                { key: 'cleaning', labelSl: '🧹 Čistoča & Priprava prostora', labelEn: '🧹 Cleaning & Space Setup' },
+                { key: 'hospitality', labelSl: '☕ Gostoljubje & Kavarna', labelEn: '☕ Hospitality & Café' },
+                { key: 'sermon_prayer', labelSl: '📖 Beseda & Molitev', labelEn: '📖 Word & Prayer' },
+                { key: 'av_tech', labelSl: '🎵 Slavljenje & A/V Tehnika', labelEn: '🎵 Worship & A/V Tech' },
+                { key: 'kids', labelSl: '👶 KCK Otroci / Nedeljska šola', labelEn: '👶 KCK Kids / Sunday School' },
+                { key: 'other', labelSl: '🌐 Drugo & Administracija', labelEn: '🌐 Other & Administration' },
+              ].map(cat => {
+                const catMinistries = ministries.filter(m => m.category === cat.key);
+                if (catMinistries.length === 0) return null;
+
                 return (
-                  <button
-                    type="button"
-                    key={m.id}
-                    onClick={() => togglePref(m.id)}
-                    className={`text-[10px] px-2.5 py-1 rounded-lg transition border font-mono cursor-pointer ${
-                      isSelected
-                        ? 'bg-gray-900 text-white border-gray-900 font-bold shadow-2xs'
-                        : 'bg-white hover:bg-gray-150 text-gray-600 border-gray-200'
-                    }`}
-                  >
-                    {currentLanguage === 'sl' ? m.nameSl : m.nameEn}
-                  </button>
+                  <div key={cat.key} className="p-3 bg-slate-50/90 border border-slate-200 rounded-xl space-y-2">
+                    <div className="text-[11px] font-bold text-slate-800 uppercase tracking-tight font-display pb-1 border-b border-slate-200/80">
+                      {currentLanguage === 'sl' ? cat.labelSl : cat.labelEn}
+                    </div>
+                    <div className="space-y-1.5 pt-0.5">
+                      {catMinistries.map(m => {
+                        const isServing = selectedPrefs.includes(m.id);
+                        const isLed = selectedLedMinistries.includes(m.id);
+
+                        const toggleServing = () => {
+                          if (isServing) {
+                            setSelectedPrefs(selectedPrefs.filter(id => id !== m.id));
+                            setSelectedLedMinistries(selectedLedMinistries.filter(id => id !== m.id));
+                          } else {
+                            setSelectedPrefs([...selectedPrefs, m.id]);
+                          }
+                        };
+
+                        const toggleLeading = (e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          if (isLed) {
+                            setSelectedLedMinistries(selectedLedMinistries.filter(id => id !== m.id));
+                          } else {
+                            setSelectedLedMinistries([...selectedLedMinistries, m.id]);
+                            if (!selectedPrefs.includes(m.id)) {
+                              setSelectedPrefs([...selectedPrefs, m.id]);
+                            }
+                          }
+                        };
+
+                        return (
+                          <div
+                            key={m.id}
+                            className={`flex items-center justify-between p-1.5 sm:p-2 rounded-lg border transition-all select-none ${
+                              isServing
+                                ? isLed
+                                      ? 'bg-amber-50/80 border-amber-300 text-slate-900 shadow-2xs font-semibold'
+                                      : 'bg-indigo-50/70 border-indigo-200 text-indigo-950 font-medium'
+                                : 'bg-white border-slate-200 hover:bg-slate-100/60 text-slate-700'
+                            }`}
+                          >
+                            <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isServing}
+                                onChange={toggleServing}
+                                className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500 shrink-0 cursor-pointer"
+                              />
+                              <span className="text-xs truncate">
+                                {currentLanguage === 'sl' ? m.nameSl : m.nameEn}
+                              </span>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={toggleLeading}
+                              title={
+                                isLed
+                                  ? (currentLanguage === 'sl' ? 'Oseba je vodja te službe (kliknite za preklic)' : 'Leader of this ministry (click to revoke)')
+                                  : (currentLanguage === 'sl' ? 'Označi osebo kot vodjo te službe' : 'Mark as leader of this ministry')
+                              }
+                              className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0 ml-1.5 ${
+                                isLed
+                                  ? 'bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs'
+                                  : 'bg-slate-100 hover:bg-amber-100 text-slate-400 hover:text-amber-900 border border-slate-200'
+                              }`}
+                            >
+                              <Crown className={`w-3 h-3 ${isLed ? 'text-slate-950 fill-slate-950' : 'text-slate-400'}`} />
+                              <span>{isLed ? (currentLanguage === 'sl' ? 'Vodja' : 'Leader') : (currentLanguage === 'sl' ? 'Vodja' : 'Lead')}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -1290,7 +1293,7 @@ export default function PeopleView({
         </form>
       )}
 
-      {/* Subtabs for Active vs Archived Members */}
+      {/* Category Tabs: Active Servants vs Church Members vs Youth & Children vs Visitors */}
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200/80 pb-2">
         {canEdit && (
           <button
@@ -1307,6 +1310,7 @@ export default function PeopleView({
           </button>
         )}
 
+        {/* Tab 1: Active Servants */}
         <button
           type="button"
           onClick={() => setActivePeopleTab('active')}
@@ -1317,70 +1321,62 @@ export default function PeopleView({
           }`}
         >
           <Users className="w-3.5 h-3.5" />
-          <span>{currentLanguage === 'sl' ? 'Aktivni sodelavci' : 'Active Members'}</span>
+          <span>{currentLanguage === 'sl' ? 'Aktivni sodelavci' : 'Active Servants'}</span>
           <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'active' ? 'bg-indigo-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
-            {activePeopleCount}
+            {activeServantsCount}
           </span>
         </button>
 
+        {/* Tab 2: Church Members */}
         <button
           type="button"
-          onClick={() => setActivePeopleTab('archived')}
+          onClick={() => setActivePeopleTab('members')}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activePeopleTab === 'archived'
-              ? 'bg-amber-900 text-amber-50 shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-amber-50 hover:text-amber-900 border border-slate-200'
+            activePeopleTab === 'members'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Archive className="w-3.5 h-3.5 text-amber-600" />
-          <span>{currentLanguage === 'sl' ? 'Arhiv' : 'Archive'}</span>
-          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'archived' ? 'bg-amber-700 text-amber-50' : 'bg-amber-100 text-amber-900 border border-amber-200'}`}>
-            {archivedPeopleCount}
+          <UserCheck className="w-3.5 h-3.5 text-sky-600" />
+          <span>{currentLanguage === 'sl' ? 'Člani cerkve' : 'Members'}</span>
+          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'members' ? 'bg-sky-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+            {churchMembersCount}
           </span>
         </button>
 
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => {
-              setContactsSyncError(null);
-              setContactsSyncSuccessCount(null);
-              setMatchedContacts([]);
-              setShowGoogleContactsModal(true);
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-250 transition shadow-2xs cursor-pointer active:scale-95"
-            title={currentLanguage === 'sl' ? 'Sinhroniziraj ali uvozi telefonske številke in e-pošte iz Google Stikov ali CSV' : 'Sync or import phone numbers & emails from Google Contacts or CSV'}
-          >
-            <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48">
-              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-            </svg>
-            <span>{currentLanguage === 'sl' ? 'Uvozi iz Google Stikov' : 'Sync Google Contacts'}</span>
-          </button>
-        )}
+        {/* Tab 3: Youth & Children */}
+        <button
+          type="button"
+          onClick={() => setActivePeopleTab('youth')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activePeopleTab === 'youth'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
+          <span>{currentLanguage === 'sl' ? 'Mladina & Otroci' : 'Youth & Children'}</span>
+          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'youth' ? 'bg-emerald-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+            {youthAndChildrenCount}
+          </span>
+        </button>
 
-        {onOpenNotificationModal && (
-          <button
-            type="button"
-            onClick={onOpenNotificationModal}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 transition shadow-xs cursor-pointer ml-auto active:scale-95"
-            title={currentLanguage === 'sl' ? 'Odpri nastavitve obveščanja in kanalov (Google Koledar, Chat, E-pošta, WhatsApp)' : 'Open notification center and channels'}
-          >
-            <Bell className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{currentLanguage === 'sl' ? 'Center za obveščanje & Kanali' : 'Notification Center'}</span>
-            {googleToken ? (
-              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-mono font-bold px-1.5 py-0.2 rounded-full border border-emerald-300">
-                ✓ Google
-              </span>
-            ) : (
-              <span className="text-[9px] bg-amber-100 text-amber-800 font-mono font-bold px-1.5 py-0.2 rounded-full border border-amber-300">
-                ! Google
-              </span>
-            )}
-          </button>
-        )}
+        {/* Tab 4: Visitors */}
+        <button
+          type="button"
+          onClick={() => setActivePeopleTab('visitors')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activePeopleTab === 'visitors'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Footprints className="w-3.5 h-3.5 text-amber-600" />
+          <span>{currentLanguage === 'sl' ? 'Obiskovalci' : 'Visitors'}</span>
+          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'visitors' ? 'bg-amber-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+            {visitorsCount}
+          </span>
+        </button>
       </div>
 
       {/* Roster database filter search */}
@@ -1452,9 +1448,25 @@ export default function PeopleView({
                           ? 'bg-rose-50 text-rose-700 border-rose-200'
                           : person.role === 'Leader'
                           ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                          : person.role === 'Servant'
+                          ? 'bg-sky-50 text-sky-700 border-sky-200'
+                          : person.role === 'Visitor'
+                          ? 'bg-teal-50 text-teal-700 border-teal-200'
+                          : person.role === 'Minor'
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
                           : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       }`}>
-                        {person.role === 'Admin' ? '🛠️ Admin' : person.role === 'Leader' ? '📋 Vodja' : '👤 Služabnik'}
+                        {person.role === 'Admin' 
+                          ? '🛠️ Admin' 
+                          : person.role === 'Leader' 
+                          ? '📋 Vodja' 
+                          : person.role === 'Servant' 
+                          ? '🤝 Služabnik' 
+                          : person.role === 'Visitor'
+                          ? '👋 Obiskovalec'
+                          : person.role === 'Minor'
+                          ? '👶 Mladoletni'
+                          : '👤 Član'}
                       </span>
                     </div>
                   </div>
@@ -2100,7 +2112,7 @@ export default function PeopleView({
 
         return (
           <div id="people-database-list" className="space-y-6">
-            {/* Pinned Logged-in User Card Section */}
+            {/* Pinned Logged-in User Card Section (Active tab only) */}
             {myPersonCard && (!searchQuery || myPersonCard.name.toLowerCase().includes(searchQuery.toLowerCase().trim())) && activePeopleTab === 'active' && (
               <div className="space-y-3 pb-3 border-b border-indigo-200/80">
                 <div className="flex items-center gap-2 pb-1">
@@ -2121,44 +2133,133 @@ export default function PeopleView({
               </div>
             )}
 
-            {/* Group 1: Leaders & Administrators (Alphabetical) */}
-            {leadersAndAdmins.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 pb-2 border-b border-indigo-200/80">
-                  <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xs">
-                    👑
+            {/* TAB 1: ACTIVE SERVANTS */}
+            {activePeopleTab === 'active' && (
+              <>
+                {/* Group 1: Leaders & Administrators (Alphabetical) */}
+                {leadersAndAdmins.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-indigo-200/80">
+                      <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xs">
+                        👑
+                      </div>
+                      <h3 className="font-display font-bold text-xs sm:text-sm text-indigo-950 uppercase tracking-wider">
+                        {currentLanguage === 'sl' ? 'Vodstvo in Administratorji' : 'Leaders & Administrators'}
+                      </h3>
+                      <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-full border border-indigo-200">
+                        {leadersAndAdmins.length}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {leadersAndAdmins.map((p, idx) => renderPersonCard(p, false, idx))}
+                    </div>
                   </div>
-                  <h3 className="font-display font-bold text-xs sm:text-sm text-indigo-950 uppercase tracking-wider">
-                    {currentLanguage === 'sl' ? 'Vodstvo in Administratorji' : 'Leaders & Administrators'}
-                  </h3>
-                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-full border border-indigo-200">
-                    {leadersAndAdmins.length}
+                )}
+
+                {/* Group 2: Servants & Volunteers (Alphabetical) */}
+                {servants.length > 0 && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center gap-2 pb-2 border-b border-emerald-200/80">
+                      <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
+                        👤
+                      </div>
+                      <h3 className="font-display font-bold text-xs sm:text-sm text-emerald-950 uppercase tracking-wider">
+                        {currentLanguage === 'sl' ? 'Služabniki in Sodelavci' : 'Servants & Team Members'}
+                      </h3>
+                      <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
+                        {servants.length}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                      {servants.map((p, idx) => renderPersonCard(p, false, idx))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* TAB 2: CHURCH MEMBERS */}
+            {activePeopleTab === 'members' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-sky-200/80">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-sky-100 text-sky-700 font-bold flex items-center justify-center text-xs">
+                      🏛️
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-xs sm:text-sm text-sky-950 uppercase tracking-wider">
+                        {currentLanguage === 'sl' ? 'Člani Cerkvene Skupnosti' : 'Church Community Members'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-sans">
+                        {currentLanguage === 'sl' ? 'Polnoletni člani cerkve KC Kalvarija (kontakti, družinske povezave ter informacije)' : 'Adult congregation members (contacts and family links)'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-sky-100 text-sky-800 rounded-full border border-sky-200">
+                    {filteredPeople.length}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  {leadersAndAdmins.map((p, idx) => renderPersonCard(p, false, idx))}
+                  {filteredPeople.map((p, idx) => renderPersonCard(p, false, idx))}
                 </div>
               </div>
             )}
 
-            {/* Group 2: Servants & Volunteers (Alphabetical) */}
-            {servants.length > 0 && (
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center gap-2 pb-2 border-b border-emerald-200/80">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
-                    👤
+            {/* TAB 3: YOUTH & CHILDREN */}
+            {activePeopleTab === 'youth' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-emerald-200/80">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
+                      👶
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-xs sm:text-sm text-emerald-950 uppercase tracking-wider">
+                        {currentLanguage === 'sl' ? 'Mladina in Otroci' : 'Youth & Children'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-sans">
+                        {currentLanguage === 'sl' ? 'Otroci in mladostniki cerkve KC Kalvarija (Nedeljska šola & družinske povezave)' : 'Kids and youth of KC Kalvarija (Sunday school & family links)'}
+                      </p>
+                    </div>
                   </div>
-                  <h3 className="font-display font-bold text-xs sm:text-sm text-emerald-950 uppercase tracking-wider">
-                    {currentLanguage === 'sl' ? 'Služabniki in Sodelavci' : 'Servants & Team Members'}
-                  </h3>
                   <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
-                    {servants.length}
+                    {filteredPeople.length}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  {servants.map((p, idx) => renderPersonCard(p, false, idx))}
+                  {filteredPeople.map((p, idx) => renderPersonCard(p, false, idx))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: VISITORS */}
+            {activePeopleTab === 'visitors' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-amber-200/80">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-xs">
+                      🌿
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-xs sm:text-sm text-amber-950 uppercase tracking-wider">
+                        {currentLanguage === 'sl' ? 'Obiskovalci & Neaktivni' : 'Visitors & Inactive'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-sans">
+                        {currentLanguage === 'sl' ? 'Obiskovalci, občasni gostje ter tisti, ki so trenutno neaktivni ali so izstopili' : 'Visitors, guests, and stepped-out or inactive profiles'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-amber-100 text-amber-900 rounded-full border border-amber-200">
+                    {filteredPeople.length}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {filteredPeople.map((p, idx) => renderPersonCard(p, false, idx))}
                 </div>
               </div>
             )}
@@ -2168,10 +2269,10 @@ export default function PeopleView({
               <div className="py-12 text-center bg-white rounded-2xl border border-gray-200 p-6 space-y-2">
                 <Search className="w-8 h-8 text-gray-300 mx-auto" />
                 <p className="text-sm font-semibold text-gray-700">
-                  {currentLanguage === 'sl' ? 'Ni najdenih sodelavcev' : 'No volunteers found'}
+                  {currentLanguage === 'sl' ? 'Ni najdenih oseb v tej kategoriji' : 'No people found in this category'}
                 </p>
                 <p className="text-xs text-gray-400 font-mono">
-                  {currentLanguage === 'sl' ? 'Poskusite spremeniti iskalni niz.' : 'Try adjusting your search query.'}
+                  {currentLanguage === 'sl' ? 'Poskusite spremeniti iskalni niz ali izberite drug zavihek.' : 'Try adjusting your search query or pick another tab.'}
                 </p>
               </div>
             )}
@@ -2186,7 +2287,7 @@ export default function PeopleView({
         >
           <form 
             onSubmit={handleSaveEditPerson}
-            className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] sm:max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-gray-200 animate-scale-up"
+            className="bg-white rounded-2xl max-w-4xl w-full max-h-[88vh] sm:max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-gray-200 animate-scale-up"
           >
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-gray-150 bg-slate-50/80 flex items-center justify-between shrink-0">
@@ -2205,7 +2306,7 @@ export default function PeopleView({
               </div>
               <button
                 type="button"
-                onClick={() => setEditingPerson(null)}
+                onClick={handleCancelEditPerson}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -2492,8 +2593,10 @@ export default function PeopleView({
                 >
                   <option value="Admin">🛠️ Admin (Poln nadzor)</option>
                   <option value="Leader">📋 Leader / Vodja službe (Urejanje svojih služb)</option>
-                  <option value="Servant">👤 Servant / Služabnik (Prijava sebe in družine)</option>
-                  <option value="Viewer">👁️ Viewer / Gledalec (Le branje)</option>
+                  <option value="Servant">🤝 Servant / Služabnik (Služenje v ekipi)</option>
+                  <option value="Viewer">👤 Member / Član (Član cerkve)</option>
+                  <option value="Visitor">👋 Visitor / Obiskovalec (Občasen obisk / Gost)</option>
+                  <option value="Minor">👶 Minor / Mladoletni član</option>
                 </select>
               </div>
 
@@ -2603,55 +2706,105 @@ export default function PeopleView({
                 </div>
               </div>
 
-              {/* If Leader or Admin role, select led ministries */}
-              {(editRole === 'Leader' || editRole === 'Admin') && (
-                <div className="space-y-1.5 p-3 bg-indigo-50/50 border border-indigo-150 rounded-xl">
-                  <label className="block text-[10px] font-bold uppercase tracking-wide text-indigo-900 font-mono">
-                    👑 {currentLanguage === 'sl' ? 'Službe, ki jih vodi ta vodja' : 'Ministries Led by this Leader'}
+              {/* Unified 6-Category Grid for Ministries & Leadership */}
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-1 pb-1 border-b border-slate-200">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 font-mono">
+                    📅 {currentLanguage === 'sl' ? 'Nedeljske Službe & Področja Vodenja' : 'Sunday Ministries & Leadership'}
                   </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {ministries.map(m => {
-                      const isLed = editLedMinistries.includes(m.id);
-                      return (
-                        <button
-                          type="button"
-                          key={m.id}
-                          onClick={() => {
-                            if (isLed) setEditLedMinistries(editLedMinistries.filter(id => id !== m.id));
-                            else setEditLedMinistries([...editLedMinistries, m.id]);
-                          }}
-                          className={`text-[10px] px-2.5 py-1 rounded transition border font-mono cursor-pointer ${
-                            isLed ? 'bg-indigo-700 text-white border-indigo-800 font-bold' : 'bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-100'
-                          }`}
-                        >
-                          {isLed ? '✔ ' : ''}{currentLanguage === 'sl' ? m.nameSl : m.nameEn}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {currentLanguage === 'sl' ? 'Izberite službe (kljukica) in vodje (gumb 👑 Vodja)' : 'Select serving (check) and leadership (👑 Leader)'}
+                  </span>
                 </div>
-              )}
 
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-500 font-mono">
-                  {currentLanguage === 'sl' ? 'Prednostne službe' : 'Preferred Areas of Service'}
-                </label>
-                <div className="flex flex-wrap gap-1.5 border border-gray-200 p-2.5 rounded-xl bg-gray-50/80">
-                  {ministries.map((m) => {
-                    const isSelected = editPrefs.includes(m.id);
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {[
+                    { key: 'cleaning', labelSl: '🧹 Čistoča & Priprava prostora', labelEn: '🧹 Cleaning & Space Setup' },
+                    { key: 'hospitality', labelSl: '☕ Gostoljubje & Kavarna', labelEn: '☕ Hospitality & Café' },
+                    { key: 'sermon_prayer', labelSl: '📖 Beseda & Molitev', labelEn: '📖 Word & Prayer' },
+                    { key: 'av_tech', labelSl: '🎵 Slavljenje & A/V Tehnika', labelEn: '🎵 Worship & A/V Tech' },
+                    { key: 'kids', labelSl: '👶 KCK Otroci / Nedeljska šola', labelEn: '👶 KCK Kids / Sunday School' },
+                    { key: 'other', labelSl: '🌐 Drugo & Administracija', labelEn: '🌐 Other & Administration' },
+                  ].map(cat => {
+                    const catMinistries = ministries.filter(m => m.category === cat.key);
+                    if (catMinistries.length === 0) return null;
+
                     return (
-                      <button
-                        type="button"
-                        key={m.id}
-                        onClick={() => toggleEditPref(m.id)}
-                        className={`text-[10px] px-2.5 py-1 rounded transition border font-mono cursor-pointer ${
-                          isSelected
-                            ? 'bg-indigo-950 text-white border-indigo-950 font-bold'
-                            : 'bg-white hover:bg-gray-150 text-gray-700 border-gray-200'
-                        }`}
-                      >
-                        ★ {currentLanguage === 'sl' ? m.nameSl : m.nameEn}
-                      </button>
+                      <div key={cat.key} className="p-3 bg-slate-50/90 border border-slate-200 rounded-xl space-y-2">
+                        <div className="text-[11px] font-bold text-slate-800 uppercase tracking-tight font-display pb-1 border-b border-slate-200/80">
+                          {currentLanguage === 'sl' ? cat.labelSl : cat.labelEn}
+                        </div>
+                        <div className="space-y-1.5 pt-0.5">
+                          {catMinistries.map(m => {
+                            const isServing = editPrefs.includes(m.id);
+                            const isLed = editLedMinistries.includes(m.id);
+
+                            const toggleServing = () => {
+                              if (isServing) {
+                                setEditPrefs(editPrefs.filter(id => id !== m.id));
+                                setEditLedMinistries(editLedMinistries.filter(id => id !== m.id));
+                              } else {
+                                setEditPrefs([...editPrefs, m.id]);
+                              }
+                            };
+
+                            const toggleLeading = (e: React.MouseEvent) => {
+                              e.stopPropagation();
+                              if (isLed) {
+                                setEditLedMinistries(editLedMinistries.filter(id => id !== m.id));
+                              } else {
+                                setEditLedMinistries([...editLedMinistries, m.id]);
+                                if (!editPrefs.includes(m.id)) {
+                                  setEditPrefs([...editPrefs, m.id]);
+                                }
+                              }
+                            };
+
+                            return (
+                              <div
+                                key={m.id}
+                                className={`flex items-center justify-between p-1.5 sm:p-2 rounded-lg border transition-all select-none ${
+                                  isServing
+                                    ? isLed
+                                      ? 'bg-amber-50/80 border-amber-300 text-slate-900 shadow-2xs font-semibold'
+                                      : 'bg-indigo-50/70 border-indigo-200 text-indigo-950 font-medium'
+                                    : 'bg-white border-slate-200 hover:bg-slate-100/60 text-slate-700'
+                                }`}
+                              >
+                                <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={isServing}
+                                    onChange={toggleServing}
+                                    className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500 shrink-0 cursor-pointer"
+                                  />
+                                  <span className="text-xs truncate">
+                                    {currentLanguage === 'sl' ? m.nameSl : m.nameEn}
+                                  </span>
+                                </label>
+
+                                <button
+                                  type="button"
+                                  onClick={toggleLeading}
+                                  title={
+                                    isLed
+                                      ? (currentLanguage === 'sl' ? 'Oseba je vodja te službe (kliknite za preklic)' : 'Leader of this ministry (click to revoke)')
+                                      : (currentLanguage === 'sl' ? 'Označi osebo kot vodjo te službe' : 'Mark as leader of this ministry')
+                                  }
+                                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0 ml-1.5 ${
+                                    isLed
+                                      ? 'bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs'
+                                      : 'bg-slate-100 hover:bg-amber-100 text-slate-400 hover:text-amber-900 border border-slate-200'
+                                  }`}
+                                >
+                                  <Crown className={`w-3 h-3 ${isLed ? 'text-slate-950 fill-slate-950' : 'text-slate-400'}`} />
+                                  <span>{isLed ? (currentLanguage === 'sl' ? 'Vodja' : 'Leader') : (currentLanguage === 'sl' ? 'Vodja' : 'Lead')}</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -2662,7 +2815,7 @@ export default function PeopleView({
             <div className="p-4 border-t border-gray-150 bg-gray-50 flex items-center justify-end gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => setEditingPerson(null)}
+                onClick={handleCancelEditPerson}
                 className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition cursor-pointer"
               >
                 {currentLanguage === 'sl' ? 'Prekliči' : 'Cancel'}
@@ -2973,277 +3126,6 @@ export default function PeopleView({
               >
                 {currentLanguage === 'sl' ? 'Zapri' : 'Close'}
               </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Google Contacts Sync & CSV Import Modal */}
-      {showGoogleContactsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-scale-up">
-            
-            {/* Modal Header */}
-            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
-                  <svg className="w-5 h-5 shrink-0" viewBox="0 0 48 48">
-                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="font-display font-bold text-base text-white">
-                    {currentLanguage === 'sl' ? 'Uvoz kontaktov iz Google Računa' : 'Import Contacts from Google'}
-                  </h3>
-                  <p className="text-xs text-indigo-200">
-                    {currentLanguage === 'sl'
-                      ? 'Samodejno poišči in posodobi telefonske številke ter e-pošte za sodelavce v bazi'
-                      : 'Automatically match and update volunteer phone numbers and emails in database'}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowGoogleContactsModal(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs font-sans text-slate-700">
-              
-              {/* Option Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Option 1: Direct API Sync */}
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 flex flex-col justify-between">
-                  <div className="space-y-1">
-                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
-                      <span>1️⃣ Neposredno branje (API)</span>
-                    </span>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      {currentLanguage === 'sl'
-                        ? 'Preberi stike neposredno iz vašega povezanega Google računa.'
-                        : 'Read contacts directly from your connected Google account.'}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleSyncWithGoogleApi}
-                    disabled={contactsSyncLoading}
-                    className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                  >
-                    {contactsSyncLoading ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Users className="w-3.5 h-3.5" />
-                    )}
-                    <span>{currentLanguage === 'sl' ? 'Preberi Google Stike' : 'Fetch Google Contacts'}</span>
-                  </button>
-                </div>
-
-                {/* Option 2: CSV File Drop */}
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 flex flex-col justify-between">
-                  <div className="space-y-1">
-                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
-                      <span>2️⃣ Naloži Google CSV datoteko</span>
-                    </span>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      {currentLanguage === 'sl' ? (
-                        <>
-                          Pojdite na{' '}
-                          <a
-                            href="https://contacts.google.com"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-indigo-600 underline font-semibold"
-                          >
-                            contacts.google.com
-                          </a>
-                          {' '}→ Izvozi → Google CSV in jo spustite tukaj.
-                        </>
-                      ) : (
-                        <>
-                          Visit{' '}
-                          <a
-                            href="https://contacts.google.com"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-indigo-600 underline font-semibold"
-                          >
-                            contacts.google.com
-                          </a>
-                          {' '}→ Export → Google CSV and drop it here.
-                        </>
-                      )}
-                    </p>
-                  </div>
-
-                  <label className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs rounded-lg transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 text-center">
-                    <Copy className="w-3.5 h-3.5 text-slate-600" />
-                    <span>{currentLanguage === 'sl' ? 'Izberi .CSV datoteko' : 'Select .CSV file'}</span>
-                    <input
-                      type="file"
-                      accept=".csv"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImportContactsCSV(file);
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Error Notice */}
-              {contactsSyncError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <span className="font-bold block">{contactsSyncError}</span>
-                    {contactsSyncError.includes('Google') && (
-                      <p className="text-[11px] text-rose-700">
-                        {currentLanguage === 'sl'
-                          ? 'Priporočilo: Odprite contacts.google.com, kliknite Izvozi (Google CSV) in naložite datoteko z zgornjim gumbom (Opcija 2).'
-                          : 'Tip: Open contacts.google.com, click Export (Google CSV), and upload the file with Option 2.'}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Success Notice */}
-              {contactsSyncSuccessCount !== null && (
-                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2.5">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span className="font-bold">
-                    {currentLanguage === 'sl'
-                      ? `🎉 Uspešno posodobljenih ${contactsSyncSuccessCount} sodelavcev v bazi!`
-                      : `🎉 Successfully updated ${contactsSyncSuccessCount} volunteers in database!`}
-                  </span>
-                </div>
-              )}
-
-              {/* Preview & Match Table */}
-              {matchedContacts.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-200">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-800 text-xs">
-                      {currentLanguage === 'sl' ? 'Najdena ujemanja v stikih:' : 'Matched Contacts Preview:'} ({matchedContacts.length})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const allSelected = matchedContacts.every(m => m.selected);
-                        setMatchedContacts(matchedContacts.map(m => ({ ...m, selected: !allSelected })));
-                      }}
-                      className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
-                    >
-                      {matchedContacts.every(m => m.selected)
-                        ? (currentLanguage === 'sl' ? 'Odznači vse' : 'Deselect all')
-                        : (currentLanguage === 'sl' ? 'Izberi vse' : 'Select all')}
-                    </button>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
-                    <table className="w-full text-[11px] text-left">
-                      <thead className="bg-slate-100 text-slate-600 font-bold uppercase border-b border-slate-200 sticky top-0">
-                        <tr>
-                          <th className="p-2 w-8 text-center">✓</th>
-                          <th className="p-2">Sodelavec v aplikaciji</th>
-                          <th className="p-2">Google Stik</th>
-                          <th className="p-2">Telefon</th>
-                          <th className="p-2">E-pošta</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {matchedContacts.map((match, idx) => (
-                          <tr
-                            key={match.person.id || idx}
-                            className={`hover:bg-slate-50 transition ${match.selected ? 'bg-indigo-50/40' : ''}`}
-                          >
-                            <td className="p-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={match.selected}
-                                onChange={(e) => {
-                                  const updated = [...matchedContacts];
-                                  updated[idx].selected = e.target.checked;
-                                  setMatchedContacts(updated);
-                                }}
-                                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                              />
-                            </td>
-                            <td className="p-2 font-bold text-slate-900">
-                              {match.person.name}
-                            </td>
-                            <td className="p-2 text-slate-600 font-mono text-[10px]">
-                              {match.matchedName}
-                            </td>
-                            <td className="p-2 font-mono text-[10px] text-slate-700">
-                              {match.suggestedPhone || <span className="text-slate-400">/</span>}
-                            </td>
-                            <td className="p-2 font-mono text-[10px] text-slate-700">
-                              {match.suggestedEmail || <span className="text-slate-400">/</span>}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
-              <span className="text-[11px] text-slate-500 font-mono">
-                {matchedContacts.filter(m => m.selected).length} {currentLanguage === 'sl' ? 'izbranih za posodobitev' : 'selected for update'}
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleRestoreAllPeople}
-                  className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
-                  title="Povrni vseh 42 sodelavcev na privzeto stanje z vsemi vlogami in podatki"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                  <span>{currentLanguage === 'sl' ? 'Povrni vseh 42 sodelavcev' : 'Restore All 42 Profiles'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowGoogleContactsModal(false)}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl transition cursor-pointer"
-                >
-                  {currentLanguage === 'sl' ? 'Zapri' : 'Close'}
-                </button>
-
-                {matchedContacts.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleApplyMatchedContacts}
-                    disabled={matchedContacts.filter(m => m.selected).length === 0}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>
-                      {currentLanguage === 'sl'
-                        ? `Posodobi (${matchedContacts.filter(m => m.selected).length}) sodelavcev v bazi`
-                        : `Update (${matchedContacts.filter(m => m.selected).length}) in database`}
-                    </span>
-                  </button>
-                )}
-              </div>
             </div>
 
           </div>

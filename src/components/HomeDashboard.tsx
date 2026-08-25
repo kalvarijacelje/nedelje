@@ -84,8 +84,9 @@ export default function HomeDashboard({
     return new Date(year, month, day);
   };
 
-  // Target start date for active Academic Year 2026/2027 services (Aug 23, 2026 onwards)
-  const activeYearCutoff = new Date(2026, 7, 23); // Aug 23, 2026
+  // Today at midnight for calculating upcoming dates
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   // Sort sundays chronologically
   const sortedSundays = [...sundays].sort((a, b) => {
@@ -218,8 +219,8 @@ export default function HomeDashboard({
     }
   }, [toast]);
 
-  // Find the next Sunday on or after activeYearCutoff, or default to the last Sunday
-  const nextSunday = sortedSundays.find(s => parseSheetDate(s.date) >= activeYearCutoff) || sortedSundays[sortedSundays.length - 1];
+  // Find the next upcoming Sunday (today or in the future), or fallback to the latest Sunday
+  const nextSunday = sortedSundays.find(s => parseSheetDate(s.date).getTime() >= today.getTime()) || sortedSundays[sortedSundays.length - 1];
 
   // If there's no sunday computed, return safe state
   if (!nextSunday) {

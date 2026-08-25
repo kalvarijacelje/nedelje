@@ -512,15 +512,16 @@ export default function MinistryView({
     { id: 'other', labelSl: 'Ostale zadolžitve', labelEn: 'Other services' },
   ];
 
-  // Target start date for active Academic Year 2026/2027 services (Aug 23, 2026 onwards)
-  const activeYearCutoff = new Date(2026, 7, 23); // Aug 23, 2026
+  // Upcoming sundays from today onwards
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  const sortedAcademicSundays = [...sundays]
-    .filter(s => parseSheetDate(s.date) >= activeYearCutoff)
+  const sortedUpcomingSundays = [...sundays]
+    .filter(s => parseSheetDate(s.date).getTime() >= today.getTime())
     .sort((a, b) => parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime());
 
-  const allUpcomingSundays = sortedAcademicSundays.length > 0
-    ? sortedAcademicSundays
+  const allUpcomingSundays = sortedUpcomingSundays.length > 0
+    ? sortedUpcomingSundays
     : [...sundays].sort((a, b) => parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime());
 
   const upcomingSundays = allUpcomingSundays.slice(0, 5);

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type UserRole = 'Admin' | 'Leader' | 'Servant' | 'Viewer';
+export type UserRole = 'Admin' | 'Leader' | 'Servant' | 'Viewer' | 'Visitor' | 'Minor';
 
 export const SUPERADMIN_EMAIL = 'ales.lajlar@gmail.com';
 
@@ -226,13 +226,18 @@ export interface VisitorConnection {
   createdAt: string;
 }
 
+export type PersonCategory = 'active' | 'members' | 'youth' | 'visitors';
+
 export interface Person {
   id: string; // Permanent, immutable unique entity identifier
   name: string;
   full_name?: string;
   avatarUrl?: string;
   preferredMinistries: string[]; // ministryIds
-  role?: UserRole; // 'Admin' | 'Leader' | 'Servant'
+  role?: UserRole; // 'Admin' | 'Leader' | 'Servant' | 'Viewer' | 'Visitor' | 'Minor'
+  memberType?: 'adult' | 'minor' | 'youth' | 'visitor' | 'member';
+  birthDate?: string;
+  isVisitor?: boolean;
   ledMinistries?: string[]; // ministryIds managed by this leader/admin (if role === 'Leader' || 'Admin')
   familyMembers?: string[]; // names of linked spouse / adult children / family members
   phone?: string;

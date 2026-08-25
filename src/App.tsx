@@ -32,11 +32,13 @@ import InspectionChecklistModal from './components/InspectionChecklistModal';
 import ServiceRundownModal from './components/ServiceRundownModal';
 import Statistika from './pages/Statistika';
 import ConfirmPage from './pages/ConfirmPage';
+import { PwaInstallBanner } from './components/PwaInstallBanner';
 
 import { INITIAL_SUNDAY_SCHOOL_LESSONS, INITIAL_SUNDAY_SCHOOL_SUPPLIES } from './data/sundaySchoolData';
 import { INITIAL_VISITOR_CONNECTIONS } from './data/visitorData';
 
 import KcKalvarijaLogo from './components/KcKalvarijaLogo';
+import { EcosystemNavbar } from './components/EcosystemNavbar';
 import { NotificationQueueProvider } from './context/NotificationQueueContext';
 import NotificationQueueBar from './components/NotificationQueueBar';
 
@@ -279,12 +281,25 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
   return result;
 };
 
+const OBSOLETE_DUMMY_PEOPLE_IDS = new Set([
+  'p-erik', 'p-daniel', 'p-lajlar', 'p-ravnak', 'p-matej', 'p-pratneker', 
+  'p-cizic', 'p-vuleta', 'p-sanja_m', 'p-sarkan', 'p-georgiev', 'p-tonja', 
+  'p-barbara', 'p-kreiner', 'p-breznikar', 'p-music', 'p-stefancic',
+  'p-ales', 'p-stella', 'p-damijan', 'p-dejan', 'p-urh', 'p-whitney',
+  'p-andrea', 'p-doroteja', 'p-ninac', 'p-franci', 'p-nastja', 'p-katja',
+  'p-bojan', 'p-kenzley', 'p-vesna', 'p-pia', 'p-denis', 'p-huntley',
+  'p-jure', 'p-darko', 'p-janez', 'p-zoja', 'p-lorens', 'p-mateja',
+  'p-tina', 'p-karla', 'p-barbi', 'p-luka'
+]);
+
 const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] => {
   const deletedKeys = new Set(getDeletedPeopleKeys().map(k => k.toLowerCase().trim()));
 
-  const isDeleted = (p: Person): boolean => {
-    if (!p || !p.id) return false;
+  const isInvalidOrDeleted = (p: Person): boolean => {
+    if (!p || !p.id) return true;
     const idKey = p.id.toLowerCase().trim();
+    if (OBSOLETE_DUMMY_PEOPLE_IDS.has(idKey)) return true;
+    if (['Čižič', 'Lajlar', 'Pratneker', 'Ravnak', 'Vuleta', 'Šarkan', 'Georgiev', 'Kreiner', 'Breznikar', 'Mušič', 'Štefančič'].includes((p.name || '').trim())) return true;
     return deletedKeys.has(idKey) || (p.email ? deletedKeys.has('email:' + p.email.toLowerCase().trim()) : false);
   };
 
@@ -292,14 +307,14 @@ const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] =>
 
   // 1. Always seed with all INITIAL_PEOPLE defaults so roster members are never dropped
   INITIAL_PEOPLE.forEach(p => {
-    if (p && p.id && !isDeleted(p)) {
+    if (p && p.id && !isInvalidOrDeleted(p)) {
       map.set(p.id, ensurePersonId(p));
     }
   });
 
   // 2. Overlay local memory/saved records
   (base || []).forEach(p => {
-    if (p && p.id && !isDeleted(p)) {
+    if (p && p.id && !isInvalidOrDeleted(p)) {
       const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase() === p.name.toLowerCase()) : null);
       const targetId = existing?.id || p.id;
       map.set(targetId, { ...(existing || {}), ...ensurePersonId(p), id: targetId });
@@ -308,7 +323,7 @@ const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] =>
 
   // 3. Overlay fetched remote database records
   (fetched || []).forEach(p => {
-    if (p && p.id && !isDeleted(p)) {
+    if (p && p.id && !isInvalidOrDeleted(p)) {
       const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase() === p.name.toLowerCase()) : null);
       const targetId = existing?.id || p.id;
       map.set(targetId, { ...(existing || {}), ...ensurePersonId(p), id: targetId });
@@ -1619,9 +1634,9 @@ export default function App() {
     }
   };
 
-  // Generate all Sundays for Academic Year 2026/2027 (Aug 23, 2026 -> Aug 29, 2027)
+  // Generate all Sundays for Academic Year 2026/2027 (Sep 6, 2026 -> Aug 29, 2027)
   const handleGenerateAcademicYear = async () => {
-    const startDate = new Date(2026, 7, 23); // Aug 23, 2026
+    const startDate = new Date(2026, 8, 6); // Sep 6, 2026
     const endDate = new Date(2027, 7, 29); // Aug 29, 2027
 
     const existingDates = new Set(sundays.map(s => s.date.replace(/\s+/g, '')));
@@ -1804,403 +1819,131 @@ export default function App() {
 
   return (
     <NotificationQueueProvider>
-      <div className="flex flex-col min-h-screen bg-[#F3F4F6] font-sans selection:bg-indigo-100 pb-20 max-w-full overflow-x-hidden">
+      <div className="flex flex-col min-h-screen bg-[#FAF7F5] font-sans selection:bg-[#93032E] selection:text-white pb-20 max-w-full overflow-x-hidden">
       
-      {/* Top Header Section */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-xs max-w-full">
-        <div className="py-3.5 max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-1.5 overflow-visible">
-          
-          <div className="flex items-center gap-2 sm:gap-3.5 shrink-0 max-w-full">
-            {/* Logo & Title */}
-            <div className="flex items-center gap-2 cursor-pointer shrink-0" onClick={() => { setSelectedSundayId(null); setActiveTab('home'); }}>
-              <KcKalvarijaLogo className="w-8 h-8 shrink-0" />
-              <div className="hidden xs:block sm:block">
-                <span className="text-sm font-semibold tracking-tight text-slate-900 block font-display leading-tight">
-                  {translations.title}
-                </span>
-              </div>
-            </div>
+      {/* Universal 2-Tier Ecosystem Navbar */}
+      <EcosystemNavbar
+        currentApp="nedelje"
+        user={authUser ? {
+          name: isAlesLoggedIn ? 'Aleš' : (userDbProfile?.displayName || userDbProfile?.personName || authUser.email?.split('@')[0] || 'Uporabnik'),
+          email: authUser.email || '',
+          role: isAlesLoggedIn ? 'Superadmin' : activeRole,
+        } : null}
+        onLogin={handleGoogleLogin}
+        onLogout={handleSignOut}
+        currentLang={currentLanguage}
+        onLanguageChange={(l) => setCurrentLanguage(l)}
+        extraNavItems={
+          <>
+            <button
+              onClick={() => { setSelectedSundayId(null); setActiveTab('home'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                activeTab === 'home'
+                  ? 'bg-[#93032E] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+              }`}
+              title={currentLanguage === 'sl' ? 'Domov' : 'Home'}
+            >
+              <Home className="w-3.5 h-3.5" />
+              <span>{currentLanguage === 'sl' ? 'Domov' : 'Home'}</span>
+            </button>
 
-            {/* Mobile Menu Button (3 lines icon only) */}
-            <div className="relative md:hidden shrink-0">
-              <button
-                onClick={() => setIsMobileMenuOpen(prev => !prev)}
-                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl transition cursor-pointer select-none flex items-center justify-center border border-slate-200/80"
-                title={currentLanguage === 'sl' ? 'Meni' : 'Menu'}
-              >
-                <Menu className="w-4 h-4 text-indigo-600" />
-              </button>
+            <button
+              onClick={() => { setSelectedSundayId(null); setActiveTab('sundays'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                activeTab === 'sundays'
+                  ? 'bg-[#93032E] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+              }`}
+              title={currentLanguage === 'sl' ? 'Urnik' : 'Roster'}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{currentLanguage === 'sl' ? 'Urnik' : 'Roster'}</span>
+            </button>
 
-              {isMobileMenuOpen && (
-                <>
-                  <div 
-                    className="fixed inset-0 z-40" 
-                    onClick={() => setIsMobileMenuOpen(false)} 
-                  />
-                  <div className="absolute left-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-scale-up space-y-0.5 font-sans">
-                    <button
-                      onClick={() => { setSelectedSundayId(null); setActiveTab('home'); setIsMobileMenuOpen(false); }}
-                      className={`w-full px-3.5 py-2 text-xs flex items-center gap-2.5 transition text-left cursor-pointer ${
-                        activeTab === 'home' 
-                          ? 'bg-indigo-50 text-indigo-700 font-bold border-l-4 border-indigo-600' 
-                          : 'text-slate-700 hover:bg-indigo-50/60 hover:text-indigo-600 font-medium'
-                      }`}
-                    >
-                      <Home className="w-4 h-4 text-indigo-600 shrink-0" />
-                      <span>{currentLanguage === 'sl' ? 'Domov' : 'Home'}</span>
-                    </button>
+            <button
+              onClick={() => { setSelectedSundayId(null); setActiveTab('sunday_school'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                activeTab === 'sunday_school'
+                  ? 'bg-[#93032E] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+              }`}
+              title={currentLanguage === 'sl' ? 'Šola' : 'Kids'}
+            >
+              <GraduationCap className="w-3.5 h-3.5" />
+              <span>{currentLanguage === 'sl' ? 'Šola' : 'Kids'}</span>
+            </button>
 
-                    <button
-                      onClick={() => { setSelectedSundayId(null); setActiveTab('sundays'); setIsMobileMenuOpen(false); }}
-                      className={`w-full px-3.5 py-2 text-xs flex items-center gap-2.5 transition text-left cursor-pointer ${
-                        activeTab === 'sundays' 
-                          ? 'bg-sky-50 text-sky-700 font-bold border-l-4 border-sky-600' 
-                          : 'text-slate-700 hover:bg-sky-50/60 hover:text-sky-600 font-medium'
-                      }`}
-                    >
-                      <Calendar className="w-4 h-4 text-sky-600 shrink-0" />
-                      <span>{currentLanguage === 'sl' ? 'Urnik' : 'Roster'}</span>
-                    </button>
+            <button
+              onClick={() => { setSelectedSundayId(null); setActiveTab('worship'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                activeTab === 'worship'
+                  ? 'bg-[#93032E] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+              }`}
+              title={currentLanguage === 'sl' ? 'Slavilna' : 'Music'}
+            >
+              <Music className="w-3.5 h-3.5" />
+              <span>{currentLanguage === 'sl' ? 'Slavilna' : 'Music'}</span>
+            </button>
 
-                    <button
-                      onClick={() => { setSelectedSundayId(null); setActiveTab('sunday_school'); setIsMobileMenuOpen(false); }}
-                      className={`w-full px-3.5 py-2 text-xs flex items-center gap-2.5 transition text-left cursor-pointer ${
-                        activeTab === 'sunday_school' 
-                          ? 'bg-amber-50 text-amber-900 font-bold border-l-4 border-amber-500' 
-                          : 'text-slate-700 hover:bg-amber-50/60 hover:text-amber-700 font-medium'
-                      }`}
-                    >
-                      <GraduationCap className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>{currentLanguage === 'sl' ? 'Šola' : 'Kids'}</span>
-                    </button>
+            <button
+              onClick={() => { setSelectedSundayId(null); setActiveTab('ministries'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                activeTab === 'ministries'
+                  ? 'bg-[#93032E] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+              }`}
+              title={currentLanguage === 'sl' ? 'Službe' : 'Teams'}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{currentLanguage === 'sl' ? 'Službe' : 'Teams'}</span>
+            </button>
 
-                    <button
-                      onClick={() => { setSelectedSundayId(null); setActiveTab('worship'); setIsMobileMenuOpen(false); }}
-                      className={`w-full px-3.5 py-2 text-xs flex items-center gap-2.5 transition text-left cursor-pointer ${
-                        activeTab === 'worship' 
-                          ? 'bg-purple-50 text-purple-700 font-bold border-l-4 border-purple-600' 
-                          : 'text-slate-700 hover:bg-purple-50/60 hover:text-purple-600 font-medium'
-                      }`}
-                    >
-                      <Music className="w-4 h-4 text-purple-600 shrink-0" />
-                      <span>{currentLanguage === 'sl' ? 'Slavilna' : 'Music'}</span>
-                    </button>
-
-                    <button
-                      onClick={() => { setSelectedSundayId(null); setActiveTab('ministries'); setIsMobileMenuOpen(false); }}
-                      className={`w-full px-3.5 py-2 text-xs flex items-center gap-2.5 transition text-left cursor-pointer ${
-                        activeTab === 'ministries' 
-                          ? 'bg-emerald-50 text-emerald-700 font-bold border-l-4 border-emerald-600' 
-                          : 'text-slate-700 hover:bg-emerald-50/60 hover:text-emerald-600 font-medium'
-                      }`}
-                    >
-                      <Layers className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>{currentLanguage === 'sl' ? 'Službe' : 'Teams'}</span>
-                    </button>
-
-                    <button
-                      onClick={() => { setSelectedSundayId(null); setActiveTab('people'); setIsMobileMenuOpen(false); }}
-                      className={`w-full px-3.5 py-2 text-xs flex items-center gap-2.5 transition text-left cursor-pointer ${
-                        activeTab === 'people' 
-                          ? 'bg-rose-50 text-rose-700 font-bold border-l-4 border-rose-600' 
-                          : 'text-slate-700 hover:bg-rose-50/60 hover:text-rose-600 font-medium'
-                      }`}
-                    >
-                      <Users className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>{currentLanguage === 'sl' ? 'Ekipa' : 'People'}</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Desktop Top Navigation Menu Tab Bar (Desktop / PC View) */}
-            <div className="hidden md:flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/70 shrink-0 select-none">
-              <button
-                onClick={() => { setSelectedSundayId(null); setActiveTab('home'); }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer select-none whitespace-nowrap ${
-                  activeTab === 'home'
-                    ? 'bg-white text-indigo-700 shadow-sm border border-indigo-200 shadow-indigo-100/50'
-                    : 'text-slate-600 hover:text-indigo-600 hover:bg-indigo-50/70 hover:shadow-[0_0_12px_rgba(79,70,229,0.25)] hover:border-indigo-200/80 border border-transparent'
-                }`}
-                title={currentLanguage === 'sl' ? 'Domov' : 'Home'}
-              >
-                <Home className="w-3.5 h-3.5 text-indigo-600" />
-                <span className="text-[11px] uppercase tracking-tight font-display">{currentLanguage === 'sl' ? 'Domov' : 'Home'}</span>
-              </button>
-
-              <button
-                onClick={() => { setSelectedSundayId(null); setActiveTab('sundays'); }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer select-none whitespace-nowrap ${
-                  activeTab === 'sundays'
-                    ? 'bg-white text-sky-700 shadow-sm border border-sky-200 shadow-sky-100/50'
-                    : 'text-slate-600 hover:text-sky-600 hover:bg-sky-50/70 hover:shadow-[0_0_12px_rgba(2,132,199,0.25)] hover:border-sky-200/80 border border-transparent'
-                }`}
-                title={currentLanguage === 'sl' ? 'Urnik' : 'Roster'}
-              >
-                <Calendar className="w-3.5 h-3.5 text-sky-600" />
-                <span className="text-[11px] uppercase tracking-tight font-display">{currentLanguage === 'sl' ? 'Urnik' : 'Roster'}</span>
-              </button>
-
-              <button
-                onClick={() => { setSelectedSundayId(null); setActiveTab('sunday_school'); }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer select-none whitespace-nowrap ${
-                  activeTab === 'sunday_school'
-                    ? 'bg-amber-100/90 text-amber-900 shadow-sm border border-amber-300/80 shadow-amber-100/50'
-                    : 'text-slate-600 hover:text-amber-700 hover:bg-amber-50/70 hover:shadow-[0_0_12px_rgba(217,119,6,0.25)] hover:border-amber-200/80 border border-transparent'
-                }`}
-                title={currentLanguage === 'sl' ? 'Šola' : 'Kids'}
-              >
-                <GraduationCap className="w-3.5 h-3.5 text-amber-600" />
-                <span className="text-[11px] uppercase tracking-tight font-display">{currentLanguage === 'sl' ? 'Šola' : 'Kids'}</span>
-              </button>
-
-              <button
-                onClick={() => { setSelectedSundayId(null); setActiveTab('worship'); }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer select-none whitespace-nowrap ${
-                  activeTab === 'worship'
-                    ? 'bg-white text-purple-700 shadow-sm border border-purple-200 shadow-purple-100/50'
-                    : 'text-slate-600 hover:text-purple-600 hover:bg-purple-50/70 hover:shadow-[0_0_12px_rgba(147,51,234,0.25)] hover:border-purple-200/80 border border-transparent'
-                }`}
-                title={currentLanguage === 'sl' ? 'Slavilna' : 'Music'}
-              >
-                <Music className="w-3.5 h-3.5 text-purple-600" />
-                <span className="text-[11px] uppercase tracking-tight font-display">{currentLanguage === 'sl' ? 'Slavilna' : 'Music'}</span>
-              </button>
-
-              <button
-                onClick={() => { setSelectedSundayId(null); setActiveTab('ministries'); }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer select-none whitespace-nowrap ${
-                  activeTab === 'ministries'
-                    ? 'bg-white text-emerald-700 shadow-sm border border-emerald-200 shadow-emerald-100/50'
-                    : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50/70 hover:shadow-[0_0_12px_rgba(5,150,105,0.25)] hover:border-emerald-200/80 border border-transparent'
-                }`}
-                title={currentLanguage === 'sl' ? 'Službe' : 'Teams'}
-              >
-                <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-[11px] uppercase tracking-tight font-display">{currentLanguage === 'sl' ? 'Službe' : 'Teams'}</span>
-              </button>
-
-              <button
-                onClick={() => { setSelectedSundayId(null); setActiveTab('people'); }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all duration-200 cursor-pointer select-none whitespace-nowrap ${
-                  activeTab === 'people'
-                    ? 'bg-white text-rose-700 shadow-sm border border-rose-200 shadow-rose-100/50'
-                    : 'text-slate-600 hover:text-rose-600 hover:bg-rose-50/70 hover:shadow-[0_0_12px_rgba(225,29,72,0.25)] hover:border-rose-200/80 border border-transparent'
-                }`}
-                title={currentLanguage === 'sl' ? 'Ekipa' : 'People'}
-              >
-                <Users className="w-3.5 h-3.5 text-rose-600" />
-                <span className="text-[11px] uppercase tracking-tight font-display">{currentLanguage === 'sl' ? 'Ekipa' : 'People'}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1 sm:gap-1.5 overflow-visible pt-1 pb-0.5 max-w-full shrink min-w-0">
-
-            {/* 1. Notification Center Bell Button */}
+            <button
+              onClick={() => { setSelectedSundayId(null); setActiveTab('people'); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                activeTab === 'people'
+                  ? 'bg-[#93032E] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+              }`}
+              title={currentLanguage === 'sl' ? 'Ekipa' : 'People'}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>{currentLanguage === 'sl' ? 'Ekipa' : 'People'}</span>
+            </button>
+          </>
+        }
+        rightActionItems={
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setIsNotificationModalOpen(true)}
-              className="relative p-1.5 bg-indigo-50 hover:bg-indigo-100 text-[#4338CA] border border-indigo-200/80 rounded-lg transition cursor-pointer flex items-center justify-center shrink-0"
+              className="relative p-2 bg-slate-100 hover:bg-slate-200 text-[#93032E] rounded-xl transition cursor-pointer flex items-center justify-center shrink-0"
               title={currentLanguage === 'sl' ? 'Opomniki in obvestila' : 'Notifications & Reminders'}
             >
               <Bell className="w-4 h-4" />
               {activeUpcomingDutiesCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[9px] font-bold font-mono w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-xs">
+                <span className="absolute -top-1 -right-1 bg-[#93032E] text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-xs">
                   {activeUpcomingDutiesCount}
                 </span>
               )}
             </button>
 
-            {/* 2. Peer-to-Peer Shift Swap Board Button */}
             <button
               onClick={() => setIsSwapModalOpen(true)}
-              className="relative p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-lg transition cursor-pointer flex items-center justify-center shrink-0"
+              className="relative p-2 bg-slate-100 hover:bg-slate-200 text-[#034C3C] rounded-xl transition cursor-pointer flex items-center justify-center shrink-0"
               title={currentLanguage === 'sl' ? 'Oglasna deska za zamenjave' : 'Shift Swap Board'}
             >
               <ArrowRightLeft className="w-4 h-4" />
               {swapRequests.filter(r => r.status === 'open').length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-amber-600 text-white text-[9px] font-bold font-mono w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                <span className="absolute -top-1 -right-1 bg-[#034C3C] text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
                   {swapRequests.filter(r => r.status === 'open').length}
                 </span>
               )}
             </button>
-
-            {/* 3. Live Sunday Attendance Check-in Button */}
-            <button
-              onClick={() => setIsAttendanceModalOpen(true)}
-              className="relative p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-lg transition cursor-pointer flex items-center justify-center shrink-0"
-              title={currentLanguage === 'sl' ? 'Evo! Prisotnost in obisk' : 'Live Sunday Attendance Check-in'}
-            >
-              <UserCheck className="w-4 h-4 text-emerald-700" />
-            </button>
-
-            {/* Direct Secondary Tools (Desktop View) */}
-            <button
-              onClick={() => setIsBlackoutModalOpen(true)}
-              className="hidden md:flex relative p-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80 rounded-lg transition cursor-pointer items-center justify-center shrink-0"
-              title={currentLanguage === 'sl' ? 'Planer dopustov in odsotnosti' : 'Vacation & Blackout Planner'}
-            >
-              <Palmtree className="w-4 h-4" />
-              {blackoutDates.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-teal-700 text-white text-[9px] font-bold font-mono w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
-                  {blackoutDates.length}
-                </span>
-              )}
-            </button>
-
-            {canAccessPersonalData(activeRole) && (
-              <button
-                onClick={() => setIsVisitorModalOpen(true)}
-                className="hidden md:flex relative p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 rounded-lg transition cursor-pointer items-center justify-center shrink-0"
-                title={currentLanguage === 'sl' ? 'Kavarna Živa Vera & Obiskovalci' : 'Living Faith Coffee Shop & Visitors'}
-              >
-                <Coffee className="w-4 h-4 text-amber-800" />
-                {visitorConnections.filter(v => v.followUpStatus === 'new').length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-amber-600 text-white text-[9px] font-bold font-mono w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
-                    {visitorConnections.filter(v => v.followUpStatus === 'new').length}
-                  </span>
-                )}
-              </button>
-            )}
-
-            <button
-              onClick={() => handleOpenInspectionModal('coffee_upper_hall')}
-              className="hidden md:flex relative p-1.5 bg-amber-100/80 hover:bg-amber-200/90 text-amber-950 border border-amber-300 rounded-lg transition cursor-pointer items-center justify-center shrink-0"
-              title={currentLanguage === 'sl' ? 'Kontrolni seznam in navodila za ureditve' : 'Setup Guides & Inspection Lists'}
-            >
-              <ClipboardCheck className="w-4 h-4 text-amber-900" />
-            </button>
-
-            {/* Mobile "More Tools" (...) Popover Dropdown Button */}
-            <div className="relative md:hidden shrink-0">
-              <button
-                onClick={() => setIsMoreToolsOpen(prev => !prev)}
-                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg transition cursor-pointer flex items-center justify-center"
-                title={currentLanguage === 'sl' ? 'Več orodij in obvestil' : 'More Tools & Actions'}
-              >
-                <MoreHorizontal className="w-4 h-4" />
-                {(blackoutDates.length > 0 || (canAccessPersonalData(activeRole) && visitorConnections.filter(v => v.followUpStatus === 'new').length > 0)) && (
-                  <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[8px] font-bold font-mono w-3.5 h-3.5 rounded-full flex items-center justify-center animate-pulse">
-                    !
-                  </span>
-                )}
-              </button>
-
-              {isMoreToolsOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsMoreToolsOpen(false)} />
-                  <div className="absolute right-0 mt-2 w-60 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-scale-up space-y-0.5 font-sans">
-                    <button
-                      onClick={() => { setIsBlackoutModalOpen(true); setIsMoreToolsOpen(false); }}
-                      className="w-full px-3.5 py-2 text-xs font-semibold flex items-center justify-between text-slate-700 hover:bg-teal-50 transition text-left cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Palmtree className="w-4 h-4 text-teal-700 shrink-0" />
-                        <span>{currentLanguage === 'sl' ? 'Planer dopustov & odsotnosti' : 'Vacation & Blackout Planner'}</span>
-                      </div>
-                      {blackoutDates.length > 0 && (
-                        <span className="bg-teal-700 text-white text-[9px] font-bold font-mono px-1.5 py-0.5 rounded-full">
-                          {blackoutDates.length}
-                        </span>
-                      )}
-                    </button>
-
-                    {canAccessPersonalData(activeRole) && (
-                      <button
-                        onClick={() => { setIsVisitorModalOpen(true); setIsMoreToolsOpen(false); }}
-                        className="w-full px-3.5 py-2 text-xs font-semibold flex items-center justify-between text-slate-700 hover:bg-amber-50 transition text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Coffee className="w-4 h-4 text-amber-800 shrink-0" />
-                          <span>{currentLanguage === 'sl' ? 'Kavarna & Obiskovalci' : 'Coffee & Visitors'}</span>
-                        </div>
-                        {visitorConnections.filter(v => v.followUpStatus === 'new').length > 0 && (
-                          <span className="bg-amber-600 text-white text-[9px] font-bold font-mono px-1.5 py-0.5 rounded-full">
-                            {visitorConnections.filter(v => v.followUpStatus === 'new').length}
-                          </span>
-                        )}
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => { handleOpenInspectionModal('coffee_upper_hall'); setIsMoreToolsOpen(false); }}
-                      className="w-full px-3.5 py-2 text-xs font-semibold flex items-center gap-2.5 text-slate-700 hover:bg-amber-50 transition text-left cursor-pointer"
-                    >
-                      <ClipboardCheck className="w-4 h-4 text-amber-900 shrink-0" />
-                      <span>{currentLanguage === 'sl' ? 'Kontrolni seznami & navodila' : 'Setup & Inspection Lists'}</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Language Switcher Button (Moved right next to LogOut) */}
-            <button
-              onClick={() => setCurrentLanguage(prev => prev === 'sl' ? 'en' : 'sl')}
-              className="text-[10px] font-mono font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-1.5 py-1 rounded-md transition flex items-center gap-1 focus:outline-none shrink-0"
-              title={translations.languageSelect}
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>{currentLanguage === 'sl' ? 'EN' : 'SL'}</span>
-            </button>
-
-            {/* Supabase User Authentication Pill / Role Badge & Sign Out / Sign In Button */}
-            {authUser ? (
-              <div className="flex items-center gap-1.5 shrink-0">
-                <div className="hidden sm:flex flex-col items-end leading-tight mr-0.5">
-                  <span className="text-[11px] font-bold text-slate-800 truncate max-w-[120px]">
-                    {userDbProfile?.displayName || userDbProfile?.personName || authUser.email?.split('@')[0]}
-                  </span>
-                  <span className="text-[9px] font-mono text-slate-500 truncate max-w-[120px]">
-                    {authUser.email}
-                  </span>
-                </div>
-                <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md select-none leading-none border ${
-                  isAlesLoggedIn
-                    ? 'bg-purple-100 text-purple-900 border-purple-300 shadow-2xs font-extrabold'
-                    : activeRole === 'Admin'
-                    ? 'bg-rose-100 text-rose-900 border-rose-300'
-                    : activeRole === 'Leader'
-                    ? 'bg-indigo-100 text-indigo-900 border-indigo-300'
-                    : activeRole === 'Servant'
-                    ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                    : 'bg-slate-100 text-slate-700 border-slate-200'
-                }`}>
-                  {isAlesLoggedIn ? '⚡ Superadmin' : activeRole === 'Admin' ? 'Admin' : activeRole === 'Leader' ? 'Vodja' : activeRole === 'Servant' ? 'Služabnik' : 'Viewer'}
-                </span>
-                <button
-                  onClick={handleSignOut}
-                  className="p-1.5 bg-slate-100 hover:bg-rose-100 hover:text-rose-700 rounded-lg text-slate-600 transition cursor-pointer flex items-center gap-1"
-                  title={currentLanguage === 'sl' ? 'Odjava' : 'Log Out'}
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span className="hidden md:inline text-[10px] font-semibold">{currentLanguage === 'sl' ? 'Odjava' : 'Sign Out'}</span>
-                </button>
-              </div>
-            ) : (IS_SUPABASE_CONFIGURED || IS_FIREBASE_ENABLED) ? (
-              <button
-                onClick={handleGoogleLogin}
-                className="text-[10px] font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg transition shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
-                title={currentLanguage === 'sl' ? 'Prijava z Google računom' : 'Sign in with Google'}
-              >
-                <span>{currentLanguage === 'sl' ? 'Prijava' : 'Sign In'}</span>
-              </button>
-            ) : (
-              <select
-                value={legacyRole}
-                onChange={(e) => setLegacyRole(e.target.value as UserRole)}
-                className="text-[10px] bg-slate-100 border border-slate-200 text-slate-800 font-semibold px-1.5 py-0.5 rounded-md focus:outline-none"
-              >
-                <option value="Admin">Admin</option>
-                <option value="Leader">Vodja</option>
-                <option value="Servant">Služabnik</option>
-                <option value="Viewer">Viewer</option>
-              </select>
-            )}
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Roster Alert Info (Hidden for logged in leaders/admins/superadmin) */}
       {!isAlesLoggedIn && activeRole === 'Viewer' && !authUser && (
@@ -2481,8 +2224,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Sticky Bottom Navigation - Always visible across all views */}
-      <nav id="bottom-navigation-bar" className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-200/90 py-1.5 shadow-lg z-30 animate-fade-in w-full">
+      {/* Mobile Native Bottom Navigation - Hidden on Desktop */}
+      <nav id="bottom-navigation-bar" className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-[#A6A15E]/20 py-1.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg z-30 animate-fade-in w-full">
         <div className="mx-auto w-full max-w-lg grid grid-cols-6 px-1 gap-0.5">
           
           <button
@@ -2673,6 +2416,9 @@ export default function App() {
 
         {/* 10-Minute Assignment Grace Queue Floating Bar */}
         <NotificationQueueBar />
+
+        {/* Mobile/Desktop PWA Install Banner */}
+        <PwaInstallBanner currentLang={currentLanguage} />
       </div>
     </NotificationQueueProvider>
   );

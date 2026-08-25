@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <circle cx="256" cy="256" r="250" fill="#93032E" />
+  <ellipse cx="256" cy="256" r="140" ry="92" fill="#EBDDD6" />
+  
+  <!-- Stylized Dove in Center -->
+  <path
+    d="M 205 240 C 192 243 179 251 174 263 C 171 273 179 281 192 281 C 207 281 223 273 241 273 C 251 273 259 286 274 281 C 284 278 294 266 312 268 C 322 268 327 258 324 250 C 316 240 303 240 290 245 C 275 250 268 238 258 233 C 248 225 236 220 228 230 C 223 235 215 243 207 238 Z"
+    fill="#93032E"
+  />
+  <path
+    d="M 189 243 C 187 222 208 217 228 230 C 218 237 210 243 200 240 Z"
+    fill="#93032E"
+  />
+  
+  <!-- Arched Text "KC" on Top -->
+  <text
+    x="256"
+    y="108"
+    text-anchor="middle"
+    fill="#EBDDD6"
+    font-size="64"
+    font-weight="900"
+    font-family="Nohemi, Outfit, Plus Jakarta Sans, sans-serif"
+    letter-spacing="10"
+  >
+    KC
+  </text>
+  
+  <!-- Arched Text "KALVARIJA" on Bottom -->
+  <path id="badge-bottom-curve" d="M 77 295 A 184 184 0 0 0 435 295" fill="none" />
+  <text
+    fill="#EBDDD6"
+    font-size="52"
+    font-weight="900"
+    font-family="Nohemi, Outfit, Plus Jakarta Sans, sans-serif"
+    letter-spacing="8"
+  >
+    <textPath href="#badge-bottom-curve" startOffset="50%" text-anchor="middle">
+      KALVARIJA
+    </textPath>
+  </text>
+</svg>

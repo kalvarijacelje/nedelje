@@ -54,8 +54,8 @@ export default function ScheduleView({
     return new Date(year, month, day);
   };
 
-  // Threshold date for Academic Year 2026/2027: August 23, 2026
-  const academicYearStartDate = new Date(2026, 7, 23);
+  // Threshold date for Academic Year 2026/2027: September 1, 2026 (first Sunday: Sep 6, 2026)
+  const academicYearStartDate = new Date(2026, 8, 1);
 
   const isAcademicYear2627 = (dateStr: string) => {
     return parseSheetDate(dateStr).getTime() >= academicYearStartDate.getTime();

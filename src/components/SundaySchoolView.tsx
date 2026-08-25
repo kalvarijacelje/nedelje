@@ -766,7 +766,7 @@ export default function SundaySchoolView({
           return new Date(year, month, day);
         };
 
-        const academicYear2627Start = new Date(2026, 7, 23); // Aug 23, 2026
+        const academicYear2627Start = new Date(2026, 8, 1);  // Sep 1, 2026 (first Sunday: Sep 6, 2026)
         const academicYear2627End = new Date(2027, 7, 31);   // Aug 31, 2027
 
         const rosterFilteredSundays = sundays.filter((s) => {

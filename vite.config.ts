@@ -4,8 +4,22 @@ import path from 'path';
 import fs from 'fs';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 
-// Auto-sync PWA icon files in public folder
+// Auto-sync PWA and master logo files in public folder
 try {
+  const masterLogo = path.resolve(__dirname, '../kck/public/KCK-logo-rdec_small.png');
+  const masterSecondary = path.resolve(__dirname, '../kck/public/KCK-logo-rdec-sekundaren_small.png');
+  const targetDir = path.resolve(__dirname, 'public');
+
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  if (fs.existsSync(masterLogo)) {
+    fs.copyFileSync(masterLogo, path.join(targetDir, 'KCK-logo-rdec_small.png'));
+  }
+  if (fs.existsSync(masterSecondary)) {
+    fs.copyFileSync(masterSecondary, path.join(targetDir, 'KCK-logo-rdec-sekundaren_small.png'));
+  }
+
   const logoPath = path.resolve(__dirname, 'public/kck-logo-rdec-sekundaren.png');
   const icon192 = path.resolve(__dirname, 'public/pwa-192x192.png');
   const icon512 = path.resolve(__dirname, 'public/pwa-512x512.png');
