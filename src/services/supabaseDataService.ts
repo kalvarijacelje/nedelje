@@ -14,7 +14,9 @@ import {
   WorshipRosterEntry, 
   SundaySchoolLesson, 
   SundaySchoolSupply, 
-  VisitorConnection 
+  VisitorConnection,
+  User,
+  normalizeUserRole
 } from '../types';
 
 const envUrl = 
@@ -352,6 +354,50 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
   }
 }
 
+export async function fetchRegisteredUsersFromSupabase(): Promise<User[]> {
+  if (!IS_SUPABASE_CONFIGURED) return [];
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      console.warn('[Supabase] fetchRegisteredUsers notice:', error.message);
+      return [];
+    }
+
+    const rows = data || [];
+    const usersMap = new Map<string, User>();
+
+    // ONLY include people who have ACTUALLY logged in via Supabase Auth (have auth_user_id)
+    rows
+      .filter((row: any) => row && Boolean(row.auth_user_id))
+      .forEach((row: any) => {
+        const uid = row.auth_user_id;
+        const email = (row.email || '').trim();
+        const displayName = (row.full_name || row.name || email.split('@')[0] || 'Google User').trim();
+        const role = normalizeUserRole(row.role);
+        const personName = (row.name || row.full_name || '').trim() || undefined;
+
+        if (uid) {
+          usersMap.set(uid, {
+            uid,
+            email,
+            displayName,
+            role,
+            personName
+          });
+        }
+      });
+
+    return Array.from(usersMap.values());
+  } catch (err) {
+    console.warn('[Supabase] Error in fetchRegisteredUsersFromSupabase:', err);
+    return [];
+  }
+}
+
 export function toCanonicalPersonId(idOrName: string): string {
   if (!idOrName) return 'p-unknown';
   let str = idOrName.trim();
@@ -611,6 +657,33 @@ export async function fetchWorshipSchedulesFromSupabase(): Promise<WorshipRoster
     }));
   } catch {
     return [];
+  }
+}
+
+export async function upsertWorshipScheduleToSupabase(entry: WorshipRosterEntry): Promise<boolean> {
+  if (!IS_SUPABASE_CONFIGURED) return false;
+  try {
+    const { error } = await supabase
+      .from('nedelje_worship_schedules')
+      .upsert({
+        id: entry.id,
+        date: entry.date,
+        worship_leader: entry.leader || null,
+        acoustic: entry.acoustic || null,
+        drums: entry.drums || null,
+        bass: entry.bass || null,
+        keys: entry.keys || null,
+        vocals: entry.vocals || null,
+        sound: entry.sound || null,
+        slides: entry.slides || null,
+        vocal_tech_absent: entry.vocalTechAbsent || null,
+        monitors: entry.monitors || null,
+        sunday_school: entry.sundaySchool || null,
+        updated_at: new Date().toISOString()
+      });
+    return !error;
+  } catch {
+    return false;
   }
 }
 

@@ -11,6 +11,8 @@ import {
   ServiceSunday,
   Person,
   SasuSong,
+  BlackoutDate,
+  Ministry,
   canAccessPersonalData
 } from '../types';
 import { 
@@ -22,8 +24,15 @@ import {
   INITIAL_TEARDOWN_STEPS 
 } from '../data/worshipData';
 import { INITIAL_PEOPLE } from '../data/initialData';
-import { matchWorshipRosterEntry, syncSundayFromWorshipRosterEntry } from '../utils/worshipSync';
+import { 
+  matchWorshipRosterEntry, 
+  syncSundayFromWorshipRosterEntry,
+  getWorshipRoleCandidates,
+  WorshipRoleKey
+} from '../utils/worshipSync';
 import { SASU_ALL_SONGS, SASU_GOOGLE_SHEETS_URL } from '../data/sasuSongsData';
+import UnifiedPersonAssigner from './UnifiedPersonAssigner';
+import { getSundayOfMonthIndex } from '../lib/sundaySpecialFocus';
 import { 
   Music, 
   Plus, 
@@ -62,7 +71,9 @@ import {
   ArrowDown,
   BarChart3,
   History,
-  X
+  X,
+  UserMinus,
+  RefreshCw
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
@@ -77,6 +88,8 @@ interface WorshipTeamViewProps {
   people?: Person[];
   onUpdateSunday?: (updatedSunday: ServiceSunday) => void;
   onSelectSunday?: (id: string) => void;
+  blackoutDates?: BlackoutDate[];
+  ministries?: Ministry[];
 }
 
 const parseSheetDate = (dateStr: string): Date => {
@@ -195,6 +208,8 @@ export const getTimesSungBadge = (count: number, lang: 'sl' | 'en' = 'sl') => {
   };
 };
 
+
+
 export default function WorshipTeamView({
   userRole,
   currentLanguage,
@@ -204,11 +219,14 @@ export default function WorshipTeamView({
   sundays,
   people = [],
   onUpdateSunday,
-  onSelectSunday
+  onSelectSunday,
+  blackoutDates = [],
+  ministries = []
 }: WorshipTeamViewProps) {
   // Active sub-tab state (Default to Sunday Schedule 'roster')
   const [activeSubTab, setActiveSubTab] = useState<'roster' | 'songs' | 'sasu' | 'sound' | 'archive'>('roster');
   const [rosterYearView, setRosterYearView] = useState<'2026_2027' | '2025_2026'>('2026_2027');
+  const [filterIncompleteOnly, setFilterIncompleteOnly] = useState(false);
 
   // Sub-nav scroll ref & handler
   const navRef = useRef<HTMLDivElement>(null);
@@ -444,6 +462,99 @@ export default function WorshipTeamView({
 
     return result;
   }, [worshipRoster, sundays]);
+
+  const handleDirectUpdateRosterField = (
+    entry: WorshipRosterEntry,
+    field: keyof WorshipRosterEntry,
+    value: string
+  ) => {
+    const updatedEntry: WorshipRosterEntry = {
+      ...entry,
+      [field]: value
+    };
+
+    const exists = activeRoster.some(e => e.id === updatedEntry.id);
+    let updated: WorshipRosterEntry[];
+    if (exists) {
+      updated = activeRoster.map(e => e.id === updatedEntry.id ? updatedEntry : e);
+    } else {
+      updated = [...activeRoster, updatedEntry];
+    }
+    if (onUpdateWorshipRoster) {
+      onUpdateWorshipRoster(updated);
+    }
+
+    // Bi-directionally sync with Sunday roster
+    if (sundays && onUpdateSunday) {
+      const matchedSunday = sundays.find(s => matchWorshipRosterEntry(s.date, [updatedEntry]));
+      if (matchedSunday) {
+        const syncedSunday = syncSundayFromWorshipRosterEntry(updatedEntry, matchedSunday);
+        onUpdateSunday(syncedSunday);
+      }
+    }
+  };
+
+  const handleDirectAddVocal = (entry: WorshipRosterEntry, nameToAdd: string) => {
+    if (!nameToAdd || !nameToAdd.trim()) return;
+    const currentVocals = (entry.vocals || '')
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean);
+
+    if (!currentVocals.includes(nameToAdd.trim())) {
+      const newVocals = [...currentVocals, nameToAdd.trim()].join(', ');
+      handleDirectUpdateRosterField(entry, 'vocals', newVocals);
+    }
+  };
+
+  const handleDirectRemoveVocal = (entry: WorshipRosterEntry, nameToRemove: string) => {
+    const currentVocals = (entry.vocals || '')
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean);
+
+    const newVocals = currentVocals.filter(v => v !== nameToRemove.trim()).join(', ');
+    handleDirectUpdateRosterField(entry, 'vocals', newVocals);
+  };
+
+  const handleCopyPreviousLineup = (targetEntry: WorshipRosterEntry) => {
+    const sorted = [...activeRoster].sort((a, b) => parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime());
+    const currentIndex = sorted.findIndex(e => e.id === targetEntry.id || matchWorshipRosterEntry(e.date, [targetEntry]));
+    if (currentIndex <= 0) return;
+    const prevEntry = sorted[currentIndex - 1];
+    if (!prevEntry) return;
+
+    const copiedEntry: WorshipRosterEntry = {
+      ...targetEntry,
+      leader: prevEntry.leader,
+      acoustic: prevEntry.acoustic,
+      drums: prevEntry.drums,
+      bass: prevEntry.bass,
+      keys: prevEntry.keys,
+      vocals: prevEntry.vocals,
+      sound: prevEntry.sound,
+      slides: prevEntry.slides
+    };
+
+    const exists = activeRoster.some(e => e.id === copiedEntry.id);
+    let updated: WorshipRosterEntry[];
+    if (exists) {
+      updated = activeRoster.map(e => e.id === copiedEntry.id ? copiedEntry : e);
+    } else {
+      updated = [...activeRoster, copiedEntry];
+    }
+    if (onUpdateWorshipRoster) {
+      onUpdateWorshipRoster(updated);
+    }
+
+    if (sundays && onUpdateSunday) {
+      const matchedSunday = sundays.find(s => matchWorshipRosterEntry(s.date, [copiedEntry]));
+      if (matchedSunday) {
+        const syncedSunday = syncSundayFromWorshipRosterEntry(copiedEntry, matchedSunday);
+        onUpdateSunday(syncedSunday);
+      }
+    }
+  };
 
   const handleSaveRosterEntry = () => {
     if (!editingRosterEntry) return;
@@ -763,7 +874,17 @@ export default function WorshipTeamView({
     return list;
   }, [sasuSearch, sasuOnlyKalvarija]);
 
-  // Filtered Roster by Year & Search
+  // Incomplete Roster Entries Count
+  const incompleteCount = useMemo(() => {
+    return combinedRoster.filter(r => {
+      const d = parseSheetDate(r.date);
+      const inYear = rosterYearView === '2026_2027' ? (d >= academicYear2627Start && d <= academicYear2627End) : (d < academicYear2627Start);
+      if (!inYear) return false;
+      return !r.leader || !r.acoustic || !r.drums || !r.bass || !r.keys || !r.sound || !r.slides;
+    }).length;
+  }, [combinedRoster, rosterYearView]);
+
+  // Filtered Roster by Year, Search, & Incomplete toggle
   const filteredRoster = useMemo(() => {
     return combinedRoster
       .filter(r => {
@@ -778,6 +899,11 @@ export default function WorshipTeamView({
         return parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime();
       })
       .filter(r => {
+        if (filterIncompleteOnly) {
+          const isIncomplete = !r.leader || !r.acoustic || !r.drums || !r.bass || !r.keys || !r.sound || !r.slides;
+          if (!isIncomplete) return false;
+        }
+
         const matchesSearch = 
           r.date.toLowerCase().includes(rosterSearch.toLowerCase()) ||
           r.leader.toLowerCase().includes(rosterSearch.toLowerCase()) ||
@@ -792,7 +918,7 @@ export default function WorshipTeamView({
 
         return matchesSearch && matchesLeader;
       });
-  }, [combinedRoster, rosterYearView, rosterSearch, selectedLeaderFilter]);
+  }, [combinedRoster, rosterYearView, rosterSearch, selectedLeaderFilter, filterIncompleteOnly]);
 
   // Unique Leaders List for Roster Filter
   const uniqueLeaders = useMemo(() => {
@@ -2010,7 +2136,7 @@ export default function WorshipTeamView({
         <div className="space-y-4 animate-fade-in">
           {/* Controls & Filter */}
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
-            <div className="flex items-center gap-2 flex-1">
+            <div className="flex items-center gap-2 flex-1 flex-wrap">
               {/* Academic Year Switcher */}
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-gray-200 shrink-0">
                 <button
@@ -2055,7 +2181,27 @@ export default function WorshipTeamView({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 justify-between md:justify-end">
+            <div className="flex items-center gap-2 justify-between md:justify-end flex-wrap">
+              {/* Incomplete Teams Filter Toggle */}
+              <button
+                type="button"
+                onClick={() => setFilterIncompleteOnly(!filterIncompleteOnly)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer border ${
+                  filterIncompleteOnly
+                    ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-gray-700 border-gray-200'
+                }`}
+                title={currentLanguage === 'sl' ? 'Prikaži samo nedelje z manjkajočimi člani' : 'Show only Sundays with vacant roles'}
+              >
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>{currentLanguage === 'sl' ? 'Manjkajoče službe' : 'Incomplete'}</span>
+                {incompleteCount > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${filterIncompleteOnly ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-900'}`}>
+                    {incompleteCount}
+                  </span>
+                )}
+              </button>
+
               <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-gray-200 text-xs">
                 <button
                   type="button"
@@ -2100,10 +2246,11 @@ export default function WorshipTeamView({
           </div>
 
           {rosterViewMode === 'cards' ? (
-            /* Roster Cards List */
+            /* Interactive Roster Cards List */
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredRoster.map((entry) => {
-                const isLordSupper = entry.date.includes('14.') || entry.date.includes('28.') || entry.date.includes('12.') || entry.date.includes('26.') || entry.date.includes('9.') || entry.date.includes('23.');
+                const { sundayIndex } = getSundayOfMonthIndex(entry.date);
+                const isLordSupper = sundayIndex === 2 || sundayIndex === 4;
                 const matchedSunday = sundays?.find(s => matchWorshipRosterEntry(s.date, [entry]));
                 
                 return (
@@ -2115,33 +2262,49 @@ export default function WorshipTeamView({
                           <button
                             type="button"
                             onClick={() => onSelectSunday(matchedSunday.id)}
-                            className={`text-xs font-bold font-mono hover:text-indigo-600 transition cursor-pointer text-left ${isLordSupper ? 'underline decoration-indigo-500 underline-offset-4 text-indigo-950' : 'text-slate-900'}`}
+                            className={`text-xs font-bold font-mono hover:text-indigo-600 transition cursor-pointer text-left ${isLordSupper ? 'underline decoration-rose-400 underline-offset-4 text-slate-900' : 'text-slate-900'}`}
                             title={currentLanguage === 'sl' ? 'Odpri celoten nedeljski razpored' : 'Open Sunday detail'}
                           >
                             {entry.date}
                           </button>
                         ) : (
-                          <span className={`text-xs font-bold font-mono ${isLordSupper ? 'underline decoration-indigo-500 underline-offset-4 text-indigo-950' : 'text-slate-900'}`}>
+                          <span className={`text-xs font-bold font-mono ${isLordSupper ? 'underline decoration-rose-400 underline-offset-4 text-slate-900' : 'text-slate-900'}`}>
                             {entry.date}
                           </span>
                         )}
-                        {isLordSupper && (
-                          <span className="text-[9px] font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold border border-indigo-100">
-                            🍷 {currentLanguage === 'sl' ? 'Gospodova večerja' : 'Lord\'s Supper'}
+                        {isLordSupper ? (
+                          <span className="text-[9px] font-mono bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold border border-rose-200/80 flex items-center gap-1">
+                            🍷 {currentLanguage === 'sl' ? 'Gospodova večerja (2./4.)' : "Lord's Supper (2nd/4th)"}
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-mono bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded font-bold border border-amber-200/80 flex items-center gap-1">
+                            🙏 {currentLanguage === 'sl' ? 'Molitvena nedelja' : 'Prayer Sunday'}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        {entry.leader && (
-                          <span className="text-[10px] font-bold bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md font-mono">
-                            👤 {entry.leader}
-                          </span>
-                        )}
+                        {/* Leader Unified Inline Assigner */}
+                        <UnifiedPersonAssigner
+                          mode="single"
+                          label={currentLanguage === 'sl' ? 'Voditelj' : 'Leader'}
+                          icon="👑"
+                          roleKey="leader"
+                          value={entry.leader || ''}
+                          onChange={(val) => handleDirectUpdateRosterField(entry, 'leader', typeof val === 'string' ? val : '')}
+                          targetSunday={matchedSunday}
+                          allSundays={sundays}
+                          people={people}
+                          blackoutDates={blackoutDates}
+                          ministries={ministries}
+                          currentLanguage={currentLanguage}
+                          canEdit={canEdit}
+                          compact={true}
+                        />
                         {canEdit && (
                           <button
                             onClick={() => setEditingRosterEntry(entry)}
-                            className="p-1 text-gray-400 hover:text-indigo-600 rounded-md hover:bg-slate-100 transition cursor-pointer"
-                            title={currentLanguage === 'sl' ? 'Uredi razpored' : 'Edit Schedule'}
+                            className="p-1.5 text-gray-400 hover:text-indigo-600 rounded-md hover:bg-slate-100 transition cursor-pointer"
+                            title={currentLanguage === 'sl' ? 'Odpri celotno urejanje razporeda' : 'Edit Schedule in Dialog'}
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
@@ -2149,49 +2312,160 @@ export default function WorshipTeamView({
                       </div>
                     </div>
 
-                    {/* Service Lineup grid */}
+                    {/* Service Lineup grid: 4 Unified Role Slots */}
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                        <span className="text-[9px] uppercase font-bold text-gray-400 block font-mono">🎸 Akustika</span>
-                        <span className="font-medium text-slate-800">{entry.acoustic || '-'}</span>
-                      </div>
+                      <UnifiedPersonAssigner
+                        mode="single"
+                        label={currentLanguage === 'sl' ? 'Akustika' : 'Acoustic'}
+                        icon="🎸"
+                        roleKey="acoustic"
+                        value={entry.acoustic || ''}
+                        onChange={(val) => handleDirectUpdateRosterField(entry, 'acoustic', typeof val === 'string' ? val : '')}
+                        targetSunday={matchedSunday}
+                        allSundays={sundays}
+                        people={people}
+                        blackoutDates={blackoutDates}
+                        ministries={ministries}
+                        currentLanguage={currentLanguage}
+                        canEdit={canEdit}
+                      />
 
-                      <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                        <span className="text-[9px] uppercase font-bold text-gray-400 block font-mono">🥁 Bobni</span>
-                        <span className="font-medium text-slate-800">{entry.drums || '-'}</span>
-                      </div>
+                      <UnifiedPersonAssigner
+                        mode="single"
+                        label={currentLanguage === 'sl' ? 'Bobni' : 'Drums'}
+                        icon="🥁"
+                        roleKey="drums"
+                        value={entry.drums || ''}
+                        onChange={(val) => handleDirectUpdateRosterField(entry, 'drums', typeof val === 'string' ? val : '')}
+                        targetSunday={matchedSunday}
+                        allSundays={sundays}
+                        people={people}
+                        blackoutDates={blackoutDates}
+                        ministries={ministries}
+                        currentLanguage={currentLanguage}
+                        canEdit={canEdit}
+                      />
 
-                      <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                        <span className="text-[9px] uppercase font-bold text-gray-400 block font-mono">🎸 Bas</span>
-                        <span className="font-medium text-slate-800">{entry.bass || '-'}</span>
-                      </div>
+                      <UnifiedPersonAssigner
+                        mode="single"
+                        label={currentLanguage === 'sl' ? 'Bas' : 'Bass'}
+                        icon="🎸"
+                        roleKey="bass"
+                        value={entry.bass || ''}
+                        onChange={(val) => handleDirectUpdateRosterField(entry, 'bass', typeof val === 'string' ? val : '')}
+                        targetSunday={matchedSunday}
+                        allSundays={sundays}
+                        people={people}
+                        blackoutDates={blackoutDates}
+                        ministries={ministries}
+                        currentLanguage={currentLanguage}
+                        canEdit={canEdit}
+                      />
 
-                      <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                        <span className="text-[9px] uppercase font-bold text-gray-400 block font-mono">🎹 Klaviature</span>
-                        <span className="font-medium text-slate-800">{entry.keys || '-'}</span>
-                      </div>
+                      <UnifiedPersonAssigner
+                        mode="single"
+                        label={currentLanguage === 'sl' ? 'Klaviature' : 'Keys'}
+                        icon="🎹"
+                        roleKey="keys"
+                        value={entry.keys || ''}
+                        onChange={(val) => handleDirectUpdateRosterField(entry, 'keys', typeof val === 'string' ? val : '')}
+                        targetSunday={matchedSunday}
+                        allSundays={sundays}
+                        people={people}
+                        blackoutDates={blackoutDates}
+                        ministries={ministries}
+                        currentLanguage={currentLanguage}
+                        canEdit={canEdit}
+                      />
                     </div>
 
-                    {/* Vocals Line */}
-                    {entry.vocals && (
-                      <div className="p-2 bg-indigo-50/50 rounded-lg border border-indigo-100/60 text-[11px]">
-                        <span className="text-[9px] uppercase font-bold text-indigo-600 block font-mono">🎤 Vokali</span>
-                        <span className="font-semibold text-indigo-950">{entry.vocals}</span>
-                      </div>
-                    )}
+                    {/* Vocals Unified Multi-Chip Line */}
+                    <div className="pt-0.5">
+                      <UnifiedPersonAssigner
+                        mode="multiple"
+                        label={currentLanguage === 'sl' ? 'Vokali' : 'Vocals'}
+                        icon="🎤"
+                        roleKey="vocals"
+                        value={(entry.vocals || '').split(',').map(v => v.trim()).filter(Boolean)}
+                        onChange={(val) => {
+                          const arr = Array.isArray(val) ? val : [val].filter(Boolean);
+                          handleDirectUpdateRosterField(entry, 'vocals', arr.join(', '));
+                        }}
+                        targetSunday={matchedSunday}
+                        allSundays={sundays}
+                        people={people}
+                        blackoutDates={blackoutDates}
+                        ministries={ministries}
+                        currentLanguage={currentLanguage}
+                        canEdit={canEdit}
+                      />
+                    </div>
 
-                    {/* Tech & Extras */}
-                    <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] font-mono text-gray-500 border-t border-gray-100">
-                      {entry.sound && <span>🔊 Zvok: <strong className="text-slate-800">{entry.sound}</strong></span>}
-                      {entry.slides && <span>💻 Projekcija: <strong className="text-slate-800">{entry.slides}</strong></span>}
-                      {entry.vocalTechAbsent && <span className="text-rose-600">⚠️ Odsotni: {entry.vocalTechAbsent}</span>}
+                    {/* Tech Roles & Productivity Action Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-[10px] font-mono text-gray-500 border-t border-gray-100">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Sound Tech Selector */}
+                        <div className="flex items-center gap-1">
+                          <UnifiedPersonAssigner
+                            mode="single"
+                            label={currentLanguage === 'sl' ? 'Zvok' : 'Sound'}
+                            icon="🔊"
+                            roleKey="sound"
+                            value={entry.sound || matchedSunday?.assignments?.['zvok']?.[0] || ''}
+                            onChange={(val) => handleDirectUpdateRosterField(entry, 'sound', typeof val === 'string' ? val : '')}
+                            targetSunday={matchedSunday}
+                            allSundays={sundays}
+                            people={people}
+                            blackoutDates={blackoutDates}
+                            ministries={ministries}
+                            currentLanguage={currentLanguage}
+                            canEdit={canEdit}
+                            compact={true}
+                          />
+                        </div>
+
+                        {/* Slides Tech Selector */}
+                        <div className="flex items-center gap-1">
+                          <UnifiedPersonAssigner
+                            mode="single"
+                            label={currentLanguage === 'sl' ? 'Projekcija' : 'Slides'}
+                            icon="💻"
+                            roleKey="slides"
+                            value={entry.slides || matchedSunday?.assignments?.['besedila']?.[0] || ''}
+                            onChange={(val) => handleDirectUpdateRosterField(entry, 'slides', typeof val === 'string' ? val : '')}
+                            targetSunday={matchedSunday}
+                            allSundays={sundays}
+                            people={people}
+                            blackoutDates={blackoutDates}
+                            ministries={ministries}
+                            currentLanguage={currentLanguage}
+                            canEdit={canEdit}
+                            compact={true}
+                          />
+                        </div>
+
+                        {entry.vocalTechAbsent && <span className="text-rose-600 font-bold">⚠️ {entry.vocalTechAbsent}</span>}
+                      </div>
+
+                      {/* Copy Previous Lineup Button */}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPreviousLineup(entry)}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 py-0.5 rounded transition cursor-pointer border border-indigo-150"
+                          title={currentLanguage === 'sl' ? 'Kopiraj celotno ekipo iz prejšnje nedelje' : 'Copy entire lineup from previous Sunday'}
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>{currentLanguage === 'sl' ? 'Kopiraj prejšnjo' : 'Copy Prev'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            /* Full Roster Spreadsheet Table */
+            /* Full Roster Spreadsheet Table with Inline Dropdowns */
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-2xs relative">
               {/* Sticky Scroll Hint Banner */}
               <div className="sticky top-0 z-20 px-3.5 py-2 bg-indigo-50/95 backdrop-blur-md border-b border-indigo-100 flex items-center justify-between text-[11px] text-indigo-900 font-medium flex-wrap gap-2 shadow-2xs">
@@ -2199,8 +2473,8 @@ export default function WorshipTeamView({
                   <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                   <span className="truncate">
                     {currentLanguage === 'sl' 
-                      ? '💡 Vodoravni pomik razpredelnice za vse službe:'
-                      : '💡 Spreadsheet view supports horizontal scroll across all service roles:'}
+                      ? '💡 Vse službe v razpredelnici so neposredno klikljive za hitro razporejanje:'
+                      : '💡 All spreadsheet roles are directly clickable for fast roster assignment:'}
                   </span>
                 </span>
 
@@ -2240,7 +2514,7 @@ export default function WorshipTeamView({
                 onMouseUp={() => handleMouseUpOrLeave(rosterTableRef)}
                 onMouseMove={(e) => handleMouseMove(e, rosterTableRef)}
               >
-                <table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                <table className="w-full text-left text-xs border-collapse min-w-[950px]">
                   <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
                     <tr className="bg-slate-100 text-gray-600 font-mono text-[10px] uppercase tracking-wider border-b border-gray-200 select-none">
                       <th className="py-2.5 px-3">Datum</th>
@@ -2253,38 +2527,226 @@ export default function WorshipTeamView({
                       <th className="py-2.5 px-3">Zvok</th>
                       <th className="py-2.5 px-3">Projekcija</th>
                       <th className="py-2.5 px-3">Odsotni / Opombe</th>
-                      {canEdit && <th className="py-2.5 px-3 text-right">Uredi</th>}
+                      {canEdit && <th className="py-2.5 px-3 text-right">Kopiraj / Uredi</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-150 text-gray-800">
-                    {filteredRoster.map((entry) => (
-                      <tr key={entry.id} className="hover:bg-slate-50/80 transition">
-                        <td className="py-2.5 px-3 font-mono font-bold text-indigo-950 whitespace-nowrap">
-                          {entry.date}
-                        </td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-900 whitespace-nowrap">
-                          {entry.leader || '-'}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-700">{entry.acoustic || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-700">{entry.drums || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-700">{entry.bass || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-700">{entry.keys || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-800 font-medium">{entry.vocals || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-700">{entry.sound || '-'}</td>
-                        <td className="py-2.5 px-3 text-slate-700">{entry.slides || '-'}</td>
-                        <td className="py-2.5 px-3 text-rose-600 font-mono text-[11px]">{entry.vocalTechAbsent || '-'}</td>
-                        {canEdit && (
-                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                            <button
-                              onClick={() => setEditingRosterEntry(entry)}
-                              className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 rounded-md text-[11px] font-semibold transition cursor-pointer border border-slate-200"
-                            >
-                              ✏️ {currentLanguage === 'sl' ? 'Uredi' : 'Edit'}
-                            </button>
+                    {filteredRoster.map((entry) => {
+                      const { sundayIndex } = getSundayOfMonthIndex(entry.date);
+                      const isLordSupper = sundayIndex === 2 || sundayIndex === 4;
+                      const matchedSunday = sundays?.find(s => matchWorshipRosterEntry(s.date, [entry]));
+                      const vocalList = (entry.vocals || '').split(',').map(v => v.trim()).filter(Boolean);
+                      const vocalCandidates = getWorshipRoleCandidates('vocals', matchedSunday, people, blackoutDates, ministries);
+                      const remainingVocals = vocalCandidates.filter(c => !vocalList.includes(c.person.name));
+
+                      return (
+                        <tr key={entry.id} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-3 font-mono font-bold text-indigo-950 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              {matchedSunday && onSelectSunday ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectSunday(matchedSunday.id)}
+                                  className="hover:text-indigo-600 hover:underline transition cursor-pointer text-left"
+                                  title={currentLanguage === 'sl' ? 'Odpri nedeljski razpored' : 'Open Sunday detail'}
+                                >
+                                  {entry.date}
+                                </button>
+                              ) : (
+                                <span>{entry.date}</span>
+                              )}
+                              {isLordSupper ? (
+                                <span 
+                                  className="text-[9px] font-mono bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold border border-rose-200/80" 
+                                  title={currentLanguage === 'sl' ? 'Gospodova večerja (2. in 4. nedelja)' : "Lord's Supper (2nd & 4th Sunday)"}
+                                >
+                                  🍷 {currentLanguage === 'sl' ? 'Večerja' : "Supper"}
+                                </span>
+                              ) : (
+                                <span 
+                                  className="text-[9px] font-mono bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded font-bold border border-amber-200/80" 
+                                  title={currentLanguage === 'sl' ? 'Molitvena nedelja (1., 3. in 5. nedelja)' : 'Prayer Sunday (1st, 3rd & 5th Sunday)'}
+                                >
+                                  🙏 {currentLanguage === 'sl' ? 'Molitev' : 'Prayer'}
+                                </span>
+                              )}
+                            </div>
                           </td>
-                        )}
-                      </tr>
-                    ))}
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="single"
+                              label="Voditelj"
+                              icon="👑"
+                              roleKey="leader"
+                              value={entry.leader || ''}
+                              onChange={(val) => handleDirectUpdateRosterField(entry, 'leader', typeof val === 'string' ? val : '')}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="single"
+                              label="Akustika"
+                              icon="🎸"
+                              roleKey="acoustic"
+                              value={entry.acoustic || ''}
+                              onChange={(val) => handleDirectUpdateRosterField(entry, 'acoustic', typeof val === 'string' ? val : '')}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="single"
+                              label="Bobni"
+                              icon="🥁"
+                              roleKey="drums"
+                              value={entry.drums || ''}
+                              onChange={(val) => handleDirectUpdateRosterField(entry, 'drums', typeof val === 'string' ? val : '')}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="single"
+                              label="Bas"
+                              icon="🎸"
+                              roleKey="bass"
+                              value={entry.bass || ''}
+                              onChange={(val) => handleDirectUpdateRosterField(entry, 'bass', typeof val === 'string' ? val : '')}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="single"
+                              label="Klaviature"
+                              icon="🎹"
+                              roleKey="keys"
+                              value={entry.keys || ''}
+                              onChange={(val) => handleDirectUpdateRosterField(entry, 'keys', typeof val === 'string' ? val : '')}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="multiple"
+                              label="Vokali"
+                              icon="🎤"
+                              roleKey="vocals"
+                              value={(entry.vocals || '').split(',').map(v => v.trim()).filter(Boolean)}
+                              onChange={(val) => {
+                                const arr = Array.isArray(val) ? val : [val].filter(Boolean);
+                                handleDirectUpdateRosterField(entry, 'vocals', arr.join(', '));
+                              }}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="single"
+                              label="Zvok"
+                              icon="🔊"
+                              roleKey="sound"
+                              value={entry.sound || matchedSunday?.assignments?.['zvok']?.[0] || ''}
+                              onChange={(val) => handleDirectUpdateRosterField(entry, 'sound', typeof val === 'string' ? val : '')}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <UnifiedPersonAssigner
+                              mode="single"
+                              label="Projekcija"
+                              icon="💻"
+                              roleKey="slides"
+                              value={entry.slides || matchedSunday?.assignments?.['besedila']?.[0] || ''}
+                              onChange={(val) => handleDirectUpdateRosterField(entry, 'slides', typeof val === 'string' ? val : '')}
+                              targetSunday={matchedSunday}
+                              allSundays={sundays}
+                              people={people}
+                              blackoutDates={blackoutDates}
+                              ministries={ministries}
+                              currentLanguage={currentLanguage}
+                              canEdit={canEdit}
+                              compact={true}
+                            />
+                          </td>
+                          <td className="py-2.5 px-3 text-rose-600 font-mono text-[11px] whitespace-nowrap">
+                            {entry.vocalTechAbsent || '-'}
+                          </td>
+                          {canEdit && (
+                            <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyPreviousLineup(entry)}
+                                  className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 rounded-md transition cursor-pointer border border-slate-200"
+                                  title={currentLanguage === 'sl' ? 'Kopiraj celotno ekipo iz prejšnje nedelje' : 'Copy lineup from previous Sunday'}
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingRosterEntry(entry)}
+                                  className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 rounded-md transition cursor-pointer border border-slate-200"
+                                  title={currentLanguage === 'sl' ? 'Uredi v pogovornem oknu' : 'Edit in dialog'}
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

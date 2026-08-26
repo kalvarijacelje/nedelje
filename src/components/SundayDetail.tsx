@@ -169,6 +169,8 @@ function GoogleChatIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
 
 interface SundayDetailProps {
   sunday: ServiceSunday;
+  initialMinistryId?: string | null;
+  initialCategory?: string | null;
   allSundays: ServiceSunday[];
   ministries: Ministry[];
   people: Person[];
@@ -410,6 +412,8 @@ export default function SundayDetail({
   userRole,
   activePerson,
   translations,
+  initialMinistryId,
+  initialCategory,
   currentLanguage,
   worshipRoster,
   sundaySchoolLessons,
@@ -424,7 +428,7 @@ export default function SundayDetail({
   onOpenInspectionModal,
   authUser,
 }: SundayDetailProps) {
-  const [activeMinistryEditId, setActiveMinistryEditId] = useState<string | null>(null);
+  const [activeMinistryEditId, setActiveMinistryEditId] = useState<string | null>(initialMinistryId || null);
   const [newPersonInput, setNewPersonInput] = useState('');
   const [newFamilyMemberInput, setNewFamilyMemberInput] = useState('');
   const [themeSl, setThemeSl] = useState(sunday.themeSl);
@@ -438,7 +442,18 @@ export default function SundayDetail({
   const [selectedLeaderForContact, setSelectedLeaderForContact] = useState<Person | null>(null);
   const [showAllOtherMinistries, setShowAllOtherMinistries] = useState<boolean>(false);
   const [rosterSearchQuery, setRosterSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
+    if (initialCategory) return initialCategory;
+    if (initialMinistryId && ministries) {
+      const found = ministries.find(m => m.id === initialMinistryId);
+      if (found) {
+        if (['prep_clean', 'hospitality', 'service', 'worship', 'audio_video', 'kids', 'post_service'].includes(found.category)) {
+          return found.category;
+        }
+      }
+    }
+    return 'all';
+  });
   const [overrideMenuOpenId, setOverrideMenuOpenId] = useState<string | null>(null);
   const { queueAssignment, batches, removeQueuedItem } = useNotificationQueue();
   const [pendingRemoval, setPendingRemoval] = useState<{
@@ -455,6 +470,32 @@ export default function SundayDetail({
     startDate?: string;
     endDate?: string;
   } | null>(null);
+
+  // Sync state if sunday prop updates
+  React.useEffect(() => {
+    setThemeSl(sunday.themeSl);
+    setThemeEn(sunday.themeEn);
+    setGuest(sunday.guest);
+    setAbsentOrNotes(sunday.absentOrNotes);
+    setStatus(sunday.status);
+  }, [sunday.id, sunday.themeSl, sunday.themeEn, sunday.guest, sunday.absentOrNotes, sunday.status]);
+
+  // Scroll and highlight target ministry if navigated from specific ministry tree
+  React.useEffect(() => {
+    if (initialMinistryId) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`ministry-card-${initialMinistryId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-2');
+          setTimeout(() => {
+            el.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2');
+          }, 2500);
+        }
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [initialMinistryId]);
 
   // Back-button interception for drawers, popups, and modal dialogs
   useBackdropHistory(!!activeMinistryEditId, () => setActiveMinistryEditId(null), 'sunday-assignment-drawer');

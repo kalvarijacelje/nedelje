@@ -16,7 +16,7 @@ export interface SluzbeProps {
   userRole?: UserRole;
   worshipRoster?: WorshipRosterEntry[];
   sundaySchoolLessons?: SundaySchoolLesson[];
-  onSelectSunday: (id: string) => void;
+  onSelectSunday: (id: string, ministryId?: string, categoryId?: string) => void;
   onUpdateMinistryLeader?: (ministryId: string, leaderName: string) => void;
   onUpdatePersonLedMinistries?: (personName: string, ledMinistries: string[]) => void;
   onOpenInspectionModal?: (category?: 'coffee_upper_hall' | 'tech_stage' | 'kids_classrooms' | 'general_cleaning') => void;

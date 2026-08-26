@@ -30,7 +30,7 @@ interface MinistryViewProps {
   activePerson?: Person | null;
   worshipRoster?: WorshipRosterEntry[];
   sundaySchoolLessons?: SundaySchoolLesson[];
-  onSelectSunday: (id: string) => void;
+  onSelectSunday: (sundayId: string, ministryId?: string, categoryId?: string) => void;
   onUpdateMinistryLeader?: (ministryId: string, leaderName: string) => void;
   onUpdatePersonLedMinistries?: (personName: string, ledMinistries: string[]) => void;
   onOpenInspectionModal?: (category?: 'coffee_upper_hall' | 'tech_stage' | 'kids_classrooms' | 'general_cleaning') => void;
@@ -273,7 +273,7 @@ interface MinistryCardProps {
   currentLanguage: 'sl' | 'en';
   overAssignedPeople: Array<{ name: string; totalCount: number; conflictWeeks: string[] }>;
   understaffedRoles: Array<{ ministry: Ministry; vacantCount: number; vacantDates: string[] }>;
-  onSelectSunday: (id: string) => void;
+  onSelectSunday: (sundayId: string, ministryId?: string, categoryId?: string) => void;
   onSelectLeaderForContact: (leader: Person) => void;
 }
 
@@ -446,7 +446,7 @@ function MinistryCard({
                 return (
                   <div
                     key={sunday.id}
-                    onClick={() => onSelectSunday(sunday.id)}
+                    onClick={() => onSelectSunday(sunday.id, ministry.id, ministry.category)}
                     className="p-2.5 rounded-xl transition-all duration-150 flex items-center justify-between gap-2 border text-xs cursor-pointer bg-slate-50/40 hover:bg-slate-100/60 border-slate-200/60 text-slate-400"
                   >
                     <span className="font-mono font-medium text-slate-400 flex items-center gap-1.5">
@@ -471,7 +471,7 @@ function MinistryCard({
               return (
                 <div
                   key={sunday.id}
-                  onClick={() => onSelectSunday(sunday.id)}
+                  onClick={() => onSelectSunday(sunday.id, ministry.id, ministry.category)}
                   className={`p-2.5 rounded-xl transition-all duration-150 flex items-center justify-between gap-2 border text-xs cursor-pointer animate-fade-in ${rowStyleClass}`}
                 >
                   <span className="font-mono font-medium text-slate-500 flex flex-col justify-center shrink-0 min-w-0">

@@ -30,6 +30,9 @@ import {
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import { checkPersonAbsenceOnSunday } from './SundayDetail';
+import UnifiedPersonAssigner from './UnifiedPersonAssigner';
+import { getConsecutiveSundayDates } from '../utils/recurringAssignments';
+import { getSundayOfMonthIndex } from '../lib/sundaySpecialFocus';
 
 interface SundaySchoolViewProps {
   sundays: ServiceSunday[];
@@ -243,6 +246,54 @@ export default function SundaySchoolView({
     }
 
     setQuickAssignModalOpen(false);
+  };
+
+  const handleUpdateGroupPerson = (
+    sun: ServiceSunday,
+    group: 'mlajsa' | 'starejsa',
+    role: 'teacher' | 'helper',
+    personName: string
+  ) => {
+    if (!onUpdateSunday) return;
+
+    const primaryKey = group === 'mlajsa' ? 'OTROŠKO SLUŽENJE - MLAJŠA' : 'OTROŠKO SLUŽENJE - STAREJŠA';
+    const secondaryKey = group === 'mlajsa' ? 'nedeljska_sola_mlajsa' : 'nedeljska_sola_starejsa';
+
+    const existing = sun.assignments?.[secondaryKey] || sun.assignments?.[primaryKey] || [];
+    let currentTeacher = existing[0] || '';
+    let currentHelper = existing[1] || '';
+
+    if (role === 'teacher') {
+      currentTeacher = personName.trim();
+    } else {
+      currentHelper = personName.trim();
+    }
+
+    const newTeam = [currentTeacher, currentHelper].filter(Boolean);
+
+    const updatedAssignments = {
+      ...(sun.assignments || {}),
+      [secondaryKey]: newTeam,
+      [primaryKey]: newTeam
+    };
+
+    const updatedSunday: ServiceSunday = {
+      ...sun,
+      assignments: updatedAssignments
+    };
+
+    onUpdateSunday(updatedSunday);
+
+    // Sync to existing lesson if available
+    const existingLesson = lessons.find(l => (l.sundayId === sun.id || l.sundayDate === sun.date) && l.group === group);
+    if (existingLesson && onUpdateLessons) {
+      const updatedLesson: SundaySchoolLesson = {
+        ...existingLesson,
+        teachers: currentTeacher ? [currentTeacher] : [],
+        helpers: currentHelper ? [currentHelper] : []
+      };
+      onUpdateLessons(lessons.map(l => l.id === existingLesson.id ? updatedLesson : l));
+    }
   };
 
   const getPersonConflictInfo = (personName: string, targetSunday: ServiceSunday | undefined) => {
@@ -1360,11 +1411,23 @@ export default function SundaySchoolView({
                     const youngerCoverage = getGroupCoverage(sun, 'mlajsa', youngerLesson);
                     const olderCoverage = getGroupCoverage(sun, 'starejsa', olderLesson);
 
+                    const { sundayIndex } = getSundayOfMonthIndex(sun.date);
+                    const isLordSupper = sundayIndex === 2 || sundayIndex === 4;
+
                     return (
                       <div key={sun.id} className="p-4 sm:p-5 bg-white rounded-2xl border border-gray-200 shadow-2xs space-y-3.5">
                         <div className="flex items-center justify-between border-b border-gray-150 pb-2.5">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-xs sm:text-sm text-gray-900 font-mono">📅 {sun.date}</span>
+                            {isLordSupper ? (
+                              <span className="text-[9px] font-mono bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold border border-rose-200/80 flex items-center gap-1">
+                                🍷 {currentLanguage === 'sl' ? 'Gospodova večerja' : "Lord's Supper"}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded font-bold border border-amber-200/80 flex items-center gap-1">
+                                🙏 {currentLanguage === 'sl' ? 'Molitvena nedelja' : 'Prayer Sunday'}
+                              </span>
+                            )}
                             {sun.themeSl && (
                               <span className="text-xs text-gray-500 italic hidden sm:inline">• {sun.themeSl}</span>
                             )}
@@ -1407,47 +1470,55 @@ export default function SundaySchoolView({
                                 )}
                               </div>
 
-                              {/* People: Teacher & Assistant Rows */}
-                              <div className="space-y-1.5 pt-1">
-                                <div className="flex items-center justify-between text-xs bg-white/90 p-2 rounded-xl border border-amber-200/60">
-                                  <span className="font-semibold text-amber-900 flex items-center gap-1.5 text-[11px]">
-                                    🎓 {currentLanguage === 'sl' ? 'Učitelj:' : 'Teacher:'}
-                                  </span>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`font-mono font-bold text-xs ${youngerCoverage.teacher ? 'text-gray-900' : 'text-gray-400 italic'}`}>
-                                      {youngerCoverage.teacher || (currentLanguage === 'sl' ? 'Ni določen' : 'Unassigned')}
-                                    </span>
-                                    {canEdit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => openQuickAssignModal(sun.id, 'mlajsa')}
-                                        className="px-1.5 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-bold rounded cursor-pointer transition"
-                                      >
-                                        {youngerCoverage.teacher ? (currentLanguage === 'sl' ? 'Spremeni' : 'Change') : (currentLanguage === 'sl' ? '+ Dodaj' : '+ Add')}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                              {/* People: Unified Inline Person Assigners */}
+                              <div className="space-y-2 pt-1">
+                                <UnifiedPersonAssigner
+                                  mode="single"
+                                  label={currentLanguage === 'sl' ? 'Učitelj' : 'Lead Teacher'}
+                                  icon="🎓"
+                                  roleKey="nedeljska_sola_mlajsa"
+                                  value={youngerCoverage.teacher}
+                                  onChange={(val) => handleUpdateGroupPerson(sun, 'mlajsa', 'teacher', typeof val === 'string' ? val : '')}
+                                  targetSunday={sun}
+                                  allSundays={sundays}
+                                  people={people}
+                                  blackoutDates={blackoutDates}
+                                  ministries={ministries}
+                                  currentLanguage={currentLanguage}
+                                  canEdit={canEdit}
+                                  enableSeriesOption={true}
+                                  onSeriesApply={(weeksCount, personName) => {
+                                    const futureSundays = getConsecutiveSundayDates(sundays, sun.id, weeksCount);
+                                    futureSundays.forEach(item => {
+                                      const sObj = sundays.find(x => x.id === item.id || x.date === item.date);
+                                      if (sObj) handleUpdateGroupPerson(sObj, 'mlajsa', 'teacher', personName);
+                                    });
+                                  }}
+                                />
 
-                                <div className="flex items-center justify-between text-xs bg-white/90 p-2 rounded-xl border border-amber-200/60">
-                                  <span className="font-semibold text-amber-900 flex items-center gap-1.5 text-[11px]">
-                                    🤝 {currentLanguage === 'sl' ? 'Pomočnik:' : 'Assistant:'}
-                                  </span>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`font-mono font-bold text-xs ${youngerCoverage.helper ? 'text-gray-900' : 'text-gray-400 italic'}`}>
-                                      {youngerCoverage.helper || (currentLanguage === 'sl' ? 'Ni določen' : 'Unassigned')}
-                                    </span>
-                                    {canEdit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => openQuickAssignModal(sun.id, 'mlajsa')}
-                                        className="px-1.5 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-bold rounded cursor-pointer transition"
-                                      >
-                                        {youngerCoverage.helper ? (currentLanguage === 'sl' ? 'Spremeni' : 'Change') : (currentLanguage === 'sl' ? '+ Dodaj' : '+ Add')}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                                <UnifiedPersonAssigner
+                                  mode="single"
+                                  label={currentLanguage === 'sl' ? 'Pomočnik' : 'Assistant / Helper'}
+                                  icon="🤝"
+                                  roleKey="assistant"
+                                  value={youngerCoverage.helper}
+                                  onChange={(val) => handleUpdateGroupPerson(sun, 'mlajsa', 'helper', typeof val === 'string' ? val : '')}
+                                  targetSunday={sun}
+                                  allSundays={sundays}
+                                  people={people}
+                                  blackoutDates={blackoutDates}
+                                  ministries={ministries}
+                                  currentLanguage={currentLanguage}
+                                  canEdit={canEdit}
+                                  enableSeriesOption={true}
+                                  onSeriesApply={(weeksCount, personName) => {
+                                    const futureSundays = getConsecutiveSundayDates(sundays, sun.id, weeksCount);
+                                    futureSundays.forEach(item => {
+                                      const sObj = sundays.find(x => x.id === item.id || x.date === item.date);
+                                      if (sObj) handleUpdateGroupPerson(sObj, 'mlajsa', 'helper', personName);
+                                    });
+                                  }}
+                                />
                               </div>
 
                               {/* Lesson Info */}
@@ -1500,47 +1571,55 @@ export default function SundaySchoolView({
                                 )}
                               </div>
 
-                              {/* People: Teacher & Assistant Rows */}
-                              <div className="space-y-1.5 pt-1">
-                                <div className="flex items-center justify-between text-xs bg-white/90 p-2 rounded-xl border border-indigo-200/60">
-                                  <span className="font-semibold text-indigo-900 flex items-center gap-1.5 text-[11px]">
-                                    🎓 {currentLanguage === 'sl' ? 'Učitelj:' : 'Teacher:'}
-                                  </span>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`font-mono font-bold text-xs ${olderCoverage.teacher ? 'text-gray-900' : 'text-gray-400 italic'}`}>
-                                      {olderCoverage.teacher || (currentLanguage === 'sl' ? 'Ni določen' : 'Unassigned')}
-                                    </span>
-                                    {canEdit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => openQuickAssignModal(sun.id, 'starejsa')}
-                                        className="px-1.5 py-0.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-900 text-[10px] font-bold rounded cursor-pointer transition"
-                                      >
-                                        {olderCoverage.teacher ? (currentLanguage === 'sl' ? 'Spremeni' : 'Change') : (currentLanguage === 'sl' ? '+ Dodaj' : '+ Add')}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                              {/* People: Unified Inline Person Assigners */}
+                              <div className="space-y-2 pt-1">
+                                <UnifiedPersonAssigner
+                                  mode="single"
+                                  label={currentLanguage === 'sl' ? 'Učitelj' : 'Lead Teacher'}
+                                  icon="🎓"
+                                  roleKey="nedeljska_sola_starejsa"
+                                  value={olderCoverage.teacher}
+                                  onChange={(val) => handleUpdateGroupPerson(sun, 'starejsa', 'teacher', typeof val === 'string' ? val : '')}
+                                  targetSunday={sun}
+                                  allSundays={sundays}
+                                  people={people}
+                                  blackoutDates={blackoutDates}
+                                  ministries={ministries}
+                                  currentLanguage={currentLanguage}
+                                  canEdit={canEdit}
+                                  enableSeriesOption={true}
+                                  onSeriesApply={(weeksCount, personName) => {
+                                    const futureSundays = getConsecutiveSundayDates(sundays, sun.id, weeksCount);
+                                    futureSundays.forEach(item => {
+                                      const sObj = sundays.find(x => x.id === item.id || x.date === item.date);
+                                      if (sObj) handleUpdateGroupPerson(sObj, 'starejsa', 'teacher', personName);
+                                    });
+                                  }}
+                                />
 
-                                <div className="flex items-center justify-between text-xs bg-white/90 p-2 rounded-xl border border-indigo-200/60">
-                                  <span className="font-semibold text-indigo-900 flex items-center gap-1.5 text-[11px]">
-                                    🤝 {currentLanguage === 'sl' ? 'Pomočnik:' : 'Assistant:'}
-                                  </span>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className={`font-mono font-bold text-xs ${olderCoverage.helper ? 'text-gray-900' : 'text-gray-400 italic'}`}>
-                                      {olderCoverage.helper || (currentLanguage === 'sl' ? 'Ni določen' : 'Unassigned')}
-                                    </span>
-                                    {canEdit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => openQuickAssignModal(sun.id, 'starejsa')}
-                                        className="px-1.5 py-0.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-900 text-[10px] font-bold rounded cursor-pointer transition"
-                                      >
-                                        {olderCoverage.helper ? (currentLanguage === 'sl' ? 'Spremeni' : 'Change') : (currentLanguage === 'sl' ? '+ Dodaj' : '+ Add')}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                                <UnifiedPersonAssigner
+                                  mode="single"
+                                  label={currentLanguage === 'sl' ? 'Pomočnik' : 'Assistant / Helper'}
+                                  icon="🤝"
+                                  roleKey="assistant"
+                                  value={olderCoverage.helper}
+                                  onChange={(val) => handleUpdateGroupPerson(sun, 'starejsa', 'helper', typeof val === 'string' ? val : '')}
+                                  targetSunday={sun}
+                                  allSundays={sundays}
+                                  people={people}
+                                  blackoutDates={blackoutDates}
+                                  ministries={ministries}
+                                  currentLanguage={currentLanguage}
+                                  canEdit={canEdit}
+                                  enableSeriesOption={true}
+                                  onSeriesApply={(weeksCount, personName) => {
+                                    const futureSundays = getConsecutiveSundayDates(sundays, sun.id, weeksCount);
+                                    futureSundays.forEach(item => {
+                                      const sObj = sundays.find(x => x.id === item.id || x.date === item.date);
+                                      if (sObj) handleUpdateGroupPerson(sObj, 'starejsa', 'helper', personName);
+                                    });
+                                  }}
+                                />
                               </div>
 
                               {/* Lesson Info */}
@@ -2116,267 +2195,6 @@ export default function SundaySchoolView({
           </div>
         </div>
       )}
-
-      {/* --- QUICK ASSIGN TEACHER & ASSISTANT MODAL --- */}
-      {quickAssignModalOpen && (() => {
-        const targetSun = sundays.find(s => s.id === quickAssignSundayId);
-        const groupLabel = quickAssignGroup === 'mlajsa'
-          ? (currentLanguage === 'sl' ? '👦👧 Mlajša skupina (3–9 let)' : '👦👧 Younger group (3–9 yrs)')
-          : (currentLanguage === 'sl' ? '🧑‍🦱👩‍🦱 Starejša skupina (10–15+ let)' : '🧑‍🦱👩‍🦱 Older group (10–15+ yrs)');
-
-        const candidateList = getSortedCandidateList(targetSun, quickAssignGroup);
-        const tier1Candidates = candidateList.filter(c => c.tier === 1);
-        const tier2Candidates = candidateList.filter(c => c.tier === 2);
-        const tier3Candidates = candidateList.filter(c => c.tier === 3);
-
-        const teacherConflict = getPersonConflictInfo(quickAssignTeacher, targetSun);
-        const helperConflict = getPersonConflictInfo(quickAssignHelper, targetSun);
-
-        return (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-gray-100 animate-scale-up">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                <div>
-                  <h3 className="text-sm font-bold text-gray-900 font-display flex items-center gap-2">
-                    <UserPlus className="w-4 h-4 text-orange-600" />
-                    <span>{currentLanguage === 'sl' ? 'Določi Učitelja in Pomočnika' : 'Assign Teacher & Assistant'}</span>
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-0.5 font-medium">
-                    📅 {targetSun?.date} • {groupLabel}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setQuickAssignModalOpen(false)}
-                  className="text-gray-400 hover:text-gray-600 transition cursor-pointer p-1 rounded-lg hover:bg-gray-100"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveQuickAssign} className="space-y-3.5">
-                {/* Teacher Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-gray-800">
-                      🎓 {currentLanguage === 'sl' ? 'Učitelj / Vodja učne ure:' : 'Lead Teacher:'}
-                    </label>
-                    {quickAssignTeacher && (
-                      <button
-                        type="button"
-                        onClick={() => setQuickAssignTeacher('')}
-                        className="text-[10px] text-gray-400 hover:text-rose-600 font-medium cursor-pointer"
-                      >
-                        {currentLanguage === 'sl' ? 'Počisti' : 'Clear'}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Quick-Pick Starred Chips */}
-                  {tier1Candidates.length > 0 && (
-                    <div className="mb-1.5 flex flex-wrap items-center gap-1">
-                      <span className="text-[10px] text-gray-400 font-medium">
-                        {currentLanguage === 'sl' ? 'Učitelji:' : 'Teachers:'}
-                      </span>
-                      {tier1Candidates.slice(0, 5).map(c => {
-                        const otherIcons = c.otherAssignments.length > 0 ? c.otherAssignments.map(o => o.emoji).join('') : '';
-                        return (
-                          <button
-                            key={c.person.id}
-                            type="button"
-                            onClick={() => setQuickAssignTeacher(c.person.name)}
-                            title={c.otherAssignments.length > 0 ? (currentLanguage === 'sl' ? `Že v službi: ${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}` : `Already serving: ${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}`) : undefined}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer border flex items-center gap-1 ${
-                              quickAssignTeacher === c.person.name
-                                ? 'bg-orange-600 text-white border-orange-600 shadow-xs'
-                                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
-                            }`}
-                          >
-                            <span>⭐ {c.person.name}</span>
-                            {otherIcons && <span className="text-[9px] opacity-85 font-sans">{otherIcons}</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <select
-                    value={quickAssignTeacher}
-                    onChange={(e) => setQuickAssignTeacher(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-250 rounded-xl px-3 py-2 text-xs font-bold text-gray-900 focus:outline-none focus:border-orange-500 focus:bg-white"
-                  >
-                    <option value="">{currentLanguage === 'sl' ? '-- Izberi učitelja (ali pusti prazno) --' : '-- Select teacher (or leave empty) --'}</option>
-                    {tier1Candidates.length > 0 && (
-                      <optgroup label={currentLanguage === 'sl' ? '⭐ Služabniki v otroški cerkvi' : '⭐ Kids Ministry Team'}>
-                        {tier1Candidates.map(c => {
-                          const otherText = c.otherAssignments.length > 0 ? ` [${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}]` : '';
-                          return (
-                            <option key={c.person.id} value={c.person.name}>
-                              ⭐ {c.person.name}{otherText}
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-                    {tier2Candidates.length > 0 && (
-                      <optgroup label={currentLanguage === 'sl' ? '👤 Ostali razpoložljivi sodelavci' : '👤 Other Available Volunteers'}>
-                        {tier2Candidates.map(c => {
-                          const otherText = c.otherAssignments.length > 0 ? ` [${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}]` : '';
-                          return (
-                            <option key={c.person.id} value={c.person.name}>
-                              {c.person.name}{otherText}
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-                    {tier3Candidates.length > 0 && (
-                      <optgroup label={currentLanguage === 'sl' ? '⚠️ Odsotni / Zasedeni' : '⚠️ Unavailable / Absent'}>
-                        {tier3Candidates.map(c => (
-                          <option key={c.person.id} value={c.person.name}>
-                            ⚠️ {c.person.name} ({c.conflict?.label})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                  {teacherConflict && (
-                    <div className="text-[11px] text-amber-800 font-medium mt-1 flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
-                      <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                      <span>{teacherConflict.label}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Assistant Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-gray-800">
-                      🤝 {currentLanguage === 'sl' ? 'Pomočnik / Asistent:' : 'Assistant / Helper:'}
-                    </label>
-                    {quickAssignHelper && (
-                      <button
-                        type="button"
-                        onClick={() => setQuickAssignHelper('')}
-                        className="text-[10px] text-gray-400 hover:text-rose-600 font-medium cursor-pointer"
-                      >
-                        {currentLanguage === 'sl' ? 'Počisti' : 'Clear'}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Quick-Pick Starred Chips */}
-                  {tier1Candidates.length > 0 && (
-                    <div className="mb-1.5 flex flex-wrap items-center gap-1">
-                      <span className="text-[10px] text-gray-400 font-medium">
-                        {currentLanguage === 'sl' ? 'Pomočniki:' : 'Helpers:'}
-                      </span>
-                      {tier1Candidates.slice(0, 5).map(c => {
-                        const otherIcons = c.otherAssignments.length > 0 ? c.otherAssignments.map(o => o.emoji).join('') : '';
-                        return (
-                          <button
-                            key={c.person.id}
-                            type="button"
-                            onClick={() => setQuickAssignHelper(c.person.name)}
-                            title={c.otherAssignments.length > 0 ? (currentLanguage === 'sl' ? `Že v službi: ${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}` : `Already serving: ${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}`) : undefined}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer border flex items-center gap-1 ${
-                              quickAssignHelper === c.person.name
-                                ? 'bg-orange-600 text-white border-orange-600 shadow-xs'
-                                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
-                            }`}
-                          >
-                            <span>⭐ {c.person.name}</span>
-                            {otherIcons && <span className="text-[9px] opacity-85 font-sans">{otherIcons}</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <select
-                    value={quickAssignHelper}
-                    onChange={(e) => setQuickAssignHelper(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-250 rounded-xl px-3 py-2 text-xs font-bold text-gray-900 focus:outline-none focus:border-orange-500 focus:bg-white"
-                  >
-                    <option value="">{currentLanguage === 'sl' ? '-- Izberi pomočnika (ali pusti prazno) --' : '-- Select assistant (or leave empty) --'}</option>
-                    {tier1Candidates.length > 0 && (
-                      <optgroup label={currentLanguage === 'sl' ? '⭐ Služabniki v otroški cerkvi' : '⭐ Kids Ministry Team'}>
-                        {tier1Candidates.map(c => {
-                          const otherText = c.otherAssignments.length > 0 ? ` [${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}]` : '';
-                          return (
-                            <option key={c.person.id} value={c.person.name}>
-                              ⭐ {c.person.name}{otherText}
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-                    {tier2Candidates.length > 0 && (
-                      <optgroup label={currentLanguage === 'sl' ? '👤 Ostali razpoložljivi sodelavci' : '👤 Other Available Volunteers'}>
-                        {tier2Candidates.map(c => {
-                          const otherText = c.otherAssignments.length > 0 ? ` [${c.otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}]` : '';
-                          return (
-                            <option key={c.person.id} value={c.person.name}>
-                              {c.person.name}{otherText}
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-                    {tier3Candidates.length > 0 && (
-                      <optgroup label={currentLanguage === 'sl' ? '⚠️ Odsotni / Zasedeni' : '⚠️ Unavailable / Absent'}>
-                        {tier3Candidates.map(c => (
-                          <option key={c.person.id} value={c.person.name}>
-                            ⚠️ {c.person.name} ({c.conflict?.label})
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
-                  {helperConflict && (
-                    <div className="text-[11px] text-amber-800 font-medium mt-1 flex items-center gap-1 bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg">
-                      <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                      <span>{helperConflict.label}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Sync Lesson Checkbox */}
-                <label className="flex items-center gap-2 text-xs text-gray-700 font-medium cursor-pointer pt-1">
-                  <input
-                    type="checkbox"
-                    checked={quickAssignSyncLesson}
-                    onChange={(e) => setQuickAssignSyncLesson(e.target.checked)}
-                    className="rounded text-orange-600 focus:ring-orange-500"
-                  />
-                  <span>
-                    {currentLanguage === 'sl'
-                      ? 'Posodobi imena tudi v obstoječem učnem načrtu (lekciji)'
-                      : 'Sync teacher names to existing lesson plan'}
-                  </span>
-                </label>
-
-                {/* Actions */}
-                <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setQuickAssignModalOpen(false)}
-                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl transition cursor-pointer"
-                  >
-                    {currentLanguage === 'sl' ? 'Prekliči' : 'Cancel'}
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-orange-600 hover:bg-orange-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
-                  >
-                    {currentLanguage === 'sl' ? 'Shrani razpored' : 'Save Assignment'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        );
-      })()}
 
     </div>
   );

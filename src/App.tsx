@@ -96,6 +96,7 @@ import {
   fetchSundaysFromSupabase, 
   upsertSundayToSupabase, 
   fetchPeopleFromSupabase, 
+  fetchRegisteredUsersFromSupabase,
   upsertPersonToSupabase, 
   deletePersonFromSupabase, 
   fetchBlackoutsFromSupabase, 
@@ -103,6 +104,7 @@ import {
   deleteBlackoutFromSupabase, 
   fetchShiftSwapsFromSupabase, 
   upsertShiftSwapToSupabase, 
+  upsertWorshipScheduleToSupabase,
   subscribeToSupabaseRealtime, 
   IS_SUPABASE_CONFIGURED 
 } from './services/supabaseDataService';
@@ -228,6 +230,12 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
     // 1. Deduplicate by matching non-empty phone number
     if (cleanPhone && phoneToPerson.has(cleanPhone)) {
       const existing = phoneToPerson.get(cleanPhone)!;
+      if (!(existing as any).auth_user_id && (person as any).auth_user_id) {
+        (existing as any).auth_user_id = (person as any).auth_user_id;
+      }
+      if (!existing.email && person.email) {
+        existing.email = person.email;
+      }
       // Merge missing preferred ministries, led ministries, family members
       if (person.preferredMinistries && person.preferredMinistries.length > 0) {
         existing.preferredMinistries = Array.from(new Set([...(existing.preferredMinistries || []), ...person.preferredMinistries]));
@@ -246,6 +254,25 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
 
     // 2. Deduplicate by matching non-empty email
     if (cleanEmail && emailToPerson.has(cleanEmail)) {
+      const existing = emailToPerson.get(cleanEmail)!;
+      if (!(existing as any).auth_user_id && (person as any).auth_user_id) {
+        (existing as any).auth_user_id = (person as any).auth_user_id;
+      }
+      if (!existing.phone && person.phone) {
+        existing.phone = person.phone;
+      }
+      if (person.preferredMinistries && person.preferredMinistries.length > 0) {
+        existing.preferredMinistries = Array.from(new Set([...(existing.preferredMinistries || []), ...person.preferredMinistries]));
+      }
+      if (person.ledMinistries && person.ledMinistries.length > 0) {
+        existing.ledMinistries = Array.from(new Set([...(existing.ledMinistries || []), ...person.ledMinistries]));
+      }
+      if (person.familyMembers && person.familyMembers.length > 0) {
+        existing.familyMembers = Array.from(new Set([...(existing.familyMembers || []), ...person.familyMembers]));
+      }
+      if (!existing.avatarUrl && person.avatarUrl) {
+        existing.avatarUrl = person.avatarUrl;
+      }
       continue;
     }
 
@@ -256,6 +283,12 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
       if (samePrefix && (Math.abs(cleanName.length - existingName.length) <= 3)) {
         if (existingPerson.role === person.role || (cleanPhone && existingPerson.phone && existingPerson.phone.replace(/[^0-9]/g, '') === cleanPhone)) {
           isNameVariantDuplicate = true;
+          if (!(existingPerson as any).auth_user_id && (person as any).auth_user_id) {
+            (existingPerson as any).auth_user_id = (person as any).auth_user_id;
+          }
+          if (!existingPerson.email && person.email) {
+            existingPerson.email = person.email;
+          }
           // Merge ministries if any
           if (person.preferredMinistries && person.preferredMinistries.length > 0) {
             existingPerson.preferredMinistries = Array.from(new Set([...(existingPerson.preferredMinistries || []), ...person.preferredMinistries]));
@@ -408,6 +441,21 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [activeTab, isConfirmView]);
   const [selectedSundayId, setSelectedSundayId] = useState<string | null>(null);
+  const [targetMinistryId, setTargetMinistryId] = useState<string | null>(null);
+  const [targetCategory, setTargetCategory] = useState<string | null>(null);
+
+  const handleSelectSunday = (sundayId: string, ministryId?: string, categoryId?: string) => {
+    setSelectedSundayId(sundayId);
+    setTargetMinistryId(ministryId || null);
+    setTargetCategory(categoryId || null);
+  };
+
+  const handleNavTab = (tab: TabType) => {
+    setSelectedSundayId(null);
+    setTargetMinistryId(null);
+    setTargetCategory(null);
+    setActiveTab(tab);
+  };
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
   const [isSwapModalOpen, setIsSwapModalOpen] = useState<boolean>(false);
   const [isBlackoutModalOpen, setIsBlackoutModalOpen] = useState<boolean>(false);
@@ -558,6 +606,10 @@ export default function App() {
 
   const handleUpdateWorshipRoster = (newRoster: WorshipRosterEntry[]) => {
     setWorshipRoster(newRoster);
+    // Persist to Supabase
+    for (const entry of newRoster) {
+      upsertWorshipScheduleToSupabase(entry).catch(console.warn);
+    }
     if (IS_FIREBASE_ENABLED && db) {
       (async () => {
         try {
@@ -940,9 +992,9 @@ export default function App() {
       const activeUserObj: User = {
         uid: sessionUser.id,
         email: sessionUser.email || '',
-        displayName: userFullName || sessionUser.email || 'Volunteer',
+        displayName: dbProfile?.full_name || dbProfile?.name || userFullName || (sessionUser.email ? sessionUser.email.split('@')[0] : 'Uporabnik'),
         role: resolvedRole,
-        personName: matchedPerson?.name
+        personName: dbProfile?.full_name || dbProfile?.name || matchedPerson?.name
       };
       setUserDbProfile(activeUserObj);
       setUsers(prev => {
@@ -1099,11 +1151,12 @@ export default function App() {
 
     const loadFromSupabase = async () => {
       try {
-        const [remoteSundays, remotePeople, remoteBlackouts, remoteSwaps] = await Promise.all([
+        const [remoteSundays, remotePeople, remoteBlackouts, remoteSwaps, remoteUsers] = await Promise.all([
           fetchSundaysFromSupabase(),
           fetchPeopleFromSupabase(),
           fetchBlackoutsFromSupabase(),
-          fetchShiftSwapsFromSupabase()
+          fetchShiftSwapsFromSupabase(),
+          fetchRegisteredUsersFromSupabase()
         ]);
 
         if (remoteSundays.length > 0) {
@@ -1118,22 +1171,6 @@ export default function App() {
           const merged = mergePeopleWithDefaults(remotePeople, localPeople);
           setPeople(merged);
           try { localStorage.setItem('church_roster_people_v2', JSON.stringify(merged)); } catch (e) {}
-
-          const registeredUsers: User[] = (merged || [])
-            .filter((p: any) => p.auth_user_id)
-            .map((p: any) => ({
-              uid: (p as any).auth_user_id,
-              email: p.email || '',
-              displayName: p.name,
-              role: normalizeUserRole(p.role),
-              personName: p.name
-            }));
-          setUsers(prev => {
-            const map = new Map<string, User>();
-            registeredUsers.forEach(u => map.set(u.uid, u));
-            prev.forEach(u => map.set(u.uid, u));
-            return Array.from(map.values());
-          });
 
           // Sync current logged in user's profile role if matched
           if (authUser) {
@@ -1155,6 +1192,18 @@ export default function App() {
               });
             }
           }
+        }
+
+        // Populate users for Role Management directly from Supabase profiles
+        if (remoteUsers.length > 0) {
+          setUsers(prev => {
+            const map = new Map<string, User>();
+            remoteUsers.forEach(u => map.set(u.uid, u));
+            prev.forEach(u => {
+              if (!map.has(u.uid)) map.set(u.uid, u);
+            });
+            return Array.from(map.values());
+          });
         }
 
         if (remoteBlackouts.length > 0) {
@@ -1184,25 +1233,26 @@ export default function App() {
         }
       },
       async () => {
-        const freshPeople = await fetchPeopleFromSupabase();
+        const [freshPeople, freshUsers] = await Promise.all([
+          fetchPeopleFromSupabase(),
+          fetchRegisteredUsersFromSupabase()
+        ]);
+
         if (freshPeople.length > 0) {
           setPeople(freshPeople);
           try { localStorage.setItem('church_roster_people_v2', JSON.stringify(freshPeople)); } catch (e) {}
-          const registeredUsers: User[] = (freshPeople || [])
-            .filter((p: any) => p.auth_user_id)
-            .map((p: any) => ({
-              uid: (p as any).auth_user_id,
-              email: p.email || '',
-              displayName: p.name,
-              role: normalizeUserRole(p.role),
-              personName: p.name
-            }));
+        }
+
+        if (freshUsers.length > 0) {
           setUsers(prev => {
             const map = new Map<string, User>();
-            registeredUsers.forEach(u => map.set(u.uid, u));
-            prev.forEach(u => map.set(u.uid, u));
+            freshUsers.forEach(u => map.set(u.uid, u));
+            prev.forEach(u => {
+              if (!map.has(u.uid)) map.set(u.uid, u);
+            });
             return Array.from(map.values());
           });
+        }
 
           // Sync current logged in user's profile role on live Supabase changes
           if (authUser) {
@@ -1224,7 +1274,6 @@ export default function App() {
               });
             }
           }
-        }
       },
       async () => {
         const freshBlackouts = await fetchBlackoutsFromSupabase();
@@ -2002,7 +2051,7 @@ export default function App() {
         extraNavItems={
           <>
             <button
-              onClick={() => { setSelectedSundayId(null); setActiveTab('home'); }}
+              onClick={() => handleNavTab('home')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
                 activeTab === 'home'
                   ? 'bg-[#93032E] text-white shadow-xs'
@@ -2015,7 +2064,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setSelectedSundayId(null); setActiveTab('sundays'); }}
+              onClick={() => handleNavTab('sundays')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
                 activeTab === 'sundays'
                   ? 'bg-[#93032E] text-white shadow-xs'
@@ -2028,7 +2077,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setSelectedSundayId(null); setActiveTab('sunday_school'); }}
+              onClick={() => handleNavTab('sunday_school')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
                 activeTab === 'sunday_school'
                   ? 'bg-[#93032E] text-white shadow-xs'
@@ -2041,7 +2090,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setSelectedSundayId(null); setActiveTab('worship'); }}
+              onClick={() => handleNavTab('worship')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
                 activeTab === 'worship'
                   ? 'bg-[#93032E] text-white shadow-xs'
@@ -2054,7 +2103,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setSelectedSundayId(null); setActiveTab('ministries'); }}
+              onClick={() => handleNavTab('ministries')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
                 activeTab === 'ministries'
                   ? 'bg-[#93032E] text-white shadow-xs'
@@ -2067,7 +2116,7 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => { setSelectedSundayId(null); setActiveTab('people'); }}
+              onClick={() => handleNavTab('people')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
                 activeTab === 'people'
                   ? 'bg-[#93032E] text-white shadow-xs'
@@ -2129,7 +2178,10 @@ export default function App() {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 pb-32">
         {activeSunday ? (
           <SundayDetail
+            key={activeSunday.id}
             sunday={activeSunday}
+            initialMinistryId={targetMinistryId}
+            initialCategory={targetCategory}
             allSundays={sundays}
             ministries={ministries}
             people={people}
@@ -2140,8 +2192,12 @@ export default function App() {
             worshipRoster={worshipRoster}
             sundaySchoolLessons={sundaySchoolLessons}
             blackoutDates={blackoutDates}
-            onBack={() => setSelectedSundayId(null)}
-            onSelectSunday={(id) => setSelectedSundayId(id)}
+            onBack={() => {
+              setSelectedSundayId(null);
+              setTargetMinistryId(null);
+              setTargetCategory(null);
+            }}
+            onSelectSunday={(id) => handleSelectSunday(id)}
             onUpdateSunday={handleUpdateSunday}
             onUpdatePerson={handleUpdatePerson}
             googleToken={googleToken}
@@ -2161,7 +2217,7 @@ export default function App() {
                 userRole={activeRole}
                 translations={translations}
                 currentLanguage={currentLanguage}
-                onSelectSunday={(id) => setSelectedSundayId(id)}
+                onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
                 onAddSunday={handleAddSunday}
                 onUpdateSunday={handleUpdateSunday}
                 onOpenVisitorModal={() => setIsVisitorModalOpen(true)}
@@ -2182,7 +2238,7 @@ export default function App() {
                 userRole={activeRole}
                 translations={translations}
                 currentLanguage={currentLanguage}
-                onSelectSunday={(id) => setSelectedSundayId(id)}
+                onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
                 onDeleteSunday={handleDeleteSunday}
                 onGenerateAcademicYear={handleGenerateAcademicYear}
                 onOpenStatistics={() => setActiveTab('statistics')}
@@ -2198,7 +2254,7 @@ export default function App() {
                 translations={translations}
                 onBack={() => setActiveTab('sundays')}
                 onSelectSunday={(id) => {
-                  setSelectedSundayId(id);
+                  handleSelectSunday(id);
                   setActiveTab('sundays');
                 }}
               />
@@ -2215,7 +2271,7 @@ export default function App() {
                 translations={translations}
                 currentLanguage={currentLanguage}
                 canEdit={activeRole !== 'Viewer'}
-                onSelectSunday={(id) => setSelectedSundayId(id)}
+                onSelectSunday={(id) => handleSelectSunday(id, 'nedeljska_sola_mlajsa', 'kids')}
                 onUpdateSunday={handleUpdateSunday}
                 onGenerateAcademicYear={handleGenerateAcademicYear}
                 blackoutDates={blackoutDates}
@@ -2233,7 +2289,9 @@ export default function App() {
                 worshipRoster={worshipRoster}
                 onUpdateWorshipRoster={handleUpdateWorshipRoster}
                 onUpdateSunday={handleUpdateSunday}
-                onSelectSunday={(id) => setSelectedSundayId(id)}
+                onSelectSunday={(id) => handleSelectSunday(id, 'slavilna_ekipa', 'worship')}
+                blackoutDates={blackoutDates}
+                ministries={ministries}
               />
             )}
 
@@ -2247,7 +2305,7 @@ export default function App() {
                 currentLanguage={currentLanguage}
                 worshipRoster={worshipRoster}
                 sundaySchoolLessons={sundaySchoolLessons}
-                onSelectSunday={(id) => setSelectedSundayId(id)}
+                onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
                 onOpenInspectionModal={handleOpenInspectionModal}
               />
             )}
@@ -2459,7 +2517,7 @@ export default function App() {
         <div className="mx-auto w-full max-w-lg grid grid-cols-6 px-1 gap-0.5">
           
           <button
-            onClick={() => { setSelectedSundayId(null); setActiveTab('home'); }}
+            onClick={() => handleNavTab('home')}
             id="nav-tab-home"
             className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition-all duration-200 focus:outline-none min-w-0 ${
               activeTab === 'home' && !activeSunday
@@ -2474,7 +2532,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setSelectedSundayId(null); setActiveTab('sundays'); }}
+            onClick={() => handleNavTab('sundays')}
             id="nav-tab-sundays"
             className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition-all duration-200 focus:outline-none min-w-0 ${
               activeTab === 'sundays' || activeSunday
@@ -2489,7 +2547,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setSelectedSundayId(null); setActiveTab('sunday_school'); }}
+            onClick={() => handleNavTab('sunday_school')}
             id="nav-tab-sunday-school"
             className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition-all duration-200 focus:outline-none min-w-0 ${
               activeTab === 'sunday_school' && !activeSunday
@@ -2504,7 +2562,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setSelectedSundayId(null); setActiveTab('worship'); }}
+            onClick={() => handleNavTab('worship')}
             id="nav-tab-worship"
             className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition-all duration-200 focus:outline-none min-w-0 ${
               activeTab === 'worship' && !activeSunday
@@ -2519,7 +2577,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setSelectedSundayId(null); setActiveTab('ministries'); }}
+            onClick={() => handleNavTab('ministries')}
             id="nav-tab-ministries"
             className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition-all duration-200 focus:outline-none min-w-0 ${
               activeTab === 'ministries' && !activeSunday
@@ -2534,7 +2592,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => { setSelectedSundayId(null); setActiveTab('people'); }}
+            onClick={() => handleNavTab('people')}
             id="nav-tab-people"
             className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition-all duration-200 focus:outline-none min-w-0 ${
               activeTab === 'people' && !activeSunday
@@ -2547,7 +2605,6 @@ export default function App() {
               {currentLanguage === 'sl' ? 'EKIPA' : 'PEOPLE'}
             </span>
           </button>
-
         </div>
       </nav>
 

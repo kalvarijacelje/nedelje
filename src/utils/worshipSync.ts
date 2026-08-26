@@ -1,5 +1,6 @@
-import { WorshipRosterEntry, ServiceSunday } from '../types';
+import { WorshipRosterEntry, ServiceSunday, Person, BlackoutDate, Ministry } from '../types';
 import { INITIAL_WORSHIP_ROSTER } from '../data/worshipData';
+import { checkPersonAbsenceOnSunday, getMinistryIconEmoji } from '../components/SundayDetail';
 
 /**
  * Match a Sunday date string against worship roster entry dates.
@@ -50,21 +51,21 @@ export function matchWorshipRosterEntry(
 export function getWorshipTeamAssignedNames(entry: WorshipRosterEntry): string[] {
   const names: string[] = [];
 
-  if (entry.leader && entry.leader.trim()) {
+  if (entry.leader && entry.leader.trim() && entry.leader.trim() !== '-') {
     names.push(`Vodja: ${entry.leader.trim()}`);
   }
 
   const band: string[] = [];
-  if (entry.acoustic && entry.acoustic.trim()) band.push(`${entry.acoustic.trim()} (Akustika)`);
-  if (entry.keys && entry.keys.trim()) band.push(`${entry.keys.trim()} (Klaviature)`);
-  if (entry.drums && entry.drums.trim()) band.push(`${entry.drums.trim()} (Bobni)`);
-  if (entry.bass && entry.bass.trim()) band.push(`${entry.bass.trim()} (Bas)`);
+  if (entry.acoustic && entry.acoustic.trim() && entry.acoustic.trim() !== '-') band.push(`${entry.acoustic.trim()} (Akustika)`);
+  if (entry.keys && entry.keys.trim() && entry.keys.trim() !== '-') band.push(`${entry.keys.trim()} (Klaviature)`);
+  if (entry.drums && entry.drums.trim() && entry.drums.trim() !== '-') band.push(`${entry.drums.trim()} (Bobni)`);
+  if (entry.bass && entry.bass.trim() && entry.bass.trim() !== '-') band.push(`${entry.bass.trim()} (Bas)`);
 
   if (band.length > 0) {
     names.push(`Band: ${band.join(', ')}`);
   }
 
-  if (entry.vocals && entry.vocals.trim()) {
+  if (entry.vocals && entry.vocals.trim() && entry.vocals.trim() !== '-') {
     names.push(`Vokali: ${entry.vocals.trim()}`);
   }
 
@@ -120,49 +121,71 @@ export function resolveMinistryAssignments(
 
 /**
  * Bi-directional sync helper: updates a WorshipRosterEntry in worshipRoster when
- * assignments for 'slavilna_ekipa' are edited in /sluzbe.
- * Preserves roles: parses "Vodja: ...", "Band: ...", "Vokali: ..." or updates leader/acoustic/drums/bass/keys/vocals.
+ * assignments for 'slavilna_ekipa', 'zvok', 'besedila', or 'uvod_slavljenje' are edited in /sluzbe or /urnik.
+ * Preserves roles: parses "Vodja: ...", "Band: ...", "Vokali: ..." or updates leader/acoustic/drums/bass/keys/vocals/sound/slides.
  */
 export function syncWorshipRosterFromSundayAssignments(
   sunday: ServiceSunday,
   currentRoster: WorshipRosterEntry[]
 ): WorshipRosterEntry[] {
   const names = sunday.assignments['slavilna_ekipa'] || sunday.assignments['slavilna'] || [];
-  if (names.length === 0) return currentRoster;
+  const soundAssignments = sunday.assignments['zvok'] || [];
+  const slideAssignments = sunday.assignments['besedila'] || [];
+  const worshipIntro = sunday.assignments['uvod_slavljenje'] || [];
 
   const existingEntry = matchWorshipRosterEntry(sunday.date, currentRoster);
   const entryId = existingEntry ? existingEntry.id : 'worship_roster_' + Date.now();
 
-  let leader = existingEntry?.leader || '';
+  let leader = existingEntry?.leader || (worshipIntro[0] || '');
   let acoustic = existingEntry?.acoustic || '';
   let drums = existingEntry?.drums || '';
   let bass = existingEntry?.bass || '';
   let keys = existingEntry?.keys || '';
   let vocals = existingEntry?.vocals || '';
+  let sound = soundAssignments[0] !== undefined ? soundAssignments[0] : (existingEntry?.sound || '');
+  let slides = slideAssignments[0] !== undefined ? slideAssignments[0] : (existingEntry?.slides || '');
 
   // Parse structured string items or plain names
-  names.forEach((item) => {
-    const trimmed = item.trim();
-    if (trimmed.startsWith('Vodja:')) {
-      leader = trimmed.replace(/^Vodja:\s*/, '');
-    } else if (trimmed.startsWith('Vokali:')) {
-      vocals = trimmed.replace(/^Vokali:\s*/, '');
-    } else if (trimmed.startsWith('Band:')) {
-      const bandContent = trimmed.replace(/^Band:\s*/, '');
-      const parts = bandContent.split(',').map(p => p.trim());
-      parts.forEach(p => {
-        if (p.includes('(Akustika)')) acoustic = p.replace(/\s*\(Akustika\)/, '');
-        else if (p.includes('(Klaviature)')) keys = p.replace(/\s*\(Klaviature\)/, '');
-        else if (p.includes('(Bobni)')) drums = p.replace(/\s*\(Bobni\)/, '');
-        else if (p.includes('(Bas)')) bass = p.replace(/\s*\(Bas\)/, '');
-      });
-    } else {
-      // Plain name fallback: if not already set, assign as leader or vocals
-      if (!leader) leader = trimmed;
-      else if (!vocals) vocals = trimmed;
-      else vocals += `, ${trimmed}`;
-    }
-  });
+  if (names.length > 0) {
+    let parsedBandAcoustic = '';
+    let parsedBandKeys = '';
+    let parsedBandDrums = '';
+    let parsedBandBass = '';
+    let parsedLeader = '';
+    let parsedVocals: string[] = [];
+
+    names.forEach((item) => {
+      const trimmed = item.trim();
+      if (!trimmed) return;
+
+      if (trimmed.startsWith('Vodja:')) {
+        parsedLeader = trimmed.replace(/^Vodja:\s*/, '').trim();
+      } else if (trimmed.startsWith('Vokali:')) {
+        const vPart = trimmed.replace(/^Vokali:\s*/, '').trim();
+        if (vPart) parsedVocals.push(vPart);
+      } else if (trimmed.startsWith('Band:')) {
+        const bandContent = trimmed.replace(/^Band:\s*/, '');
+        const parts = bandContent.split(',').map(p => p.trim());
+        parts.forEach(p => {
+          if (p.includes('(Akustika)')) parsedBandAcoustic = p.replace(/\s*\(Akustika\)/, '').trim();
+          else if (p.includes('(Klaviature)')) parsedBandKeys = p.replace(/\s*\(Klaviature\)/, '').trim();
+          else if (p.includes('(Bobni)')) parsedBandDrums = p.replace(/\s*\(Bobni\)/, '').trim();
+          else if (p.includes('(Bas)')) parsedBandBass = p.replace(/\s*\(Bas\)/, '').trim();
+        });
+      } else {
+        // Plain name fallback
+        if (!parsedLeader && !leader) parsedLeader = trimmed;
+        else parsedVocals.push(trimmed);
+      }
+    });
+
+    if (parsedLeader) leader = parsedLeader;
+    if (parsedBandAcoustic) acoustic = parsedBandAcoustic;
+    if (parsedBandKeys) keys = parsedBandKeys;
+    if (parsedBandDrums) drums = parsedBandDrums;
+    if (parsedBandBass) bass = parsedBandBass;
+    if (parsedVocals.length > 0) vocals = parsedVocals.join(', ');
+  }
 
   const updatedEntry: WorshipRosterEntry = {
     id: entryId,
@@ -173,11 +196,11 @@ export function syncWorshipRosterFromSundayAssignments(
     bass,
     keys,
     vocals,
-    sound: existingEntry?.sound || '',
-    slides: existingEntry?.slides || '',
-    vocalTechAbsent: existingEntry?.vocalTechAbsent || '',
+    sound,
+    slides,
+    vocalTechAbsent: existingEntry?.vocalTechAbsent || sunday.absentOrNotes || '',
     monitors: existingEntry?.monitors || '',
-    sundaySchool: existingEntry?.sundaySchool || ''
+    sundaySchool: existingEntry?.sundaySchool || (sunday.assignments?.['nedeljska_sola_mlajsa'] || sunday.assignments?.['nedeljska_sola'] || [])[0] || ''
   };
 
   if (existingEntry) {
@@ -199,38 +222,36 @@ export function syncSundayFromWorshipRosterEntry(
 
   // 1. Build slavilna_ekipa items
   const teamItems: string[] = [];
-  if (entry.leader && entry.leader.trim()) {
+  if (entry.leader && entry.leader.trim() && entry.leader.trim() !== '-') {
     teamItems.push(`Vodja: ${entry.leader.trim()}`);
   }
 
   const band: string[] = [];
-  if (entry.acoustic && entry.acoustic.trim()) band.push(`${entry.acoustic.trim()} (Akustika)`);
-  if (entry.keys && entry.keys.trim()) band.push(`${entry.keys.trim()} (Klaviature)`);
-  if (entry.drums && entry.drums.trim()) band.push(`${entry.drums.trim()} (Bobni)`);
-  if (entry.bass && entry.bass.trim()) band.push(`${entry.bass.trim()} (Bas)`);
+  if (entry.acoustic && entry.acoustic.trim() && entry.acoustic.trim() !== '-') band.push(`${entry.acoustic.trim()} (Akustika)`);
+  if (entry.keys && entry.keys.trim() && entry.keys.trim() !== '-') band.push(`${entry.keys.trim()} (Klaviature)`);
+  if (entry.drums && entry.drums.trim() && entry.drums.trim() !== '-') band.push(`${entry.drums.trim()} (Bobni)`);
+  if (entry.bass && entry.bass.trim() && entry.bass.trim() !== '-') band.push(`${entry.bass.trim()} (Bas)`);
 
   if (band.length > 0) {
     teamItems.push(`Band: ${band.join(', ')}`);
   }
 
-  if (entry.vocals && entry.vocals.trim()) {
+  if (entry.vocals && entry.vocals.trim() && entry.vocals.trim() !== '-') {
     teamItems.push(`Vokali: ${entry.vocals.trim()}`);
   }
 
   nextAssignments['slavilna_ekipa'] = teamItems;
-  if (nextAssignments['slavilna']) {
-    nextAssignments['slavilna'] = teamItems;
-  }
+  nextAssignments['slavilna'] = teamItems;
 
   // 2. Sync tech roles and worship intro
   if (entry.sound !== undefined) {
-    nextAssignments['zvok'] = entry.sound && entry.sound.trim() && entry.sound !== '/' ? [entry.sound.trim()] : [];
+    nextAssignments['zvok'] = entry.sound && entry.sound.trim() && entry.sound.trim() !== '-' && entry.sound !== '/' ? [entry.sound.trim()] : [];
   }
   if (entry.slides !== undefined) {
-    nextAssignments['besedila'] = entry.slides && entry.slides.trim() && entry.slides !== '/' ? [entry.slides.trim()] : [];
+    nextAssignments['besedila'] = entry.slides && entry.slides.trim() && entry.slides.trim() !== '-' && entry.slides !== '/' ? [entry.slides.trim()] : [];
   }
-  if (entry.leader && entry.leader.trim()) {
-    nextAssignments['uvod_slavljenje'] = [entry.leader.trim()];
+  if (entry.leader !== undefined) {
+    nextAssignments['uvod_slavljenje'] = entry.leader && entry.leader.trim() && entry.leader.trim() !== '-' ? [entry.leader.trim()] : [];
   }
 
   return {
@@ -238,3 +259,110 @@ export function syncSundayFromWorshipRosterEntry(
     assignments: nextAssignments
   };
 }
+
+export type WorshipRoleKey = 'leader' | 'acoustic' | 'drums' | 'bass' | 'keys' | 'vocals' | 'sound' | 'slides';
+
+export interface WorshipCandidate {
+  person: Person;
+  tier: 1 | 2 | 3;
+  conflictLabel?: string;
+  isAbsent: boolean;
+  otherAssignments: Array<{ minId: string; name: string; emoji: string }>;
+}
+
+/**
+ * Generates a sorted candidate list for a specific worship role with tiering:
+ * Tier 1: Preferred / Worship members
+ * Tier 2: Other available volunteers (with other assignment badges on that Sunday)
+ * Tier 3: Unavailable / Absent
+ */
+export function getWorshipRoleCandidates(
+  roleKey: WorshipRoleKey,
+  targetSunday: ServiceSunday | undefined,
+  people: Person[],
+  blackoutDates: BlackoutDate[] = [],
+  ministries: Ministry[] = []
+): WorshipCandidate[] {
+  if (!Array.isArray(people)) return [];
+
+  const worshipRelatedKeys = ['slavilna_ekipa', 'slavilna', 'glasba', 'worship', 'zvok', 'besedila', 'uvod_slavljenje'];
+  
+  const roleSpecificKeywords: Record<WorshipRoleKey, string[]> = {
+    leader: ['vodja', 'slavilna', 'worship', 'petje', 'kitara', 'klaviature', 'uvod_slavljenje'],
+    acoustic: ['akustika', 'kitara', 'guitar', 'slavilna'],
+    drums: ['bobni', 'drums', 'cajon', 'tolkala', 'slavilna'],
+    bass: ['bas', 'bass', 'kitara', 'slavilna'],
+    keys: ['klaviature', 'klavir', 'piano', 'keys', 'slavilna'],
+    vocals: ['vokal', 'petje', 'vocals', 'slavilna'],
+    sound: ['zvok', 'ton', 'mikser', 'sound', 'av_tech', 'audio'],
+    slides: ['besedila', 'projekcija', 'slides', 'ppt', 'av_tech']
+  };
+
+  const keywords = roleSpecificKeywords[roleKey] || ['slavilna'];
+
+  const results: WorshipCandidate[] = people.map((person) => {
+    const prefs = Array.isArray(person.preferredMinistries) ? person.preferredMinistries.map(p => p.toLowerCase()) : [];
+    
+    // Check preferred / musician membership
+    const isPreferredForRole = prefs.some(p => 
+      keywords.some(k => p.includes(k)) || 
+      worshipRelatedKeys.some(w => p.includes(w))
+    );
+
+    // Check absence
+    let isAbsent = false;
+    let conflictLabel = '';
+    if (targetSunday && targetSunday.date) {
+      const absence = checkPersonAbsenceOnSunday(person.name, targetSunday.date, blackoutDates);
+      if (absence.isAbsent) {
+        isAbsent = true;
+        conflictLabel = absence.reason ? `Odsoten (${absence.reason})` : 'Odsoten (dopust/zadržan)';
+      }
+    }
+
+    // Check other assignments on that Sunday
+    const otherAssignments: Array<{ minId: string; name: string; emoji: string }> = [];
+    if (targetSunday && targetSunday.assignments) {
+      Object.entries(targetSunday.assignments).forEach(([mId, assigned]) => {
+        if (mId === 'slavilna_ekipa' || mId === 'slavilna') return;
+        if (Array.isArray(assigned)) {
+          const isServingHere = assigned.some(nameStr => 
+            typeof nameStr === 'string' && nameStr.toLowerCase().includes(person.name.toLowerCase())
+          );
+          if (isServingHere) {
+            const minObj = ministries.find(m => m.id === mId || m.nameSl?.toLowerCase() === mId.toLowerCase());
+            otherAssignments.push({
+              minId: mId,
+              name: minObj ? minObj.nameSl : mId,
+              emoji: getMinistryIconEmoji(mId)
+            });
+          }
+        }
+      });
+    }
+
+    let tier: 1 | 2 | 3 = 2;
+    if (isAbsent) {
+      tier = 3;
+    } else if (isPreferredForRole) {
+      tier = 1;
+    } else {
+      tier = 2;
+    }
+
+    return {
+      person,
+      tier,
+      conflictLabel: conflictLabel || (otherAssignments.length > 0 ? otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ') : undefined),
+      isAbsent,
+      otherAssignments
+    };
+  });
+
+  // Sort: Tier 1 first, then Tier 2, then Tier 3. Alphabetical within each tier.
+  return results.sort((a, b) => {
+    if (a.tier !== b.tier) return a.tier - b.tier;
+    return a.person.name.localeCompare(b.person.name, 'sl');
+  });
+}
+
