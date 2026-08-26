@@ -101,7 +101,7 @@ export default function ScheduleView({
   });
 
   return (
-    <div id="schedule-view-component" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-12 px-3 sm:px-4">
+    <div id="schedule-view-component" className="w-full space-y-5 animate-fade-in pb-12">
       {/* Unified Hero Header Banner */}
       <HeroHeaderBanner
         variant="schedule"

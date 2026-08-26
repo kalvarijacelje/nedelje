@@ -21,10 +21,23 @@ export const IS_SUPABASE_CONFIGURED = Boolean(
   !supabaseUrl.includes('placeholder')
 );
 
+// Cross-tab and cross-subdomain BroadcastChannel for immediate synchronization
+export const AUTH_CHANNEL_NAME = 'kck_auth_sync_channel';
+export const getAuthBroadcastChannel = (): BroadcastChannel | null => {
+  if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    try {
+      return new BroadcastChannel(AUTH_CHANNEL_NAME);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
 /**
- * Root-domain cookie adapter for Single Sign-On (SSO) across *.kalvarija.si subdomains
+ * Root-domain cookie adapter for Single Sign-On (SSO) across *.kalvarija.si subdomains & localhost
  */
-const rootDomainCookieStorage = {
+export const rootDomainCookieStorage = {
   getItem: (key: string): string | null => {
     if (typeof document === 'undefined') return null;
     const name = encodeURIComponent(key) + '=';
@@ -44,9 +57,9 @@ const rootDomainCookieStorage = {
   setItem: (key: string, value: string): void => {
     if (typeof document === 'undefined') return;
     const isKalvarija = typeof window !== 'undefined' && window.location.hostname.includes('kalvarija.si');
-    const domain = isKalvarija ? '; domain=.kalvarija.si' : '';
-    const secure = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `${encodeURIComponent(key)}=${encodeURIComponent(value)}; path=/${domain}; max-age=${60 * 60 * 24 * 365}; SameSite=Lax${secure}`;
+    const domainPart = isKalvarija ? '; domain=.kalvarija.si' : '';
+    const securePart = typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${encodeURIComponent(key)}=${encodeURIComponent(value)}; path=/${domainPart}; max-age=${60 * 60 * 24 * 365}; SameSite=Lax${securePart}`;
     try {
       localStorage.setItem(key, value);
     } catch {
@@ -55,9 +68,13 @@ const rootDomainCookieStorage = {
   },
   removeItem: (key: string): void => {
     if (typeof document === 'undefined') return;
-    const isKalvarija = typeof window !== 'undefined' && window.location.hostname.includes('kalvarija.si');
-    const domain = isKalvarija ? '; domain=.kalvarija.si' : '';
-    document.cookie = `${encodeURIComponent(key)}=; path=/${domain}; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+    const encodedKey = encodeURIComponent(key);
+    // Clear across all potential domain levels
+    document.cookie = `${encodedKey}=; path=/; domain=.kalvarija.si; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+    if (typeof window !== 'undefined') {
+      document.cookie = `${encodedKey}=; path=/; domain=${window.location.hostname}; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
+    }
+    document.cookie = `${encodedKey}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
     try {
       localStorage.removeItem(key);
     } catch {
@@ -80,3 +97,52 @@ export const supabase = createClient(
   }
 );
 
+/**
+ * Universal Global Sign-Out function:
+ * 1. Revokes the session on Supabase server with scope: 'global'
+ * 2. Wipes all cookies across .kalvarija.si and current host
+ * 3. Wipes localStorage / sessionStorage auth keys
+ * 4. Broadcasts GLOBAL_SIGNOUT to all open tabs/subdomains
+ */
+export const performGlobalSignOut = async (): Promise<void> => {
+  try {
+    if (supabase) {
+      await supabase.auth.signOut({ scope: 'global' }).catch(() => {});
+    }
+  } catch {
+    // ignore
+  }
+
+  // Clear all cookie auth keys
+  const cookieKeysToWipe = [
+    'sb-ptdvcobgplmngnhkjqag-auth-token',
+    'sb-ptdvcobgplmngnhkjqag-auth-token-code-verifier',
+    'supabase.auth.token',
+    'kck_user_session',
+    'church_roster_user_v1'
+  ];
+
+  cookieKeysToWipe.forEach(k => rootDomainCookieStorage.removeItem(k));
+
+  // Clear localStorage auth keys
+  try {
+    localStorage.removeItem('kck_user_session');
+    localStorage.removeItem('church_roster_user_v1');
+    localStorage.removeItem('sb-ptdvcobgplmngnhkjqag-auth-token');
+    localStorage.removeItem('sb-ptdvcobgplmngnhkjqag-auth-token-code-verifier');
+    localStorage.removeItem('supabase.auth.token');
+  } catch {
+    // ignore
+  }
+
+  // Broadcast to all open tabs and subdomains
+  const channel = getAuthBroadcastChannel();
+  if (channel) {
+    try {
+      channel.postMessage({ type: 'GLOBAL_SIGNOUT', timestamp: Date.now() });
+      channel.close();
+    } catch {
+      // ignore
+    }
+  }
+};

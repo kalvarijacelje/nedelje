@@ -812,7 +812,7 @@ export default function WorshipTeamView({
   }, [archivedSongs, archiveSearch]);
 
   return (
-    <div id="worship-team-container" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-24 px-3 sm:px-4">
+    <div id="worship-team-container" className="w-full space-y-5 animate-fade-in pb-24">
       {/* Hero Header Banner */}
       <HeroHeaderBanner
         variant="worship"

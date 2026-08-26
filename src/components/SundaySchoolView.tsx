@@ -682,7 +682,7 @@ export default function SundaySchoolView({
   };
 
   return (
-    <div id="sunday-school-component" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-16 px-3 sm:px-4">
+    <div id="sunday-school-component" className="w-full space-y-5 animate-fade-in pb-16">
       
       {/* Hero Header Banner */}
       <HeroHeaderBanner

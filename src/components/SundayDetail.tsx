@@ -1209,8 +1209,8 @@ export default function SundayDetail({
   const nextSunday = currentSundayIndex >= 0 && currentSundayIndex < sortedSundays.length - 1 ? sortedSundays[currentSundayIndex + 1] : null;
 
   return (
-    <div id="sunday-detail-screen" className="flex flex-col min-h-screen pb-24 bg-[#F3F4F6]">
-      <div className="max-w-5xl mx-auto w-full space-y-4 px-3 sm:px-4 py-4 pb-16 animate-fade-in">
+    <div id="sunday-detail-screen" className="w-full">
+      <div className="w-full space-y-4 pb-16 animate-fade-in">
         
         {/* 1. TOP HERO HEADER & CONTAINER ALIGNMENT (#034C3C Deep Green Gradient) */}
         <HeroHeaderBanner

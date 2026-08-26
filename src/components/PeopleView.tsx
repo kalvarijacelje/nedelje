@@ -823,7 +823,7 @@ export default function PeopleView({
   }
 
   return (
-    <div id="people-view-component" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-12 px-3 sm:px-4">
+    <div id="people-view-component" className="w-full space-y-5 animate-fade-in pb-12">
       {/* Admin Notification Banner for Unlinked / Pending New Users (People tab only) */}
       {userRole === 'Admin' && pendingUsers.length > 0 && (() => {
         const unlinkedList = pendingUsers.filter(u => !people.some(p => p && (

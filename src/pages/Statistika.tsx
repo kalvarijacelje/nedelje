@@ -219,7 +219,7 @@ export default function Statistika({
   const selectedLogSunday = sortedSundays.find(s => s.id === selectedLogSundayId);
 
   return (
-    <div id="statistika-dashboard-page" className="max-w-5xl mx-auto w-full space-y-6 animate-fade-in pb-16 px-3 sm:px-4">
+    <div id="statistika-dashboard-page" className="w-full space-y-6 animate-fade-in pb-16">
       {/* Hero Header Banner */}
       <HeroHeaderBanner
         variant="schedule"

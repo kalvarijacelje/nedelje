@@ -91,7 +91,7 @@ import {
   getDocs, 
   writeBatch 
 } from 'firebase/firestore';
-import { supabase } from './supabaseClient';
+import { supabase, performGlobalSignOut, getAuthBroadcastChannel } from './supabaseClient';
 import { 
   fetchSundaysFromSupabase, 
   upsertSundayToSupabase, 
@@ -953,8 +953,35 @@ export default function App() {
       syncUserSession(session?.user ?? null);
     });
 
+    // 3. Cross-subdomain & cross-tab BroadcastChannel listener
+    const broadcastChannel = getAuthBroadcastChannel();
+    if (broadcastChannel) {
+      broadcastChannel.onmessage = (event) => {
+        if (event.data?.type === 'GLOBAL_SIGNOUT') {
+          syncUserSession(null);
+        } else if (event.data?.type === 'GLOBAL_SIGNIN') {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            syncUserSession(session?.user ?? null);
+          });
+        }
+      };
+    }
+
+    // 4. Tab visibility / focus sync
+    const handleTabFocus = () => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        syncUserSession(session?.user ?? null);
+      }).catch(() => {});
+    };
+
+    window.addEventListener('focus', handleTabFocus);
+    document.addEventListener('visibilitychange', handleTabFocus);
+
     return () => {
       subscription.unsubscribe();
+      if (broadcastChannel) broadcastChannel.close();
+      window.removeEventListener('focus', handleTabFocus);
+      document.removeEventListener('visibilitychange', handleTabFocus);
     };
   }, [people]);
 
@@ -1231,7 +1258,7 @@ export default function App() {
 
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut();
+      await performGlobalSignOut();
       setUserDbProfile(null);
       setAuthUser(null);
       setGoogleToken(null);
@@ -1895,7 +1922,7 @@ export default function App() {
       <EcosystemNavbar
         currentApp="nedelje"
         user={authUser ? {
-          name: isAlesLoggedIn ? 'Aleš' : (userDbProfile?.displayName || userDbProfile?.personName || authUser.email?.split('@')[0] || 'Uporabnik'),
+          name: isAlesLoggedIn ? 'Aleš Lajlar' : (userDbProfile?.displayName || userDbProfile?.personName || authUser.email?.split('@')[0] || 'Uporabnik'),
           email: authUser.email || '',
           role: isAlesLoggedIn ? 'Superadmin' : activeRole,
         } : null}

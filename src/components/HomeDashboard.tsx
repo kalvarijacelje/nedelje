@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { ServiceSunday, Ministry, UserRole, Translation, Person, VisitorConnection, canAccessPersonalData } from '../types';
 import { 
-  Calendar, Users, ArrowRightLeft, AlertTriangle, ShieldCheck, Heart, Sparkles, ChevronRight, CheckCircle2, AlertCircle, Plus, Eye, BookOpen, Layers, Check, Clock, HelpCircle, X, ExternalLink, ShieldAlert, Award, Star, MessageSquare, Phone, Info, Music, Home, Wine, HeartHandshake, PlusCircle, Coffee, Edit, UserPlus, Copy, CheckCircle, Palmtree, ClipboardCheck, Bell, UserCheck
+  Calendar, Users, ArrowRightLeft, AlertTriangle, ShieldCheck, Heart, Sparkles, ChevronRight, CheckCircle2, AlertCircle, Plus, Eye, BookOpen, Layers, Check, Clock, HelpCircle, X, ExternalLink, ShieldAlert, Award, Star, MessageSquare, Phone, Info, Music, Home, Wine, HeartHandshake, PlusCircle, Coffee, Edit, UserPlus, Copy, CheckCircle, Palmtree, ClipboardCheck, Bell, UserCheck, User
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import KcKalvarijaLogoComponent from './KcKalvarijaLogo';
@@ -263,6 +263,71 @@ export default function HomeDashboard({
     m => resolveMinistryAssignments(nextSunday, m.id).length === 0
   );
 
+  // Helper to check if a specific person is assigned to a ministry on a given Sunday
+  const isPersonAssignedOnSunday = (sunday: ServiceSunday, person: Person, ministryId: string): boolean => {
+    const pName = person.name.toLowerCase().trim();
+    const pId = person.id;
+    
+    // Check assignmentDetails first
+    const details = sunday.assignmentDetails?.[ministryId];
+    if (Array.isArray(details) && details.length > 0) {
+      return details.some(d => {
+        if (d.status === 'declined') return false;
+        if (pId && (d as any).personId === pId) return true;
+        return d.personName && d.personName.toLowerCase().trim() === pName;
+      });
+    }
+    
+    // Fallback to legacy string array
+    const assignedList = sunday.assignments?.[ministryId] || [];
+    return assignedList.some(name => name.toLowerCase().trim() === pName);
+  };
+
+  // Personalized & Community stats computation
+  let myThisSundayMinistries: string[] = [];
+  let nextServingSunday: ServiceSunday | null = null;
+  let nextServingMinistries: string[] = [];
+  let myYearAssignmentsCount = 0;
+
+  if (activePerson) {
+    // 1. Check this upcoming Sunday
+    ministries.forEach(m => {
+      if (isPersonAssignedOnSunday(nextSunday, activePerson, m.id)) {
+        myThisSundayMinistries.push(currentLanguage === 'sl' ? m.nameSl : m.nameEn);
+      }
+    });
+
+    // 2. Scan all sortedSundays
+    sortedSundays.forEach(s => {
+      const sDate = parseSheetDate(s.date);
+      let assignedInSunday = false;
+      const assignedMinNames: string[] = [];
+
+      ministries.forEach(m => {
+        if (isPersonAssignedOnSunday(s, activePerson, m.id)) {
+          assignedInSunday = true;
+          myYearAssignmentsCount++;
+          assignedMinNames.push(currentLanguage === 'sl' ? m.nameSl : m.nameEn);
+        }
+      });
+
+      // Find earliest upcoming serving date (today or future)
+      if (assignedInSunday && sDate.getTime() >= today.getTime() && !nextServingSunday) {
+        nextServingSunday = s;
+        nextServingMinistries = assignedMinNames;
+      }
+    });
+  }
+
+  const isServingThisSunday = myThisSundayMinistries.length > 0;
+  const nextSundayFocus = getEffectiveSundayFocus(nextSunday);
+  const nextSundayFocusLabel = nextSundayFocus.type === 'communion'
+    ? (currentLanguage === 'sl' ? '🍷 Gospodova Večerja' : '🍷 Lord\'s Supper')
+    : nextSundayFocus.type === 'prayer'
+      ? (currentLanguage === 'sl' ? '🙏 Molitev za družine' : '🙏 Family & Sphere Prayer')
+      : (currentLanguage === 'sl' ? '✨ Redno bogoslužje' : '✨ Regular Service');
+
+
   // --- Duplicate previous week handler ---
   const handleDuplicateWeek = () => {
     if (!onUpdateSunday) return;
@@ -362,7 +427,7 @@ export default function HomeDashboard({
   };
 
   return (
-    <div id="home-dashboard-component" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-12 px-3 sm:px-4">
+    <div id="home-dashboard-component" className="w-full space-y-5 animate-fade-in pb-12">
       
       {/* Pending Volunteer Invitation In-App Notification Banner */}
       {pendingInvitations.length > 0 && (
@@ -477,7 +542,7 @@ export default function HomeDashboard({
         subtitle={currentLanguage === 'sl' ? 'Organizirajmo nedeljske ekipe skupaj. Pregled naslednjega bogoslužja, razporedov in hitrih opravil.' : 'Sunday service organizer and volunteer roster.'}
         icon={Home}
         actions={
-          <div className="flex items-center gap-3 text-xs flex-wrap font-mono">
+          <div className="flex items-center gap-2 sm:gap-3 text-xs flex-wrap font-mono">
             <span className="bg-white/10 px-2.5 py-1 rounded-lg border border-white/15">
               {currentLanguage === 'sl' ? 'Vloga:' : 'Roster access:'} <strong className="text-white font-bold">{translations[`role${userRole}` as any] || userRole}</strong>
             </span>
@@ -486,7 +551,97 @@ export default function HomeDashboard({
             </span>
           </div>
         }
-      />
+      >
+        {/* Subtle serving & overview metrics line (Option 2 + Option 4 merged) */}
+        <div className="pt-2.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+          
+          {/* Left Side: Personalized Volunteer Pulse or Next Sunday Focus */}
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            {activePerson ? (
+              <>
+                {isServingThisSunday ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 text-[11px] font-medium shadow-2xs">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                    <span>
+                      {currentLanguage === 'sl' 
+                        ? `Ta teden služiš: ${myThisSundayMinistries.join(', ')}` 
+                        : `Serving this Sunday: ${myThisSundayMinistries.join(', ')}`}
+                    </span>
+                  </span>
+                ) : nextServingSunday ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-white/95 border border-white/20 text-[11px] font-medium backdrop-blur-xs">
+                    <Calendar className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    <span>
+                      {currentLanguage === 'sl' 
+                        ? `Naslednje služenje: ${(nextServingSunday as ServiceSunday).date} (${nextServingMinistries.join(', ')})` 
+                        : `Next duty: ${(nextServingSunday as ServiceSunday).date} (${nextServingMinistries.join(', ')})`}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-white/80 border border-white/15 text-[11px]">
+                    <User className="w-3.5 h-3.5 text-white/70 shrink-0" />
+                    <span>{currentLanguage === 'sl' ? 'Brez prihajajočih zadolžitev' : 'No upcoming duties'}</span>
+                  </span>
+                )}
+
+                {myYearAssignmentsCount > 0 && (
+                  <span 
+                    className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-white/10 text-white/90 border border-white/15" 
+                    title={currentLanguage === 'sl' ? 'Skupno število služb v tem šolskem letu' : 'Total serving assignments this school year'}
+                  >
+                    🎯 {myYearAssignmentsCount}x {currentLanguage === 'sl' ? 'letos' : 'this year'}
+                  </span>
+                )}
+
+                {pendingInvitations.length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-xs animate-pulse">
+                    <Bell className="w-3 h-3" />
+                    <span>{pendingInvitations.length} {currentLanguage === 'sl' ? 'vabilo k potrditvi' : 'pending invite'}</span>
+                  </span>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-white/90 text-xs">
+                <span className="flex items-center gap-1 text-white/80">
+                  <Calendar className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                  <span>{currentLanguage === 'sl' ? 'Naslednje bogoslužje:' : 'Next Service:'}</span>
+                </span>
+                <span className="font-bold text-white bg-white/15 px-2 py-0.5 rounded-md border border-white/20 text-[11px] font-mono">
+                  {nextSunday.date}
+                </span>
+                <span className="text-[11px] bg-white/10 px-2 py-0.5 rounded-md border border-white/15 text-indigo-100 font-medium">
+                  {nextSundayFocusLabel}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Right Side: Community & Ecosystem Live Metrics */}
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-white/85">
+            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10 flex items-center gap-1" title={currentLanguage === 'sl' ? 'Vsa načrtovana nedeljska bogoslužja' : 'Total scheduled Sunday services'}>
+              📅 <strong className="text-white font-bold">{sundays.length}</strong> {currentLanguage === 'sl' ? 'nedelj' : 'Sundays'}
+            </span>
+            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10 flex items-center gap-1" title={currentLanguage === 'sl' ? 'Aktivne službe v cerkvi' : 'Active church ministries'}>
+              📋 <strong className="text-white font-bold">{ministries.length}</strong> {currentLanguage === 'sl' ? 'služb' : 'teams'}
+            </span>
+            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10 flex items-center gap-1" title={currentLanguage === 'sl' ? 'Skupno število sodelavcev in prostovoljcev' : 'Total active volunteers'}>
+              👥 <strong className="text-white font-bold">{people.length}</strong> {currentLanguage === 'sl' ? 'sodelavcev' : 'volunteers'}
+            </span>
+            {visitors.length > 0 && onOpenVisitorModal && (
+              <button
+                type="button"
+                onClick={onOpenVisitorModal}
+                className="px-2 py-0.5 bg-amber-400/25 hover:bg-amber-400/40 text-amber-200 rounded-lg border border-amber-300/35 cursor-pointer transition flex items-center gap-1 active:scale-95"
+                title={currentLanguage === 'sl' ? 'Odpri evidenco obiskovalcev' : 'Open visitor connections tracker'}
+              >
+                <Coffee className="w-3 h-3 text-amber-300" />
+                <span><strong className="text-white font-bold">{visitors.length}</strong> {currentLanguage === 'sl' ? 'obiskovalcev' : 'visitors'}</span>
+              </button>
+            )}
+          </div>
+
+        </div>
+      </HeroHeaderBanner>
 
       {/* Responsive Grid Layout for PC vs Mobile */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

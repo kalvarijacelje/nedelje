@@ -649,7 +649,7 @@ export default function MinistryView({
       });
 
   return (
-    <div id="ministries-matrix-component" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-12 px-3 sm:px-4">
+    <div id="ministries-matrix-component" className="w-full space-y-5 animate-fade-in pb-12">
       {/* Hero Header Banner */}
       <HeroHeaderBanner
         variant="ministries"
