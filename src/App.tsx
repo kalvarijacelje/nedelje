@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ServiceSunday, Ministry, Person, UserRole, Language, Translation, User, ShiftSwapRequest, BlackoutDate, WorshipRosterEntry, SundaySchoolLesson, SundaySchoolSupply, VisitorConnection, canAccessPersonalData } from './types';
 import { 
   INITIAL_MINISTRIES, 
@@ -91,7 +91,7 @@ import {
   getDocs, 
   writeBatch 
 } from 'firebase/firestore';
-import { supabase, performGlobalSignOut, getAuthBroadcastChannel } from './supabaseClient';
+import { supabase, performGlobalSignOut, getAuthBroadcastChannel, broadcastAuthChange } from './supabaseClient';
 import { 
   fetchSundaysFromSupabase, 
   upsertSundayToSupabase, 
@@ -309,37 +309,42 @@ const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] =>
   // 1. Initial baseline from INITIAL_PEOPLE
   INITIAL_PEOPLE.forEach(p => {
     if (p && p.id && !isInvalidOrDeleted(p)) {
-      map.set(p.id, ensurePersonId(p));
+      map.set(p.id, { ...ensurePersonId(p), role: normalizeUserRole(p.role) });
     }
   });
 
-  // 2. Overlay fetched remote database records
-  (fetched || []).forEach(p => {
-    if (p && p.id && !isInvalidOrDeleted(p)) {
-      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase().trim() === p.name.toLowerCase().trim()) : null);
-      const targetId = existing?.id || p.id;
-      map.set(targetId, { ...(existing || {}), ...ensurePersonId(p), id: targetId });
-    }
-  });
-
-  // 3. Overlay local base records, preserving local user edits and ministry lists
+  // 2. Overlay local cache base records
   (base || []).forEach(p => {
     if (p && p.id && !isInvalidOrDeleted(p)) {
       const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase().trim() === p.name.toLowerCase().trim()) : null);
       const targetId = existing?.id || p.id;
-      const mergedPrefs = (p.preferredMinistries && p.preferredMinistries.length > 0)
-        ? p.preferredMinistries
-        : (existing?.preferredMinistries || []);
-      const mergedLeds = (p.ledMinistries && p.ledMinistries.length > 0)
-        ? p.ledMinistries
-        : (existing?.ledMinistries || []);
+      map.set(targetId, {
+        ...(existing || {}),
+        ...ensurePersonId(p),
+        id: targetId,
+        role: normalizeUserRole(p.role || existing?.role)
+      });
+    }
+  });
+
+  // 3. Overlay fetched remote database records (Overriding Source of Truth)
+  (fetched || []).forEach(p => {
+    if (p && p.id && !isInvalidOrDeleted(p)) {
+      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase().trim() === p.name.toLowerCase().trim()) : null);
+      const targetId = existing?.id || p.id;
+      
+      const mergedPrefs = (p.preferredMinistries && p.preferredMinistries.length > 0) ? p.preferredMinistries : (existing?.preferredMinistries || []);
+      const mergedLeds = (p.ledMinistries && p.ledMinistries.length > 0) ? p.ledMinistries : (existing?.ledMinistries || []);
+      const mergedFamily = (p.familyMembers && p.familyMembers.length > 0) ? p.familyMembers : (existing?.familyMembers || []);
 
       map.set(targetId, {
         ...(existing || {}),
         ...ensurePersonId(p),
         id: targetId,
+        role: normalizeUserRole(p.role || existing?.role),
         preferredMinistries: mergedPrefs,
-        ledMinistries: mergedLeds
+        ledMinistries: mergedLeds,
+        familyMembers: mergedFamily
       });
     }
   });
@@ -798,6 +803,11 @@ export default function App() {
     }
   }, [legacyRole]);
 
+  const peopleRef = useRef<Person[]>(people);
+  useEffect(() => {
+    peopleRef.current = people;
+  }, [people]);
+
   // --- Supabase Authentication State Subscription ---
   useEffect(() => {
     if (!IS_SUPABASE_CONFIGURED) {
@@ -819,94 +829,119 @@ export default function App() {
       setAuthUser(sessionUser);
       const userEmail = (sessionUser.email || '').toLowerCase().trim();
       const isAles = userEmail === 'ales.lajlar@gmail.com';
+      const isWhitney = userEmail === 'whitney.lajlar@gmail.com';
       const userFullName = sessionUser.user_metadata?.full_name || sessionUser.user_metadata?.name || '';
+      const currentPeople = (peopleRef.current && peopleRef.current.length > 0) ? peopleRef.current : (people && people.length > 0 ? people : INITIAL_PEOPLE);
 
-      // 1. Direct superadmin override for Ales
-      if (isAles) {
-        const alesPerson = (people || INITIAL_PEOPLE).find(p => p && (
-          p.id === 'p-ales' || 
-          p.id === 'p1' || 
-          p.id === 'ales-lajlar' || 
-          p.name === 'Aleš' || 
-          p.name === 'Aleš Lajlar' || 
-          (p.email && p.email.toLowerCase() === 'ales.lajlar@gmail.com')
+      // 1. Direct superadmin override for Ales & Whitney
+      if (isAles || isWhitney) {
+        const adminName = isAles ? 'Aleš Lajlar' : 'Whitney Lajlar';
+        const adminPerson = currentPeople.find(p => p && (
+          (p.email && p.email.toLowerCase() === userEmail) ||
+          (p.name && p.name.toLowerCase().includes(isAles ? 'aleš' : 'whitney'))
         ));
-        const alesName = alesPerson?.name || 'Aleš';
-        setActivePersonName(alesName);
-        const alesUserObj: User = {
+        const matchedName = adminPerson?.name || adminName;
+        setActivePersonName(matchedName);
+        const adminUserObj: User = {
           uid: sessionUser.id,
-          email: sessionUser.email || 'ales.lajlar@gmail.com',
-          displayName: userFullName || 'Aleš Lajlar (Pastor/Admin)',
+          email: userEmail,
+          displayName: userFullName || `${matchedName} (Pastor/Admin)`,
           role: 'Admin',
-          personName: alesName
+          personName: matchedName
         };
-        setUserDbProfile(alesUserObj);
+        setUserDbProfile(adminUserObj);
         setUsers(prev => {
           const filtered = prev.filter(u => u.uid !== sessionUser.id && u.email !== sessionUser.email);
-          return [alesUserObj, ...filtered];
+          return [adminUserObj, ...filtered];
         });
 
-        // Set auth_user_id on p-ales_lajlar and clean duplicate rows
+        // Set auth_user_id on canonical profile row
         try {
           await supabase.from('profiles').update({
             auth_user_id: sessionUser.id,
-            email: 'ales.lajlar@gmail.com',
+            email: userEmail,
             role: 'Admin'
-          }).or('id.eq.p-ales_lajlar,email.ilike.ales.lajlar@gmail.com');
-          if (sessionUser.id !== 'p-ales_lajlar') {
-            await supabase.from('profiles').delete().eq('id', sessionUser.id);
-          }
+          }).ilike('email', userEmail);
         } catch (e) { /* ignore */ }
 
         setAuthLoading(false);
         return;
       }
 
-      // 2. Check in loaded people list
-      let matchedPerson = (people || INITIAL_PEOPLE).find(p => p && (
+      // 2. Fetch fresh live profile from Supabase profiles table
+      let dbProfile: any = null;
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .or(`auth_user_id.eq.${sessionUser.id},id.eq.${sessionUser.id},email.ilike.${userEmail},full_name.ilike.${userFullName || userEmail}`)
+          .maybeSingle();
+        dbProfile = data;
+      } catch (e) { /* ignore */ }
+
+      // Find in loaded people list
+      let matchedPerson = currentPeople.find(p => p && (
+        (p.id && (p.id === sessionUser.id || (p as any).auth_user_id === sessionUser.id || (dbProfile && p.id === dbProfile.id))) ||
         (p.email && p.email.toLowerCase().trim() === userEmail) ||
-        (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim()) ||
-        (p.id && (p.id === sessionUser.id || (p as any).auth_user_id === sessionUser.id))
+        (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
       ));
 
-      if (!matchedPerson) {
-        try {
-          const { data: dbProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .or(`email.ilike.${userEmail},full_name.ilike.${userFullName || userEmail}`)
-            .maybeSingle();
+      let resolvedRole: UserRole = 'Servant';
 
-          if (dbProfile) {
-            matchedPerson = {
-              id: dbProfile.id,
-              name: dbProfile.full_name || dbProfile.name,
-              email: dbProfile.email,
-              phone: dbProfile.phone,
-              role: (dbProfile.role as UserRole) || 'Servant',
-              preferredMinistries: dbProfile.preferred_ministries || [],
-              ledMinistries: dbProfile.led_ministries || [],
-              familyMembers: dbProfile.family_members || []
-            };
-          }
-        } catch (e) { /* ignore */ }
+      if (dbProfile) {
+        resolvedRole = normalizeUserRole(dbProfile.role);
+        if (matchedPerson) {
+          matchedPerson = {
+            ...matchedPerson,
+            role: resolvedRole,
+            preferredMinistries: (dbProfile.preferred_ministries && dbProfile.preferred_ministries.length > 0) ? dbProfile.preferred_ministries : matchedPerson.preferredMinistries,
+            ledMinistries: (dbProfile.led_ministries && dbProfile.led_ministries.length > 0) ? dbProfile.led_ministries : matchedPerson.ledMinistries,
+            familyMembers: (dbProfile.family_members && dbProfile.family_members.length > 0) ? dbProfile.family_members : matchedPerson.familyMembers
+          };
+        } else {
+          matchedPerson = {
+            id: dbProfile.id,
+            name: dbProfile.full_name || dbProfile.name || userFullName || userEmail.split('@')[0],
+            email: dbProfile.email || userEmail,
+            phone: dbProfile.phone,
+            role: resolvedRole,
+            preferredMinistries: dbProfile.preferred_ministries || [],
+            ledMinistries: dbProfile.led_ministries || [],
+            familyMembers: dbProfile.family_members || []
+          };
+        }
+      } else if (matchedPerson) {
+        resolvedRole = normalizeUserRole(matchedPerson.role);
       }
-
-      let resolvedRole: UserRole = matchedPerson?.role || 'Servant';
 
       if (matchedPerson) {
         setActivePersonName(matchedPerson.name);
-        resolvedRole = (matchedPerson.role as UserRole) || 'Servant';
-        // Auto-link this user to their canonical card row & remove any duplicate row!
+        
+        // Update in-memory people list so this user's live role and profile are immediately active in state
+        setPeople(prev => {
+          const list = prev || [];
+          let exists = false;
+          const updated = list.map(p => {
+            if (p && (p.id === matchedPerson!.id || p.name.toLowerCase().trim() === matchedPerson!.name.toLowerCase().trim())) {
+              exists = true;
+              return { ...p, ...matchedPerson, role: resolvedRole };
+            }
+            return p;
+          });
+          const result = exists ? updated : [...list, matchedPerson!];
+          try { localStorage.setItem('church_roster_people_v2', JSON.stringify(result)); } catch (e) {}
+          return result;
+        });
+
+        // Link auth_user_id without downgrading or overwriting their role
         try {
           await supabase.from('profiles').update({
             auth_user_id: sessionUser.id,
-            email: sessionUser.email || matchedPerson.email,
-            role: resolvedRole
+            email: sessionUser.email || matchedPerson.email
           }).eq('id', matchedPerson.id);
 
           if (matchedPerson.id !== sessionUser.id) {
-            await supabase.from('profiles').delete().eq('id', sessionUser.id);
+            await supabase.from('profiles').delete().eq('id', sessionUser.id).catch(() => {});
           }
         } catch (e) { /* ignore */ }
       } else {
@@ -918,7 +953,8 @@ export default function App() {
             full_name: userFullName || userEmail.split('@')[0],
             name: userFullName || userEmail.split('@')[0],
             email: userEmail,
-            role: resolvedRole,
+            role: 'member',
+            member_type: 'member',
             preferred_ministries: [],
             family_members: [],
             is_exempt_from_burnout: false
@@ -941,6 +977,17 @@ export default function App() {
       setAuthLoading(false);
     };
 
+    // 0. Check for OAuth errors in URL
+    if (typeof window !== 'undefined') {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const queryParams = new URLSearchParams(window.location.search);
+      const oauthError = hashParams.get('error_description') || queryParams.get('error_description') || hashParams.get('error') || queryParams.get('error');
+      if (oauthError) {
+        console.warn('OAuth redirect error:', oauthError);
+        alert(`Prijava ni uspela: ${decodeURIComponent(oauthError.replace(/\+/g, ' '))}`);
+      }
+    }
+
     // 1. Initial user session check from Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       syncUserSession(session?.user ?? null);
@@ -949,8 +996,13 @@ export default function App() {
     });
 
     // 2. Supabase Auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       syncUserSession(session?.user ?? null);
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        broadcastAuthChange('GLOBAL_SIGNIN');
+      } else if (event === 'SIGNED_OUT') {
+        broadcastAuthChange('GLOBAL_SIGNOUT');
+      }
     });
 
     // 3. Cross-subdomain & cross-tab BroadcastChannel listener
@@ -983,7 +1035,7 @@ export default function App() {
       window.removeEventListener('focus', handleTabFocus);
       document.removeEventListener('visibilitychange', handleTabFocus);
     };
-  }, [people]);
+  }, []);
 
   // --- Firestore Realtime Data Synchronizer (Disabled when Supabase is active) ---
   useEffect(() => {
@@ -1098,7 +1150,7 @@ export default function App() {
               uid: (p as any).auth_user_id,
               email: p.email || '',
               displayName: p.name,
-              role: p.role || 'Viewer',
+              role: normalizeUserRole(p.role),
               personName: p.name
             }));
           setUsers(prev => {
@@ -1107,6 +1159,27 @@ export default function App() {
             prev.forEach(u => map.set(u.uid, u));
             return Array.from(map.values());
           });
+
+          // Sync current logged in user's profile role if matched
+          if (authUser) {
+            const myEmail = (authUser.email || '').toLowerCase().trim();
+            const myUid = authUser.id || authUser.uid;
+            const myPerson = (merged || []).find(p => p && (
+              (myEmail && p.email && p.email.toLowerCase().trim() === myEmail) ||
+              ((p as any).auth_user_id === myUid) ||
+              (p.id === myUid)
+            ));
+            if (myPerson) {
+              const liveRole = normalizeUserRole(myPerson.role);
+              setUserDbProfile(prev => prev ? { ...prev, role: liveRole, personName: myPerson.name } : {
+                uid: myUid,
+                email: myEmail,
+                displayName: myPerson.name,
+                role: liveRole,
+                personName: myPerson.name
+              });
+            }
+          }
         }
 
         if (remoteBlackouts.length > 0) {
@@ -1146,7 +1219,7 @@ export default function App() {
               uid: (p as any).auth_user_id,
               email: p.email || '',
               displayName: p.name,
-              role: p.role || 'Viewer',
+              role: normalizeUserRole(p.role),
               personName: p.name
             }));
           setUsers(prev => {
@@ -1155,6 +1228,27 @@ export default function App() {
             prev.forEach(u => map.set(u.uid, u));
             return Array.from(map.values());
           });
+
+          // Sync current logged in user's profile role on live Supabase changes
+          if (authUser) {
+            const myEmail = (authUser.email || '').toLowerCase().trim();
+            const myUid = authUser.id || authUser.uid;
+            const myPerson = (freshPeople || []).find(p => p && (
+              (myEmail && p.email && p.email.toLowerCase().trim() === myEmail) ||
+              ((p as any).auth_user_id === myUid) ||
+              (p.id === myUid)
+            ));
+            if (myPerson) {
+              const liveRole = normalizeUserRole(myPerson.role);
+              setUserDbProfile(prev => prev ? { ...prev, role: liveRole, personName: myPerson.name } : {
+                uid: myUid,
+                email: myEmail,
+                displayName: myPerson.name,
+                role: liveRole,
+                personName: myPerson.name
+              });
+            }
+          }
         }
       },
       async () => {

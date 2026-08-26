@@ -8,6 +8,21 @@ export type UserRole = 'Admin' | 'Leader' | 'Servant' | 'Viewer' | 'Visitor' | '
 export const SUPERADMIN_EMAIL = 'ales.lajlar@gmail.com';
 
 /**
+ * Normalizes any role string (e.g. from database rows, JWT claims, lowercase variants) into a canonical UserRole.
+ */
+export const normalizeUserRole = (role?: string | null): UserRole => {
+  if (!role) return 'Viewer';
+  const r = role.toString().toLowerCase().trim();
+  if (r === 'superadmin' || r === 'admin') return 'Admin';
+  if (r === 'leader') return 'Leader';
+  if (r === 'servant' || r === 'volunteer') return 'Servant';
+  if (r === 'visitor') return 'Visitor';
+  if (r === 'minor') return 'Minor';
+  if (r === 'viewer' || r === 'member') return 'Viewer';
+  return 'Viewer';
+};
+
+/**
  * Checks if given email or user object corresponds to the church superadmin & pastor (ales.lajlar@gmail.com).
  */
 export const isSuperAdmin = (emailOrUser?: string | { email?: string | null } | null): boolean => {
@@ -153,6 +168,8 @@ export interface Ministry {
   defaultLeader?: string;
   requiredCount?: number;
   active?: boolean;
+  isOptional?: boolean;
+  rotationType?: 'communion' | 'family_prayer' | 'none';
   description?: string;
 }
 

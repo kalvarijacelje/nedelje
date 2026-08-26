@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import HeroHeaderBanner from '../components/HeroHeaderBanner';
 import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurnout } from '../lib/burnoutAnalytics';
-import { getEffectiveSundayFocus } from '../lib/sundaySpecialFocus';
+import { getEffectiveSundayFocus, getSundayCoverageStats, isMinistryApplicableOnSunday } from '../lib/sundaySpecialFocus';
 
 interface StatistikaProps {
   sundays: ServiceSunday[];
@@ -84,18 +84,14 @@ export default function Statistika({
   const displaySundays = aySundays.length > 0 ? aySundays : sortedSundays;
 
   // --- 1. OVERALL COVERAGE COMPUTATIONS ---
-  const totalMinistriesCount = ministries.length;
   const totalSundaysCount = displaySundays.length;
-  const totalPossibleSlots = totalMinistriesCount * totalSundaysCount;
-
+  let totalPossibleSlots = 0;
   let totalFilledSlots = 0;
+
   displaySundays.forEach(sun => {
-    Object.keys(sun.assignments || {}).forEach(mId => {
-      const assigned = sun.assignments[mId] || [];
-      if (assigned.length > 0 && ministries.some(m => m.id === mId)) {
-        totalFilledSlots += 1;
-      }
-    });
+    const stats = getSundayCoverageStats(sun, ministries);
+    totalPossibleSlots += stats.totalRequired;
+    totalFilledSlots += stats.filledRequired;
   });
 
   const totalVacantSlots = Math.max(0, totalPossibleSlots - totalFilledSlots);
@@ -114,19 +110,24 @@ export default function Statistika({
 
   const categoryCoverage = categoriesList.map(cat => {
     const catMinistries = ministries.filter(m => 
-      m.category === cat.id ||
-      (cat.id === 'post_service' && m.category === 'other') ||
-      (cat.id === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) ||
-      (cat.id === 'audio_video' && m.category === 'av_tech' && (m.id !== 'slavilna_ekipa' && m.id !== 'uvod_slavljenje' && m.id !== 'zvok'))
+      !m.isOptional && (
+        m.category === cat.id ||
+        (cat.id === 'post_service' && m.category === 'other') ||
+        (cat.id === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) ||
+        (cat.id === 'audio_video' && m.category === 'av_tech' && (m.id !== 'slavilna_ekipa' && m.id !== 'uvod_slavljenje' && m.id !== 'zvok'))
+      )
     );
-    const catTotalPossible = catMinistries.length * totalSundaysCount;
+    let catTotalPossible = 0;
     let catFilled = 0;
 
     displaySundays.forEach(sun => {
       catMinistries.forEach(m => {
-        const assigned = sun.assignments?.[m.id] || [];
-        if (assigned.length > 0) {
-          catFilled += 1;
+        if (isMinistryApplicableOnSunday(m, sun)) {
+          catTotalPossible += 1;
+          const assigned = sun.assignments?.[m.id] || [];
+          if (assigned.length > 0 && assigned[0] !== '/') {
+            catFilled += 1;
+          }
         }
       });
     });

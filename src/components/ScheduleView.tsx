@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { ServiceSunday, Ministry, UserRole, Translation } from '../types';
 import { Calendar, Trash2, Edit3, ChevronRight, Filter, AlertCircle, Check, FolderArchive, Sparkles, PlusCircle, History, Wine, HeartHandshake, BarChart3, Clock, X } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
-import { getEffectiveSundayFocus } from '../lib/sundaySpecialFocus';
+import { getEffectiveSundayFocus, getSundayCoverageStats } from '../lib/sundaySpecialFocus';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 
 interface ScheduleViewProps {
@@ -270,15 +270,14 @@ export default function ScheduleView({
       <div id="schedule-cards-list" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-3.5 sm:gap-4">
         {filteredSundays.length > 0 ? (
           filteredSundays.map((sunday) => {
-            const total = ministries.length;
-            const filled = Object.keys(sunday.assignments).filter(
-              (k) => (sunday.assignments[k] || []).length > 0 && ministries.some(m => m.id === k)
-            ).length;
-            const percentNum = total > 0 ? Math.round((filled / total) * 100) : 0;
+            const covStats = getSundayCoverageStats(sunday, ministries);
+            const total = covStats.totalRequired;
+            const filled = covStats.filledRequired;
+            const percentNum = covStats.percent;
             const percentStr = `${percentNum}%`;
 
             let progressColorClass = 'bg-slate-200';
-            if (percentNum === 100) {
+            if (covStats.isFullyCovered) {
               progressColorClass = 'bg-emerald-500';
             } else if (percentNum > 0) {
               progressColorClass = 'bg-amber-500';

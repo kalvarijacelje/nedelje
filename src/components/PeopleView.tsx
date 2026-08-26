@@ -651,6 +651,8 @@ export default function PeopleView({
       return;
     }
 
+    const cleanMemberType = editRole === 'Minor' ? 'minor' : (editRole === 'Visitor' ? 'visitor' : (editRole === 'Viewer' ? 'member' : 'adult'));
+
     onUpdatePerson(editingPerson.id, {
       ...editingPerson,
       id: editingPerson.id,
@@ -659,7 +661,8 @@ export default function PeopleView({
       phone: editPhone.trim() || undefined,
       email: editEmail.trim() || undefined,
       role: editRole,
-      memberType: editMemberType || (editRole === 'Minor' ? 'minor' : (editRole === 'Visitor' ? 'visitor' : (editRole === 'Viewer' ? 'member' : 'adult'))),
+      memberType: cleanMemberType,
+      isVisitor: editRole === 'Visitor',
       isPastorOrStaff: editPastorOrStaff,
       isExemptFromBurnout: editPastorOrStaff,
       preferredMinistries: editPrefs,
@@ -756,10 +759,15 @@ export default function PeopleView({
     if (p.memberType === 'minor' || p.memberType === 'youth' || p.role === 'Minor' || (p.id && KNOWN_MINOR_IDS.has(p.id))) {
       return 'youth';
     }
-    const isServing = (p.preferredMinistries && p.preferredMinistries.length > 0) ||
-      (p.ledMinistries && p.ledMinistries.length > 0) ||
+    if (p.role === 'Viewer' && (!p.preferredMinistries || p.preferredMinistries.length === 0) && (!p.ledMinistries || p.ledMinistries.length === 0)) {
+      return 'members';
+    }
+    const isServing =
       p.role === 'Admin' ||
-      p.role === 'Leader';
+      p.role === 'Leader' ||
+      p.role === 'Servant' ||
+      (p.preferredMinistries && p.preferredMinistries.length > 0) ||
+      (p.ledMinistries && p.ledMinistries.length > 0);
     
     if (isServing) {
       return 'active';
@@ -1872,9 +1880,25 @@ export default function PeopleView({
                               ? 'bg-rose-50 text-rose-700 border-rose-200'
                               : person.role === 'Leader'
                               ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              : person.role === 'Servant'
+                              ? 'bg-sky-50 text-sky-700 border-sky-200'
+                              : person.role === 'Visitor'
+                              ? 'bg-teal-50 text-teal-700 border-teal-200'
+                              : person.role === 'Minor'
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
                               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}>
-                            {person.role === 'Admin' ? '🛠️ Admin' : person.role === 'Leader' ? '📋 Vodja' : '👤 Služabnik'}
+                            {person.role === 'Admin' 
+                              ? '🛠️ Admin' 
+                              : person.role === 'Leader' 
+                              ? '📋 Vodja' 
+                              : person.role === 'Servant' 
+                              ? '🤝 Služabnik' 
+                              : person.role === 'Visitor'
+                              ? '👋 Obiskovalec'
+                              : person.role === 'Minor'
+                              ? '👶 Mladoletni'
+                              : '👤 Član'}
                           </span>
 
                           {person.isPastorOrStaff && (
@@ -2656,7 +2680,11 @@ export default function PeopleView({
                 </label>
                 <select
                   value={editRole}
-                  onChange={(e) => setEditRole(e.target.value as UserRole)}
+                  onChange={(e) => {
+                    const r = e.target.value as UserRole;
+                    setEditRole(r);
+                    setEditMemberType(r === 'Minor' ? 'minor' : (r === 'Visitor' ? 'visitor' : (r === 'Viewer' ? 'member' : 'adult')));
+                  }}
                   className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer font-semibold"
                 >
                   <option value="Admin">🛠️ Admin (Poln nadzor)</option>

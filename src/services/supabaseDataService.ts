@@ -323,14 +323,14 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
         ? 'Admin' 
         : (row.role === 'leader' || row.role === 'Leader') 
         ? 'Leader' 
-        : (row.role === 'servant' || row.role === 'Servant') 
+        : (row.role === 'servant' || row.role === 'Servant' || row.role === 'volunteer' || row.role === 'Volunteer') 
         ? 'Servant' 
         : (row.role === 'visitor' || row.role === 'Visitor')
         ? 'Visitor'
         : (row.role === 'minor' || row.role === 'Minor')
         ? 'Minor'
         : 'Viewer',
-      memberType: row.member_type || (row.role === 'Minor' ? 'minor' : (row.role === 'Visitor' ? 'visitor' : 'adult')),
+      memberType: row.member_type || (row.role === 'Minor' ? 'minor' : (row.role === 'Visitor' ? 'visitor' : (row.role === 'Viewer' || row.role === 'member' ? 'member' : 'adult'))),
       birthDate: row.birth_date || undefined,
       isVisitor: row.role === 'Visitor' || row.member_type === 'visitor',
       preferredMinistries: row.preferred_ministries || [],
@@ -371,10 +371,16 @@ export async function upsertPersonToSupabase(person: Person): Promise<boolean> {
     const emailToMatch = (person.email || '').trim().toLowerCase();
     const nameToMatch = person.name.trim();
 
-    const cleanMemberType = (person.memberType === 'minor' || person.role === 'Minor') ? 'minor' : 'adult';
+    const cleanMemberType = (person.memberType === 'minor' || person.role === 'Minor') 
+      ? 'minor' 
+      : (person.memberType === 'visitor' || person.role === 'Visitor') 
+      ? 'visitor' 
+      : (person.memberType === 'member' || person.role === 'Viewer') 
+      ? 'member' 
+      : 'adult';
     const cleanRole = (person.role === 'Admin' || emailToMatch === 'ales.lajlar@gmail.com') 
       ? 'superadmin' 
-      : (person.role === 'Leader' ? 'leader' : (person.role === 'Servant' ? 'volunteer' : 'member'));
+      : (person.role === 'Leader' ? 'leader' : (person.role === 'Servant' ? 'servant' : (person.role === 'Visitor' ? 'visitor' : (person.role === 'Minor' ? 'minor' : 'member'))));
 
     // Check avatar size - if giant base64 (> 80KB), avoid sending in standard update to prevent payload timeouts
     const isBase64Avatar = person.avatarUrl && person.avatarUrl.startsWith('data:image');

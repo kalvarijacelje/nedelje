@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { isExemptFromBurnout } from '../lib/burnoutAnalytics';
+import { isMinistryApplicableOnSunday, getEffectiveSundayFocus } from '../lib/sundaySpecialFocus';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 
 interface MinistryViewProps {
@@ -119,6 +120,8 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'Wine':
     case 'gospodova_vecerja':
       return <Wine className={className} />;
+    case 'molitev_druzine':
+      return <HeartHandshake className={className} />;
     default:
       return <Layers className={className} />;
   }
@@ -319,9 +322,21 @@ function MinistryCard({
                 {renderMinistryIcon(ministry, "w-4 h-4")}
               </div>
               <div className="min-w-0 flex-1">
-                <h4 className="font-display font-bold text-xs uppercase tracking-wide text-slate-900 leading-snug break-words">
-                  {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
-                </h4>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <h4 className="font-display font-bold text-xs uppercase tracking-wide text-slate-900 leading-snug break-words">
+                    {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
+                  </h4>
+                  {ministry.isOptional && (
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                      {currentLanguage === 'sl' ? 'Opcijsko' : 'Optional'}
+                    </span>
+                  )}
+                  {ministry.rotationType && (
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 border border-sky-200">
+                      {currentLanguage === 'sl' ? 'Rotacija' : 'Rotation'}
+                    </span>
+                  )}
+                </div>
                 {isUnderstaffed && (
                   <span className="text-[9px] text-rose-700 bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 font-mono font-semibold mt-1 max-w-full">
                     ⚠️ {currentLanguage === 'sl' ? `Pogosto prazno: ${vacItem?.vacantCount}/5` : `Vacant: ${vacItem?.vacantCount}/5`}
@@ -421,20 +436,43 @@ function MinistryCard({
 
           <div className="space-y-1.5 transition-all duration-200">
             {visibleSundays.map((sunday) => {
-              const rosters = resolveMinistryAssignments(sunday, ministry.id, worshipRoster);
+              const isApplicable = isMinistryApplicableOnSunday(ministry, sunday);
+              const rosters = isApplicable ? resolveMinistryAssignments(sunday, ministry.id, worshipRoster) : [];
               const isCovered = rosters.length > 0;
               const nslGroupKey = ministry.id === 'nedeljska_sola_mlajsa' ? 'mlajsa' : ministry.id === 'nedeljska_sola_starejsa' ? 'starejsa' : null;
               const nslLesson = nslGroupKey ? getSundaySchoolLesson(sunday, nslGroupKey, sundaySchoolLessons) : null;
+
+              if (!isApplicable) {
+                return (
+                  <div
+                    key={sunday.id}
+                    onClick={() => onSelectSunday(sunday.id)}
+                    className="p-2.5 rounded-xl transition-all duration-150 flex items-center justify-between gap-2 border text-xs cursor-pointer bg-slate-50/40 hover:bg-slate-100/60 border-slate-200/60 text-slate-400"
+                  >
+                    <span className="font-mono font-medium text-slate-400 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                      <span>{sunday.date}</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 italic">
+                      {ministry.id === 'gospodova_vecerja' 
+                        ? (currentLanguage === 'sl' ? '— (Molitev za družine)' : '— (Family Prayer)')
+                        : (currentLanguage === 'sl' ? '— (Gospodova večerja)' : "— (Lord's Supper)")}
+                    </span>
+                  </div>
+                );
+              }
+
+              const rowStyleClass = isCovered
+                ? 'bg-slate-50/80 hover:bg-slate-100/80 border-slate-200/80 text-slate-800'
+                : ministry.isOptional
+                  ? 'bg-slate-50/60 hover:bg-slate-100/80 border-slate-200/80 text-slate-600'
+                  : 'bg-rose-50/80 hover:bg-rose-100/80 border-rose-200 text-rose-900';
 
               return (
                 <div
                   key={sunday.id}
                   onClick={() => onSelectSunday(sunday.id)}
-                  className={`p-2.5 rounded-xl transition-all duration-150 flex items-center justify-between gap-2 border text-xs cursor-pointer animate-fade-in ${
-                    isCovered
-                      ? 'bg-slate-50/80 hover:bg-slate-100/80 border-slate-200/80 text-slate-800'
-                      : 'bg-rose-50/80 hover:bg-rose-100/80 border-rose-200 text-rose-900'
-                  }`}
+                  className={`p-2.5 rounded-xl transition-all duration-150 flex items-center justify-between gap-2 border text-xs cursor-pointer animate-fade-in ${rowStyleClass}`}
                 >
                   <span className="font-mono font-medium text-slate-500 flex flex-col justify-center shrink-0 min-w-0">
                     <span className="flex items-center gap-1.5">
@@ -492,6 +530,10 @@ function MinistryCard({
                                 </span>
                               );
                             })
+                          ) : ministry.isOptional ? (
+                            <span className="text-[9px] font-mono font-medium text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-250 shadow-2xs">
+                              💬 {currentLanguage === 'sl' ? 'Opcijsko' : 'Optional'}
+                            </span>
                           ) : (
                             <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md border border-rose-200">
                               {currentLanguage === 'sl' ? '⚠️ MANJKA' : '⚠️ VACANT'}
@@ -624,19 +666,22 @@ export default function MinistryView({
     .sort((a, b) => b.totalCount - a.totalCount);
 
   const understaffedThreshold = Math.max(2, Math.ceil(upcomingSundays.length / 2));
-  const understaffedRoles = ministries.map(m => {
-    const vacantSundays = upcomingSundays.filter(s => {
-      if (!s || !s.assignments) return true;
-      const list = s.assignments[m.id] || [];
-      return Array.isArray(list) ? list.length === 0 : true;
-    });
-    return {
-      ministry: m,
-      vacantCount: vacantSundays.length,
-      vacantDates: vacantSundays.map(s => s.date)
-    };
-  }).filter(item => item.vacantCount >= understaffedThreshold)
-    .sort((a, b) => b.vacantCount - a.vacantCount);
+  const understaffedRoles = ministries
+    .filter(m => !m.isOptional)
+    .map(m => {
+      const applicableSundays = upcomingSundays.filter(s => isMinistryApplicableOnSunday(m, s));
+      const vacantSundays = applicableSundays.filter(s => {
+        if (!s || !s.assignments) return true;
+        const list = s.assignments[m.id] || [];
+        return Array.isArray(list) ? list.length === 0 : true;
+      });
+      return {
+        ministry: m,
+        vacantCount: vacantSundays.length,
+        vacantDates: vacantSundays.map(s => s.date)
+      };
+    }).filter(item => item.vacantCount >= understaffedThreshold)
+      .sort((a, b) => b.vacantCount - a.vacantCount);
 
   const filteredMinistries = selectedCategory === 'all'
     ? ministries

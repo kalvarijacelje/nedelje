@@ -14,6 +14,7 @@ import { createOrUpdateServiceEvent, createOrUpdateRehearsalEvent, deleteCalenda
 import { listChatSpaces, sendChatMessage, buildWorkflowMessage } from '../lib/googleChat';
 import { isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import SpecialSundayFocusSection from './SpecialSundayFocusSection';
+import { getApplicableMinistriesForSunday, getSundayCoverageStats } from '../lib/sundaySpecialFocus';
 import { resolveMinistryAssignments } from '../utils/worshipSync';
 import { getSundaySchoolLesson } from '../utils/sundaySchoolSync';
 import { batchAssignPersonToConsecutiveSundays, getConsecutiveSundayDates } from '../utils/recurringAssignments';
@@ -295,6 +296,7 @@ export const getMinistryIconEmoji = (minId: string): string => {
     case 'pricevanja': return '💬';
     case 'prevajanje': return '🌐';
     case 'gospodova_vecerja': return '🍷';
+    case 'molitev_druzine': return '🙏';
     case 'slavilna_ekipa': return '🎵';
     case 'uvod_slavljenje': return '🎤';
     case 'zvok': return '🎚️';
@@ -393,6 +395,8 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'Wine':
     case 'gospodova_vecerja':
       return <Wine className={className} />;
+    case 'molitev_druzine':
+      return <HeartHandshake className={className} />;
     default:
       return <Layers className={className} />;
   }
@@ -1187,7 +1191,8 @@ export default function SundayDetail({
       duties: data.duties,
     }));
 
-  const coveredCount = Object.keys(sunday.assignments).filter(k => (sunday.assignments[k] || []).length > 0).length;
+  const coverageStats = getSundayCoverageStats(sunday, ministries, worshipRoster);
+  const coveredCount = coverageStats.filledRequired;
 
   const parseSheetDate = (dateStr: string): Date => {
     if (!dateStr) return new Date(0);
@@ -1501,7 +1506,12 @@ export default function SundayDetail({
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 rounded-xl border border-gray-150 text-[11px] font-mono font-semibold text-gray-600">
-            <span>{coveredCount} / {ministries.length} {currentLanguage === 'sl' ? 'pokritih' : 'covered'}</span>
+            <span>{coverageStats.filledRequired} / {coverageStats.totalRequired} {currentLanguage === 'sl' ? 'obveznih pokritih' : 'required covered'}</span>
+            {coverageStats.optionalMinistries.length > 0 && (
+              <span className="text-[10px] text-slate-400 font-sans font-normal border-l border-gray-200 pl-2">
+                +{coverageStats.filledApplicable - coverageStats.filledRequired} {currentLanguage === 'sl' ? 'opcijsko' : 'optional'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1520,7 +1530,7 @@ export default function SundayDetail({
         )}
 
         {/* Full Coverage Suggestion Banner for Draft Sundays */}
-        {status === 'draft' && coveredCount >= ministries.length && canEditGeneral && (
+        {status === 'draft' && coverageStats.isFullyCovered && canEditGeneral && (
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 rounded-2xl p-3 sm:p-3.5 px-4 flex flex-wrap items-center justify-between gap-3 shadow-xs animate-in fade-in duration-300">
             <div className="flex items-center gap-2.5">
               <span className="text-xl">🎉</span>
@@ -1583,9 +1593,10 @@ export default function SundayDetail({
             { id: 'post_service', labelSl: 'Po bogoslužju', labelEn: 'Post-Service' },
           ];
 
+          const applicableMinistriesList = getApplicableMinistriesForSunday(ministries, sunday);
           const filteredMinistries = selectedCategory === 'all'
-            ? ministries
-            : ministries.filter(m => {
+            ? applicableMinistriesList
+            : applicableMinistriesList.filter(m => {
                 if (m.category === selectedCategory) return true;
                 if (selectedCategory === 'post_service' && m.category === 'other') return true;
                 if (selectedCategory === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) return true;
@@ -1658,6 +1669,11 @@ export default function SundayDetail({
                       <h4 className="font-display font-bold text-xs uppercase tracking-wide text-gray-800">
                         {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
                       </h4>
+                      {ministry.isOptional && (
+                        <span className="text-[9px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                          {currentLanguage === 'sl' ? 'Opcijsko' : 'Optional'}
+                        </span>
+                      )}
 
                       {(() => {
                         const groupKey = ministry.id === 'nedeljska_sola_mlajsa' ? 'mlajsa' : ministry.id === 'nedeljska_sola_starejsa' ? 'starejsa' : null;
@@ -1793,10 +1809,17 @@ export default function SundayDetail({
                           );
                         })
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium bg-amber-50 text-amber-700 border border-amber-200/80 px-2.5 py-0.5 rounded-lg shadow-2xs">
-                          <span className="text-[10px]">⚠️</span>
-                          <span>{currentLanguage === 'sl' ? 'Ni dodeljenih' : 'Vacant slot'}</span>
-                        </span>
+                        ministry.isOptional ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium bg-slate-50 text-slate-500 border border-slate-200/80 px-2.5 py-0.5 rounded-lg shadow-2xs">
+                            <span className="text-[10px]">💬</span>
+                            <span>{currentLanguage === 'sl' ? 'Opcijsko (po potrebi)' : 'Optional (as needed)'}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium bg-amber-50 text-amber-700 border border-amber-200/80 px-2.5 py-0.5 rounded-lg shadow-2xs">
+                            <span className="text-[10px]">⚠️</span>
+                            <span>{currentLanguage === 'sl' ? 'Ni dodeljenih' : 'Vacant slot'}</span>
+                          </span>
+                        )
                       )}
                     </div>
                   </div>

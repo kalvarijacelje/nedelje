@@ -11,7 +11,7 @@ import {
 import HeroHeaderBanner from './HeroHeaderBanner';
 import KcKalvarijaLogoComponent from './KcKalvarijaLogo';
 import { IS_FIREBASE_ENABLED } from '../lib/firebase';
-import { getEffectiveSundayFocus } from '../lib/sundaySpecialFocus';
+import { getEffectiveSundayFocus, getSundayCoverageStats, getApplicableMinistriesForSunday } from '../lib/sundaySpecialFocus';
 import { resolveMinistryAssignments } from '../utils/worshipSync';
 import { generateConfirmationToken } from '../services/notificationService';
 import { useNotificationQueue } from '../hooks/useNotificationQueue';
@@ -250,16 +250,14 @@ export default function HomeDashboard({
     );
   }
 
-  // Let's compute statistics for nextSunday
-  const totalSlots = ministries.length;
-  const assignedSlots = ministries.filter(
-    m => resolveMinistryAssignments(nextSunday, m.id).length > 0
-  ).length;
+  // Let's compute statistics for nextSunday taking into account rotation and optional ministries
+  const nextSundayCoverage = getSundayCoverageStats(nextSunday, ministries);
+  const totalSlots = nextSundayCoverage.totalRequired;
+  const assignedSlots = nextSundayCoverage.filledRequired;
+  const coveragePercent = nextSundayCoverage.percent;
 
-  const coveragePercent = Math.round((assignedSlots / totalSlots) * 100);
-
-  // Find vacant slots
-  const vacantMinistries = ministries.filter(
+  // Find vacant slots among applicable non-optional ministries
+  const vacantMinistries = nextSundayCoverage.requiredMinistries.filter(
     m => resolveMinistryAssignments(nextSunday, m.id).length === 0
   );
 
