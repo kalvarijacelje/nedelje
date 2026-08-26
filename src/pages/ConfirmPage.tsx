@@ -13,7 +13,7 @@ import {
   sendLeaderResponseNotification,
   logInAppNotification
 } from '../services/notificationService';
-import { confirmAssignmentByToken } from '../services/supabaseDataService';
+import { confirmAssignmentByToken, fetchAssignmentByToken } from '../services/supabaseDataService';
 import KcKalvarijaLogo from '../components/KcKalvarijaLogo';
 import { 
   CheckCircle2, 
@@ -27,7 +27,8 @@ import {
   ChevronRight, 
   AlertCircle,
   Sparkles,
-  Heart
+  Heart,
+  Loader2
 } from 'lucide-react';
 
 interface ConfirmPageProps {
@@ -47,25 +48,65 @@ export default function ConfirmPage({
 }: ConfirmPageProps) {
   const [token, setToken] = useState<string>('');
   const [initialAction, setInitialAction] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [asyncMatch, setAsyncMatch] = useState<{ sunday: ServiceSunday; ministryId: string; assignment: any } | null>(null);
   const [processed, setProcessed] = useState<boolean>(false);
   const [currentStatus, setCurrentStatus] = useState<'pending' | 'confirmed' | 'declined'>('pending');
   const [declineReasonInput, setDeclineReasonInput] = useState<string>('');
   const [noteSaved, setNoteSaved] = useState<boolean>(false);
   const hasNotifiedLeaderRef = useRef<boolean>(false);
 
-  // Parse URL query params
+  // Parse URL query params and resolve assignment asynchronously
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const urlParams = new URLSearchParams(window.location.search);
-    const tok = urlParams.get('token') || '';
-    const act = urlParams.get('action') || null;
+    let tok = urlParams.get('token') || '';
+    let act = urlParams.get('action') || null;
+
+    if (!tok && window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      tok = hashParams.get('token') || '';
+      act = act || hashParams.get('action') || null;
+    }
 
     setToken(tok);
     setInitialAction(act);
-  }, []);
 
-  // Find matching assignment
-  const match = findAssignmentByToken(sundays, token);
+    if (!tok) {
+      setIsLoading(false);
+      return;
+    }
+
+    // 1. Check if token already exists in in-memory sundays list
+    const memoryMatch = findAssignmentByToken(sundays, tok);
+    if (memoryMatch) {
+      setAsyncMatch(memoryMatch);
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Fetch directly from Supabase by token if not found locally
+    let isCancelled = false;
+    fetchAssignmentByToken(tok).then(remoteMatch => {
+      if (isCancelled) return;
+      if (remoteMatch) {
+        setAsyncMatch(remoteMatch);
+        onUpdateSunday(remoteMatch.sunday);
+      }
+      setIsLoading(false);
+    }).catch(err => {
+      if (isCancelled) return;
+      console.warn('Async token fetch notice:', err);
+      setIsLoading(false);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [sundays]);
+
+  // Combined synchronous / asynchronous match
+  const match = asyncMatch || findAssignmentByToken(sundays, token);
   const assignment = match?.assignment;
   const sunday = match?.sunday;
   const ministry = match ? ministries.find(m => m.id === match.ministryId) : null;
@@ -150,7 +191,7 @@ export default function ConfirmPage({
     if (!match || processed || !token) return;
 
     if (initialAction === 'accept') {
-      const res = updateAssignmentStatusByToken(sundays, token, 'confirmed');
+      const res = updateAssignmentStatusByToken(sundays, token, 'confirmed', undefined, match);
       if (res) {
         onUpdateSunday(res.modifiedSunday);
         setCurrentStatus('confirmed');
@@ -162,7 +203,7 @@ export default function ConfirmPage({
         }
       }
     } else if (initialAction === 'decline') {
-      const res = updateAssignmentStatusByToken(sundays, token, 'declined');
+      const res = updateAssignmentStatusByToken(sundays, token, 'declined', undefined, match);
       if (res) {
         onUpdateSunday(res.modifiedSunday);
         setCurrentStatus('declined');
@@ -183,7 +224,7 @@ export default function ConfirmPage({
 
   const handleAccept = () => {
     if (!match) return;
-    const res = updateAssignmentStatusByToken(sundays, token, 'confirmed');
+    const res = updateAssignmentStatusByToken(sundays, token, 'confirmed', undefined, match);
     if (res) {
       onUpdateSunday(res.modifiedSunday);
       setCurrentStatus('confirmed');
@@ -195,7 +236,7 @@ export default function ConfirmPage({
 
   const handleDecline = () => {
     if (!match) return;
-    const res = updateAssignmentStatusByToken(sundays, token, 'declined', declineReasonInput);
+    const res = updateAssignmentStatusByToken(sundays, token, 'declined', declineReasonInput, match);
     if (res) {
       onUpdateSunday(res.modifiedSunday);
       setCurrentStatus('declined');
@@ -207,7 +248,7 @@ export default function ConfirmPage({
 
   const handleSaveDeclineNote = () => {
     if (!match) return;
-    const res = updateAssignmentStatusByToken(sundays, token, 'declined', declineReasonInput);
+    const res = updateAssignmentStatusByToken(sundays, token, 'declined', declineReasonInput, match);
     if (res) {
       onUpdateSunday(res.modifiedSunday);
       setNoteSaved(true);
@@ -216,6 +257,21 @@ export default function ConfirmPage({
       setTimeout(() => setNoteSaved(false), 3500);
     }
   };
+
+  // State: Loading token validation
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-xl border border-gray-150 text-center space-y-4 animate-scale-up">
+          <div className="w-12 h-12 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <div className="space-y-1">
+            <h3 className="font-bold text-slate-800 text-sm font-display">Preverjanje potrditvene povezave...</h3>
+            <p className="text-xs text-slate-400 font-sans">Nalagamo vašo zadolžitev iz baze KC Kalvarija</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // State: Token invalid / not found
   if (!token || !match || !sunday || !assignment) {

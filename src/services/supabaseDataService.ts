@@ -170,7 +170,101 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
   }
 }
 
-// Token-based Confirmation for /potrdi
+// Token-based Confirmation & Lookup for /potrdi
+export async function fetchAssignmentByToken(token: string): Promise<{
+  sunday: ServiceSunday;
+  ministryId: string;
+  assignment: MinistryAssignment;
+} | null> {
+  if (!IS_SUPABASE_CONFIGURED || !token) return null;
+  const cleanToken = token.trim();
+
+  try {
+    const { data: assignmentRow, error: assignErr } = await supabase
+      .from('nedelje_assignments')
+      .select('*')
+      .eq('confirmation_token', cleanToken)
+      .maybeSingle();
+
+    if (assignErr || !assignmentRow) {
+      return null;
+    }
+
+    // Fetch the corresponding service row
+    const { data: serviceRow } = await supabase
+      .from('nedelje_services')
+      .select('*')
+      .eq('id', assignmentRow.sunday_id)
+      .maybeSingle();
+
+    // Fetch all assignments for this sunday to build a complete ServiceSunday
+    const { data: allAssignments } = await supabase
+      .from('nedelje_assignments')
+      .select('*')
+      .eq('sunday_id', assignmentRow.sunday_id);
+
+    const sundayAssignments: Record<string, string[]> = {};
+    const assignmentDetails: Record<string, MinistryAssignment[]> = {};
+
+    (allAssignments || [assignmentRow]).forEach((a: any) => {
+      const mId = a.ministry_id;
+      if (!sundayAssignments[mId]) sundayAssignments[mId] = [];
+      if (!assignmentDetails[mId]) assignmentDetails[mId] = [];
+
+      if (a.status !== 'declined') {
+        sundayAssignments[mId].push(a.person_name);
+      }
+
+      assignmentDetails[mId].push({
+        personName: a.person_name,
+        status: a.status,
+        notes: a.notes || undefined,
+        declineReason: a.decline_reason || undefined,
+        assignedByLeaderId: a.assigned_by_id || undefined,
+        assignedByLeaderName: a.assigned_by_name || undefined,
+        assignedAt: a.assigned_at || undefined,
+        confirmationToken: a.confirmation_token || undefined,
+        responseAt: a.response_at || undefined
+      });
+    });
+
+    const targetAssignment: MinistryAssignment = {
+      personName: assignmentRow.person_name,
+      status: assignmentRow.status,
+      notes: assignmentRow.notes || undefined,
+      declineReason: assignmentRow.decline_reason || undefined,
+      assignedByLeaderId: assignmentRow.assigned_by_id || undefined,
+      assignedByLeaderName: assignmentRow.assigned_by_name || undefined,
+      assignedAt: assignmentRow.assigned_at || undefined,
+      confirmationToken: assignmentRow.confirmation_token || undefined,
+      responseAt: assignmentRow.response_at || undefined
+    };
+
+    const constructedSunday: ServiceSunday = {
+      id: assignmentRow.sunday_id,
+      date: serviceRow?.date || assignmentRow.sunday_id.replace(/^s-/, ''),
+      themeSl: serviceRow?.theme_sl || '',
+      themeEn: serviceRow?.theme_en || '',
+      status: serviceRow?.status || 'draft',
+      guest: serviceRow?.guest || '',
+      absentOrNotes: serviceRow?.absent_or_notes || '',
+      specialFocus: serviceRow?.special_focus || undefined,
+      worshipSetlist: serviceRow?.worship_setlist || undefined,
+      assignments: sundayAssignments,
+      assignmentDetails: assignmentDetails
+    };
+
+    return {
+      sunday: constructedSunday,
+      ministryId: assignmentRow.ministry_id,
+      assignment: targetAssignment
+    };
+  } catch (err) {
+    console.warn('[Supabase] fetchAssignmentByToken error:', err);
+    return null;
+  }
+}
+
 export async function confirmAssignmentByToken(
   token: string,
   newStatus: 'confirmed' | 'declined',
@@ -185,8 +279,8 @@ export async function confirmAssignmentByToken(
     const { data: matched, error: findErr } = await supabase
       .from('nedelje_assignments')
       .select('*')
-      .eq('confirmation_token', token)
-      .single();
+      .eq('confirmation_token', token.trim())
+      .maybeSingle();
 
     if (findErr || !matched) {
       return { success: false, error: 'Invalid or expired confirmation token' };
@@ -200,7 +294,7 @@ export async function confirmAssignmentByToken(
         notes: notes || matched.notes,
         response_at: new Date().toISOString()
       })
-      .eq('confirmation_token', token)
+      .eq('confirmation_token', token.trim())
       .select()
       .single();
 

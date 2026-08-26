@@ -384,9 +384,10 @@ export function updateAssignmentStatusByToken(
   sundays: ServiceSunday[],
   token: string,
   status: 'confirmed' | 'declined',
-  declineReason?: string
+  declineReason?: string,
+  fallbackMatch?: { sunday: ServiceSunday; ministryId: string; assignment: MinistryAssignment } | null
 ): { updatedSundays: ServiceSunday[]; modifiedSunday: ServiceSunday; assignment: MinistryAssignment; ministryId: string } | null {
-  const match = findAssignmentByToken(sundays, token);
+  const match = findAssignmentByToken(sundays, token) || fallbackMatch;
   if (!match) return null;
 
   const { sunday, ministryId, assignment } = match;
@@ -425,7 +426,10 @@ export function updateAssignmentStatusByToken(
     },
   };
 
-  const updatedSundays = sundays.map(s => s.id === sunday.id ? modifiedSunday : s);
+  const hasInSundays = sundays.some(s => s.id === sunday.id);
+  const updatedSundays = hasInSundays
+    ? sundays.map(s => s.id === sunday.id ? modifiedSunday : s)
+    : [...sundays, modifiedSunday];
 
   const updatedAssignment: MinistryAssignment = {
     ...assignment,
