@@ -145,7 +145,7 @@ export default function ServiceRundownModal({
   const filteredSongs = useMemo(() => {
     const q = songSearchQuery.toLowerCase().trim();
 
-    let combined: { id: string; titleSl: string; titleEn?: string; youtubeUrl?: string; docLink?: string; source: string; number?: string }[] = [];
+    let combined: { id: string; titleSl: string; titleEn?: string; youtubeUrl?: string; docLink?: string; source: string; number?: string; category?: WorshipSong['category'] }[] = [];
 
     if (selectedSongSource === 'all' || selectedSongSource === 'kalvarija') {
       INITIAL_WORSHIP_SONGS.forEach(s => {
@@ -156,7 +156,8 @@ export default function ServiceRundownModal({
           youtubeUrl: s.youtubeUrl,
           docLink: s.docLink,
           source: 'Kalvarija',
-          number: s.number
+          number: s.number,
+          category: s.category
         });
       });
     }
@@ -538,15 +539,37 @@ export default function ServiceRundownModal({
                       </div>
                     ) : (
                       filteredSongs.map((s) => (
-                        <div key={s.id} className="p-2.5 hover:bg-violet-50/60 transition flex items-center justify-between gap-2">
+                        <div key={s.id} className={`p-2.5 hover:bg-violet-50/60 transition flex items-center justify-between gap-2 ${
+                          s.category === 'favorite' ? 'bg-amber-50/40' : s.category === 'great' ? 'bg-yellow-50/40' : s.category === 'kids' ? 'bg-emerald-50/40' : s.category === 'christmas' ? 'bg-sky-50/40' : ''
+                        }`}>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               {s.number && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200 shrink-0">
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-white text-slate-700 rounded border border-slate-200 shrink-0">
                                   #{s.number}
                                 </span>
                               )}
                               <p className="text-xs font-bold text-slate-800 truncate">{s.titleSl}</p>
+                              {s.category === 'favorite' && (
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-200 text-amber-950 font-bold">
+                                  ⭐ Priljubljena
+                                </span>
+                              )}
+                              {s.category === 'great' && (
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-yellow-100 text-yellow-900 font-medium">
+                                  👍 Odlična
+                                </span>
+                              )}
+                              {s.category === 'kids' && (
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-100 text-emerald-900 font-medium">
+                                  👶 Otroška
+                                </span>
+                              )}
+                              {s.category === 'christmas' && (
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-sky-100 text-sky-900 font-medium">
+                                  🎄 Božična
+                                </span>
+                              )}
                               {s.titleEn && (
                                 <span className="text-[10px] text-slate-500 truncate">({s.titleEn})</span>
                               )}

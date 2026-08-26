@@ -103,16 +103,22 @@ export default function Statistika({
 
   // Category breakdown metrics
   const categoriesList = [
-    { id: 'av_tech', labelSl: 'Slavljenje & Tehnika', labelEn: 'Worship & Tech', color: 'purple' },
+    { id: 'worship', labelSl: 'Slavljenje', labelEn: 'Worship', color: 'purple' },
+    { id: 'audio_video', labelSl: 'Avdio Video', labelEn: 'Audio Video', color: 'cyan' },
+    { id: 'sermon_prayer', labelSl: 'Bogoslužje', labelEn: 'Main Service', color: 'sky' },
     { id: 'kids', labelSl: 'Nedeljska šola', labelEn: 'Sunday School', color: 'emerald' },
     { id: 'hospitality', labelSl: 'Gostoljubje & Kava', labelEn: 'Hospitality & Snacks', color: 'rose' },
     { id: 'cleaning', labelSl: 'Priprava & Čiščenje', labelEn: 'Setup & Cleaning', color: 'amber' },
-    { id: 'sermon_prayer', labelSl: 'Učenje & Molitev', labelEn: 'Word & Prayer', color: 'sky' },
-    { id: 'other', labelSl: 'Ostale zadolžitve', labelEn: 'Other services', color: 'indigo' },
+    { id: 'post_service', labelSl: 'Po bogoslužju', labelEn: 'Post-Service', color: 'indigo' },
   ];
 
   const categoryCoverage = categoriesList.map(cat => {
-    const catMinistries = ministries.filter(m => m.category === cat.id);
+    const catMinistries = ministries.filter(m => 
+      m.category === cat.id ||
+      (cat.id === 'post_service' && m.category === 'other') ||
+      (cat.id === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) ||
+      (cat.id === 'audio_video' && m.category === 'av_tech' && (m.id !== 'slavilna_ekipa' && m.id !== 'uvod_slavljenje' && m.id !== 'zvok'))
+    );
     const catTotalPossible = catMinistries.length * totalSundaysCount;
     let catFilled = 0;
 
@@ -310,11 +316,13 @@ export default function Statistika({
           <div className="space-y-3.5">
             {categoryCoverage.map(cat => {
               let barColorClass = 'bg-indigo-500';
-              if (cat.id === 'av_tech') barColorClass = 'bg-purple-500';
+              if (cat.id === 'worship' || cat.id === 'av_tech') barColorClass = 'bg-purple-500';
+              if (cat.id === 'audio_video') barColorClass = 'bg-cyan-500';
               if (cat.id === 'kids') barColorClass = 'bg-emerald-500';
               if (cat.id === 'hospitality') barColorClass = 'bg-rose-500';
               if (cat.id === 'cleaning') barColorClass = 'bg-amber-500';
               if (cat.id === 'sermon_prayer') barColorClass = 'bg-sky-500';
+              if (cat.id === 'post_service' || cat.id === 'other') barColorClass = 'bg-indigo-500';
 
               return (
                 <div key={cat.id} className="space-y-1.5">

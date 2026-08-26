@@ -54,6 +54,24 @@ const NotificationQueueContext = createContext<NotificationQueueContextType | nu
 const STORAGE_KEY = 'kck_assignment_queue';
 const GRACE_PERIOD_MS = 10 * 60 * 1000; // 10 minutes
 
+function normalizeDateStr(dStr: string): string {
+  if (!dStr) return '';
+  const trimmed = dStr.trim();
+  if (trimmed.includes('.')) {
+    const parts = trimmed.split('.').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      let year = parseInt(parts[2], 10);
+      if (year < 100) year += 2000;
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        return `${day}. ${month}. ${year}`;
+      }
+    }
+  }
+  return trimmed;
+}
+
 export function NotificationQueueProvider({ children }: { children: React.ReactNode }) {
   const [batches, setBatches] = useState<Record<string, QueuedRecipientBatch>>(() => {
     try {
@@ -90,14 +108,24 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
   const executeDispatch = useCallback(async (batch: QueuedRecipientBatch): Promise<boolean> => {
     console.log("🚀 FLUSHING QUEUE BATCH:", batch);
 
-    if (!batch.volunteerEmail || !batch.volunteerEmail.includes('@') || batch.items.length === 0) {
+    if (!batch.volunteerEmail || !batch.volunteerEmail.includes('@') || !batch.items || batch.items.length === 0) {
       console.warn("⚠️ Cannot dispatch batch without valid email or items:", batch);
       return false;
     }
 
+    // Strictly deduplicate items by normalized (sundayDate, ministryId) or token
+    const uniqueMap = new Map<string, QueuedAssignmentItem>();
+    batch.items.forEach(item => {
+      const key = `${normalizeDateStr(item.sundayDate)}_${item.ministryId.toLowerCase().trim()}`;
+      uniqueMap.set(key, item);
+    });
+    const uniqueItems = Array.from(uniqueMap.values());
+
+    if (uniqueItems.length === 0) return false;
+
     try {
-      if (batch.items.length === 1) {
-        const item = batch.items[0];
+      if (uniqueItems.length === 1) {
+        const item = uniqueItems[0];
         const res = await sendLeaderAssignmentNotification({
           volunteerName: batch.volunteerName,
           volunteerEmail: batch.volunteerEmail,
@@ -117,12 +145,12 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
         const res = await sendBatchLeaderAssignmentNotification({
           volunteerName: batch.volunteerName,
           volunteerEmail: batch.volunteerEmail,
-          ministryName: batch.items[0].ministryName,
-          items: batch.items.map(i => ({ sundayDate: i.sundayDate, token: i.token })),
+          ministryName: uniqueItems[0].ministryName,
+          items: uniqueItems.map(i => ({ sundayDate: i.sundayDate, token: i.token })),
           leaderName: batch.leaderName,
         });
         if (res.success) {
-          showToast(`✓ Poslano zbirno obvestilo (${batch.items.length} terminov) na ${batch.volunteerEmail}`);
+          showToast(`✓ Poslano zbirno obvestilo (${uniqueItems.length} terminov) na ${batch.volunteerEmail}`);
           return true;
         } else {
           showToast(`⚠️ Napaka pri pošiljanju za serijo: ${res.error || 'neznana napaka'}`);
@@ -197,6 +225,9 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
     }
 
     const emailKey = params.volunteerEmail.toLowerCase().trim();
+    const normDate = normalizeDateStr(params.sundayDate);
+    const normMinistryId = params.ministryId.toLowerCase().trim();
+
     const newItem: QueuedAssignmentItem = {
       id: `${params.sundayDate}_${params.ministryId}_${params.token}`,
       sundayId: params.sundayId,
@@ -213,10 +244,14 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
       const expiresAt = now + GRACE_PERIOD_MS;
 
       if (existing) {
-        // Filter out if duplicate
-        const filteredItems = existing.items.filter(
-          item => !(item.sundayDate === params.sundayDate && item.ministryId === params.ministryId)
-        );
+        // Filter out if duplicate date/ministry or duplicate sundayId
+        const filteredItems = existing.items.filter(item => {
+          const isSameDate = normalizeDateStr(item.sundayDate) === normDate;
+          const isSameMinistry = item.ministryId.toLowerCase().trim() === normMinistryId;
+          const isSameSundayId = Boolean(params.sundayId && item.sundayId && item.sundayId === params.sundayId);
+          return !((isSameDate || isSameSundayId) && isSameMinistry);
+        });
+
         return {
           ...prev,
           [emailKey]: {

@@ -148,19 +148,26 @@ export async function generateGoogleDoc(
     
     // Group ministries by category for clean structure
     const categories: Record<string, { nameSl: string; nameEn: string; list: Ministry[] }> = {
-      sermon_prayer: { nameSl: 'Pridiga in molitev', nameEn: 'Word & Prayer', list: [] },
-      av_tech: { nameSl: 'A/V & Tehnična podpora', nameEn: 'A/V & Tech Support', list: [] },
+      worship: { nameSl: 'Slavljenje', nameEn: 'Worship', list: [] },
+      audio_video: { nameSl: 'Avdio & Video Tehnika', nameEn: 'Audio & Video Tech', list: [] },
+      sermon_prayer: { nameSl: 'Bogoslužje', nameEn: 'Main Service', list: [] },
       hospitality: { nameSl: 'Sprejem in druženje', nameEn: 'Hosting & Hospitality', list: [] },
       kids: { nameSl: 'Otroški program (Sunday school)', nameEn: 'Kids Ministry', list: [] },
       cleaning: { nameSl: 'Ureditev prostora', nameEn: 'Setup & Cleaning', list: [] },
-      other: { nameSl: 'Drugo', nameEn: 'Other Ministries', list: [] },
+      post_service: { nameSl: 'Po bogoslužju', nameEn: 'Post-Service', list: [] },
     };
 
     ministries.forEach(min => {
-      if (categories[min.category]) {
+      if (min.category === 'worship' || (min.category === 'av_tech' && (min.id === 'slavilna_ekipa' || min.id === 'uvod_slavljenje' || min.id === 'zvok'))) {
+        categories.worship.list.push(min);
+      } else if (min.category === 'audio_video' || min.category === 'av_tech') {
+        categories.audio_video.list.push(min);
+      } else if (min.category === 'post_service' || min.category === 'other') {
+        categories.post_service.list.push(min);
+      } else if (categories[min.category]) {
         categories[min.category].list.push(min);
       } else {
-        categories.other.list.push(min);
+        categories.post_service.list.push(min);
       }
     });
 
@@ -200,7 +207,7 @@ export async function generateGoogleDoc(
     // Template 2: Worship Team Run Sheet
     addSectionHeader('2. Scenski in tehnični razpored', '2. Stage & Audio Assignments');
     
-    const stageMins = ministries.filter(m => m.category === 'av_tech' || m.id.toLowerCase().includes('slav') || m.id.toLowerCase().includes('worship'));
+    const stageMins = ministries.filter(m => m.category === 'worship' || m.category === 'audio_video' || m.category === 'av_tech' || m.id.toLowerCase().includes('slav') || m.id.toLowerCase().includes('worship'));
     stageMins.forEach(min => {
       builder.appendStyled(`  • ${isSl ? min.nameSl : min.nameEn}: `, 'bold');
       builder.appendLine(getAssignmentsList(min.id));

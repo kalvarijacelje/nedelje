@@ -4,8 +4,8 @@
  */
 
 import React, { useState } from 'react';
-import { ServiceSunday, Ministry, Person, UserRole, Translation, MinistryAssignment, AssignmentStatus, BlackoutDate, WorshipRosterEntry, SundaySchoolLesson, canAccessPersonalData, canViewPersonContactInfo } from '../types';
-import { ArrowLeft, ArrowRight, UserPlus, Trash2, Check, CheckCircle2, AlertTriangle, Copy, Save, BookOpen, AlertCircle, HelpCircle, FileText, Loader2, Calendar, MessageSquare, Send, Lock, Music, Clock, Tv, ExternalLink, Youtube, Sparkles, Coffee, ClipboardCheck, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Layers, Heart, HeartHandshake, Crown, Phone, PhoneCall, Mail, X, Home, Unlock, Utensils, CupSoda, Volume2, Camera, Sliders, Monitor, Film, Smile, GraduationCap, Globe, Coins, Wine, Repeat, MoreVertical } from 'lucide-react';
+import { ServiceSunday, Ministry, Person, UserRole, Translation, MinistryAssignment, AssignmentStatus, BlackoutDate, WorshipRosterEntry, SundaySchoolLesson, canAccessPersonalData, canViewPersonContactInfo, getPrivacyDisplayName } from '../types';
+import { ArrowLeft, ArrowRight, UserPlus, Trash2, Check, CheckCircle2, AlertTriangle, Copy, Save, BookOpen, AlertCircle, HelpCircle, FileText, Loader2, Calendar, MessageSquare, Send, Lock, Music, Clock, Tv, ExternalLink, Youtube, Sparkles, Coffee, ClipboardCheck, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Layers, Heart, HeartHandshake, Crown, Phone, PhoneCall, Mail, X, Home, Unlock, Utensils, CupSoda, Volume2, Camera, Sliders, Monitor, Film, Smile, GraduationCap, Globe, Coins, Wine, Repeat, MoreVertical, Key, Flame, Mic, HandHelping, Video } from 'lucide-react';
 import ServiceRundownModal from './ServiceRundownModal';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { supabase } from '../supabaseClient';
@@ -186,53 +186,127 @@ interface SundayDetailProps {
   onSetGoogleToken: (token: string | null) => void;
   onOpenVisitorModal?: () => void;
   onOpenInspectionModal?: (category?: 'coffee_upper_hall' | 'tech_stage' | 'kids_classrooms' | 'general_cleaning') => void;
+  authUser?: any;
 }
+
+const renderCategoryIcon = (catId: string, className = "w-3.5 h-3.5") => {
+  switch (catId) {
+    case 'all':
+      return <Layers className={className} />;
+    case 'cleaning':
+      return <Sparkles className={className} />;
+    case 'hospitality':
+      return <Coffee className={className} />;
+    case 'sermon_prayer':
+      return <BookOpen className={className} />;
+    case 'worship':
+    case 'av_tech':
+      return <Music className={className} />;
+    case 'audio_video':
+      return <Video className={className} />;
+    case 'kids':
+      return <Smile className={className} />;
+    case 'post_service':
+    case 'other':
+    default:
+      return <HeartHandshake className={className} />;
+  }
+};
 
 const getTeamTheme = (category: string) => {
   switch (category) {
     case 'cleaning':
       return {
-        activeTab: 'bg-amber-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-amber-600 text-white border-amber-600 shadow-xs font-semibold',
+        inactiveTab: 'bg-amber-50/80 hover:bg-amber-100/90 text-amber-900 border-amber-200/90 font-medium',
         dot: 'bg-amber-500',
         labelSl: 'Priprava & Čiščenje',
         labelEn: 'Setup & Cleaning'
       };
     case 'hospitality':
       return {
-        activeTab: 'bg-rose-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-rose-600 text-white border-rose-600 shadow-xs font-semibold',
+        inactiveTab: 'bg-rose-50/80 hover:bg-rose-100/90 text-rose-900 border-rose-200/90 font-medium',
         dot: 'bg-rose-500',
         labelSl: 'Gostoljubje & Kava',
         labelEn: 'Hospitality & Snacks'
       };
     case 'sermon_prayer':
       return {
-        activeTab: 'bg-sky-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-sky-600 text-white border-sky-600 shadow-xs font-semibold',
+        inactiveTab: 'bg-sky-50/80 hover:bg-sky-100/90 text-sky-900 border-sky-200/90 font-medium',
         dot: 'bg-sky-500',
-        labelSl: 'Učenje & Molitev',
-        labelEn: 'Word & Prayer'
+        labelSl: 'Bogoslužje',
+        labelEn: 'Main Service'
       };
+    case 'worship':
     case 'av_tech':
       return {
-        activeTab: 'bg-purple-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-purple-600 text-white border-purple-600 shadow-xs font-semibold',
+        inactiveTab: 'bg-purple-50/80 hover:bg-purple-100/90 text-purple-900 border-purple-200/90 font-medium',
         dot: 'bg-purple-500',
-        labelSl: 'Slavljenje & Tehnika',
-        labelEn: 'Worship & Tech'
+        labelSl: 'Slavljenje',
+        labelEn: 'Worship'
+      };
+    case 'audio_video':
+      return {
+        activeTab: 'bg-cyan-600 text-white border-cyan-600 shadow-xs font-semibold',
+        inactiveTab: 'bg-cyan-50/80 hover:bg-cyan-100/90 text-cyan-950 border-cyan-200/90 font-medium',
+        dot: 'bg-cyan-500',
+        labelSl: 'Avdio Video',
+        labelEn: 'Audio Video'
       };
     case 'kids':
       return {
-        activeTab: 'bg-emerald-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-semibold',
+        inactiveTab: 'bg-emerald-50/80 hover:bg-emerald-100/90 text-emerald-900 border-emerald-200/90 font-medium',
         dot: 'bg-emerald-500',
         labelSl: 'Nedeljska šola',
         labelEn: 'Sunday School'
       };
+    case 'post_service':
     case 'other':
     default:
       return {
-        activeTab: 'bg-indigo-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold',
+        inactiveTab: 'bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-900 border-indigo-200/90 font-medium',
         dot: 'bg-indigo-500',
-        labelSl: 'Ostale zadolžitve',
-        labelEn: 'Other services'
+        labelSl: 'Po bogoslužju',
+        labelEn: 'Post-Service'
       };
+  }
+};
+
+export const getMinistryIconEmoji = (minId: string): string => {
+  switch (minId) {
+    case 'cistoca': return '✨';
+    case 'zgornja_dvorana': return '🏠';
+    case 'odklepanje': return '🔑';
+    case 'zaklepanje': return '🔒';
+    case 'koncni_pregled': return '📋';
+    case 'gostoljubje': return '🥤';
+    case 'kava': return '☕';
+    case 'hrana': return '🍽️';
+    case 'barista': return '🔥';
+    case 'sprejem_reditelji': return '🤝';
+    case 'uvodna_molitev_darovi': return '🙏';
+    case 'ucenje': return '📖';
+    case 'obvestila': return '📢';
+    case 'pricevanja': return '💬';
+    case 'prevajanje': return '🌐';
+    case 'gospodova_vecerja': return '🍷';
+    case 'slavilna_ekipa': return '🎵';
+    case 'uvod_slavljenje': return '🎤';
+    case 'zvok': return '🎚️';
+    case 'postavitev_av': return '🎥';
+    case 'besedila': return '🖥️';
+    case 'youtube_prenos': return '📹';
+    case 'editiranje': return '🎬';
+    case 'nedeljska_sola_mlajsa': return '👶';
+    case 'nedeljska_sola_starejsa': return '🎓';
+    case 'molitev_po': return '🙏';
+    case 'finance': return '🪙';
+    default: return '📌';
   }
 };
 
@@ -247,16 +321,19 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'ClipboardCheck':
     case 'koncni_pregled':
       return <ClipboardCheck className={className} />;
+    case 'Key':
     case 'Unlock':
     case 'odklepanje':
-      return <Unlock className={className} />;
+      return <Key className={className} />;
     case 'Lock':
     case 'zaklepanje':
       return <Lock className={className} />;
     case 'Coffee':
     case 'kava':
-    case 'barista':
       return <Coffee className={className} />;
+    case 'Flame':
+    case 'barista':
+      return <Flame className={className} />;
     case 'Utensils':
     case 'hrana':
       return <Utensils className={className} />;
@@ -266,6 +343,10 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'HeartHandshake':
     case 'sprejem_reditelji':
       return <HeartHandshake className={className} />;
+    case 'HandHelping':
+    case 'uvodna_molitev_darovi':
+    case 'molitev_po':
+      return <HandHelping className={className} />;
     case 'BookOpen':
     case 'ucenje':
       return <BookOpen className={className} />;
@@ -275,22 +356,25 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'MessageSquare':
     case 'pricevanja':
       return <MessageSquare className={className} />;
-    case 'Heart':
-    case 'molitev_po':
-      return <Heart className={className} />;
     case 'Music':
     case 'slavilna_ekipa':
-    case 'uvod_slavljenje':
       return <Music className={className} />;
-    case 'Camera':
-    case 'postavitev_av':
-      return <Camera className={className} />;
+    case 'Mic':
+    case 'uvod_slavljenje':
+      return <Mic className={className} />;
     case 'Sliders':
     case 'zvok':
       return <Sliders className={className} />;
+    case 'Camera':
+    case 'postavitev_av':
+      return <Camera className={className} />;
     case 'Monitor':
     case 'besedila':
       return <Monitor className={className} />;
+    case 'Video':
+    case 'Tv':
+    case 'youtube_prenos':
+      return <Video className={className} />;
     case 'Film':
     case 'editiranje':
       return <Film className={className} />;
@@ -334,6 +418,7 @@ export default function SundayDetail({
   onSetGoogleToken,
   onOpenVisitorModal,
   onOpenInspectionModal,
+  authUser,
 }: SundayDetailProps) {
   const [activeMinistryEditId, setActiveMinistryEditId] = useState<string | null>(null);
   const [newPersonInput, setNewPersonInput] = useState('');
@@ -351,7 +436,7 @@ export default function SundayDetail({
   const [rosterSearchQuery, setRosterSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [overrideMenuOpenId, setOverrideMenuOpenId] = useState<string | null>(null);
-  const { queueAssignment } = useNotificationQueue();
+  const { queueAssignment, batches, removeQueuedItem } = useNotificationQueue();
   const [pendingRemoval, setPendingRemoval] = useState<{
     ministryId: string;
     ministryName: string;
@@ -990,6 +1075,20 @@ export default function SundayDetail({
     const currentDetails = getAssignmentDetails(ministryId);
     const updated = currentDetails.filter((d) => d.personName !== personName);
     handleUpdateAssignmentDetails(ministryId, updated);
+
+    // Also cancel queued notification if it's currently waiting in grace period
+    const matchedPerson = (people || []).find(p => p && p.name && p.name.toLowerCase() === personName.toLowerCase());
+    if (matchedPerson?.email) {
+      const emailKey = matchedPerson.email.toLowerCase().trim();
+      const batch = batches[emailKey];
+      if (batch && Array.isArray(batch.items)) {
+        batch.items.forEach(item => {
+          if ((item.sundayDate.trim() === sunday.date.trim() || (item.sundayId && item.sundayId === sunday.id)) && item.ministryId === ministryId) {
+            removeQueuedItem(matchedPerson.email, item.id);
+          }
+        });
+      }
+    }
   };
 
   const handleSetStatus = (ministryId: string, personName: string, newStatus: 'pending' | 'confirmed' | 'declined') => {
@@ -1477,15 +1576,22 @@ export default function SundayDetail({
             { id: 'all', labelSl: 'Vse skupine', labelEn: 'All Areas' },
             { id: 'cleaning', labelSl: 'Priprava & Čiščenje', labelEn: 'Setup & Cleaning' },
             { id: 'hospitality', labelSl: 'Gostoljubje & Kava', labelEn: 'Hospitality & Snacks' },
-            { id: 'sermon_prayer', labelSl: 'Učenje & Molitev', labelEn: 'Word & Prayer' },
-            { id: 'av_tech', labelSl: 'Slavljenje & Tehnika', labelEn: 'Worship & Tech' },
+            { id: 'sermon_prayer', labelSl: 'Bogoslužje', labelEn: 'Main Service' },
+            { id: 'worship', labelSl: 'Slavljenje', labelEn: 'Worship' },
+            { id: 'audio_video', labelSl: 'Avdio Video', labelEn: 'Audio Video' },
             { id: 'kids', labelSl: 'Nedeljska šola', labelEn: 'Sunday School' },
-            { id: 'other', labelSl: 'Ostale zadolžitve', labelEn: 'Other services' },
+            { id: 'post_service', labelSl: 'Po bogoslužju', labelEn: 'Post-Service' },
           ];
 
           const filteredMinistries = selectedCategory === 'all'
             ? ministries
-            : ministries.filter(m => m.category === selectedCategory);
+            : ministries.filter(m => {
+                if (m.category === selectedCategory) return true;
+                if (selectedCategory === 'post_service' && m.category === 'other') return true;
+                if (selectedCategory === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) return true;
+                if (selectedCategory === 'audio_video' && m.category === 'av_tech' && (m.id !== 'slavilna_ekipa' && m.id !== 'uvod_slavljenje' && m.id !== 'zvok')) return true;
+                return false;
+              });
 
           const isMyDuty = (mId: string) => {
             if (!activePerson) return false;
@@ -1515,8 +1621,11 @@ export default function SundayDetail({
                 case 'cleaning': return 'border-l-4 border-l-amber-400';
                 case 'hospitality': return 'border-l-4 border-l-rose-400';
                 case 'sermon_prayer': return 'border-l-4 border-l-sky-400';
+                case 'worship':
                 case 'av_tech': return 'border-l-4 border-l-purple-400';
+                case 'audio_video': return 'border-l-4 border-l-cyan-500';
                 case 'kids': return 'border-l-4 border-l-emerald-400';
+                case 'post_service':
                 case 'other':
                 default: return 'border-l-4 border-l-indigo-400';
               }
@@ -1539,7 +1648,8 @@ export default function SundayDetail({
                         ministry.category === 'cleaning' ? 'bg-amber-100/80 text-amber-800 border border-amber-200/80' :
                         ministry.category === 'hospitality' ? 'bg-rose-100/80 text-rose-800 border border-rose-200/80' :
                         ministry.category === 'sermon_prayer' ? 'bg-sky-100/80 text-sky-800 border border-sky-200/80' :
-                        ministry.category === 'av_tech' ? 'bg-purple-100/80 text-purple-800 border border-purple-200/80' :
+                        (ministry.category === 'worship' || ministry.category === 'av_tech') ? 'bg-purple-100/80 text-purple-800 border border-purple-200/80' :
+                        ministry.category === 'audio_video' ? 'bg-cyan-100/80 text-cyan-800 border border-cyan-200/80' :
                         ministry.category === 'kids' ? 'bg-emerald-100/80 text-emerald-800 border border-emerald-200/80' :
                         'bg-indigo-100/80 text-indigo-800 border border-indigo-200/80'
                       }`}>
@@ -1812,11 +1922,11 @@ export default function SundayDetail({
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <div className="flex items-center gap-1.5">
                                     <span className="font-mono text-xs font-bold text-gray-900">
-                                      👤 {detail.personName}
+                                      👤 {getPrivacyDisplayName(detail.personName, userRole, activePerson?.name, authUser?.email || activePerson?.email, authUser?.id || authUser?.uid || activePerson?.id, people)}
                                     </span>
                                     {detail.assignedByLeaderName && (
                                       <span className="text-[10px] text-gray-400">
-                                        (dodelil: {detail.assignedByLeaderName})
+                                        (dodelil: {getPrivacyDisplayName(detail.assignedByLeaderName, userRole, activePerson?.name, authUser?.email || activePerson?.email, authUser?.id || authUser?.uid || activePerson?.id, people)})
                                       </span>
                                     )}
                                   </div>
@@ -2080,6 +2190,16 @@ export default function SundayDetail({
                             const { isDeclined, declineReason } = checkCandidateDeclineOnSunday(person.name, ministry.id, sunday);
                             const isUnavailable = isDeclined || isAbsent;
 
+                            // Check what other ministries this person is already assigned to this Sunday
+                            const otherAssignments = Object.entries(sunday.assignments || {})
+                              .filter(([minId, assignedList]) => minId !== ministry.id && Array.isArray(assignedList) && assignedList.includes(person.name))
+                              .map(([minId]) => {
+                                const minObj = ministries.find(m => m.id === minId || m.nameSl.toLowerCase() === minId.toLowerCase());
+                                const name = minObj ? (currentLanguage === 'sl' ? minObj.nameSl : minObj.nameEn) : minId;
+                                const emoji = getMinistryIconEmoji(minId);
+                                return { minId, name, emoji };
+                              });
+
                             // 1: Available Preferred (⭐), 2: Available Other, 3: Unavailable (🌴 or 🚫)
                             const tier = isUnavailable ? 3 : isPref ? 1 : 2;
 
@@ -2094,6 +2214,7 @@ export default function SundayDetail({
                               isDeclined,
                               declineReason,
                               isUnavailable,
+                              otherAssignments,
                               tier,
                             };
                           });
@@ -2106,26 +2227,34 @@ export default function SundayDetail({
                             return a.person.name.localeCompare(b.person.name, 'sl');
                           });
 
-                          return decoratedList.map(({ person, isChosen, isPref, isAbsent, absenceReason, absenceStartDate, absenceEndDate, isDeclined, declineReason, isUnavailable }) => {
+                          return decoratedList.map(({ person, isChosen, isPref, isAbsent, absenceReason, absenceStartDate, absenceEndDate, isDeclined, declineReason, isUnavailable, otherAssignments }) => {
                             let badgeClasses = 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200';
                             let tooltip = person.name;
+
+                            const otherMinistryText = otherAssignments.length > 0
+                              ? (currentLanguage === 'sl'
+                                  ? `\nŽe v službi: ${otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}`
+                                  : `\nAlready serving: ${otherAssignments.map(o => `${o.emoji} ${o.name}`).join(', ')}`)
+                              : '';
 
                             if (isChosen) {
                               badgeClasses = 'bg-indigo-600 text-white border-indigo-700 font-bold shadow-2xs';
                             } else if (isDeclined) {
                               badgeClasses = 'opacity-60 bg-rose-50/70 border-rose-200 text-rose-900 hover:opacity-100 hover:bg-rose-100 transition';
-                              tooltip = declineReason ? `Zavrnjeno: "${declineReason}"` : 'Oseba je zavrnila ta termin';
+                              tooltip = (declineReason ? `Zavrnjeno: "${declineReason}"` : 'Oseba je zavrnila ta termin') + otherMinistryText;
                             } else if (isAbsent) {
                               badgeClasses = 'opacity-60 bg-amber-50/70 border-amber-200 text-amber-900 hover:opacity-100 hover:bg-amber-100 transition';
                               const dateInfo = absenceStartDate && absenceEndDate && absenceStartDate !== absenceEndDate
                                 ? ` (${absenceStartDate} - ${absenceEndDate})`
                                 : '';
-                              tooltip = absenceReason 
+                              tooltip = (absenceReason 
                                 ? `Odsotnost / Dopust${dateInfo}: "${absenceReason}"` 
-                                : `Oseba je na dopustu${dateInfo}`;
+                                : `Oseba je na dopustu${dateInfo}`) + otherMinistryText;
                             } else if (isPref) {
                               badgeClasses = 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200 font-semibold';
-                              tooltip = 'Prednostni sodelavec za to službo';
+                              tooltip = (currentLanguage === 'sl' ? 'Prednostni sodelavec za to službo' : 'Preferred volunteer for this ministry') + otherMinistryText;
+                            } else {
+                              tooltip = person.name + otherMinistryText;
                             }
 
                             return (
@@ -2134,13 +2263,27 @@ export default function SundayDetail({
                                 type="button"
                                 onClick={() => handleCandidateClick(person, ministry.id, isChosen, isUnavailable, isDeclined, isAbsent, declineReason, absenceReason, absenceStartDate, absenceEndDate)}
                                 title={tooltip}
-                                className={`text-xs px-2.5 py-1 rounded-lg font-mono transition duration-150 border focus:outline-none cursor-pointer flex items-center gap-1 ${badgeClasses}`}
+                                className={`text-xs px-2.5 py-1 rounded-lg font-mono transition duration-150 border focus:outline-none cursor-pointer flex items-center gap-1.5 ${badgeClasses}`}
                               >
                                 <span>{person.name}</span>
                                 {isChosen && <Check className="w-3 h-3 stroke-[3]" />}
                                 {!isChosen && isDeclined && <span title={tooltip}>🚫</span>}
                                 {!isChosen && !isDeclined && isAbsent && <span title={tooltip}>🌴</span>}
-                                {!isChosen && !isUnavailable && isPref && <span title="Prednostni sodelavec">⭐</span>}
+                                {!isChosen && !isUnavailable && isPref && <span title={currentLanguage === 'sl' ? 'Prednostni sodelavec' : 'Preferred'}>⭐</span>}
+                                
+                                {/* Visual badges of ministries they are already signed up for this Sunday */}
+                                {!isChosen && otherAssignments.length > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 ml-0.5 px-1 py-0.2 bg-black/5 rounded text-[11px] font-sans">
+                                    {otherAssignments.map((oa) => (
+                                      <span
+                                        key={oa.minId}
+                                        title={currentLanguage === 'sl' ? `Že v službi: ${oa.name}` : `Already serving: ${oa.name}`}
+                                      >
+                                        {oa.emoji}
+                                      </span>
+                                    ))}
+                                  </span>
+                                )}
                               </button>
                             );
                           });
@@ -2190,15 +2333,17 @@ export default function SundayDetail({
                       key={cat.id}
                       type="button"
                       onClick={() => setSelectedCategory(cat.id)}
-                      className={`text-[11px] px-3.5 py-1.5 rounded-xl transition shrink-0 whitespace-nowrap focus:outline-none cursor-pointer flex items-center gap-1.5 border ${
+                      className={`text-[11px] px-3.5 py-1.5 rounded-xl transition shrink-0 whitespace-nowrap focus:outline-none cursor-pointer flex items-center gap-1.5 border font-semibold ${
                         isSelected
                           ? cat.id === 'all'
-                            ? 'bg-slate-900 text-white border-slate-900 font-semibold shadow-xs'
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                             : theme.activeTab
-                          : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200 font-medium'
+                          : cat.id === 'all'
+                            ? 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                            : theme.inactiveTab
                       }`}
                     >
-                      {cat.id !== 'all' && <span className={`w-2 h-2 rounded-full ${theme.dot}`} />}
+                      {renderCategoryIcon(cat.id, "w-3.5 h-3.5 shrink-0")}
                       <span>{currentLanguage === 'sl' ? cat.labelSl : cat.labelEn}</span>
                     </button>
                   );

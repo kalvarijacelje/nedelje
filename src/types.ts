@@ -83,6 +83,60 @@ export const canViewPersonContactInfo = (
   return false;
 };
 
+/**
+ * Formats a person's display name according to privacy & role permissions:
+ * - Superadmin, Admin, and Leader: See full names for EVERYONE.
+ * - Current user: Always sees their OWN full name.
+ * - Servants (Volunteers):
+ *     - See FULL names for Leaders & Admins (or anyone leading a ministry), so they know who they are coordinating with.
+ *     - See FIRST name (e.g. "Barbara", "Dejan", "Andrea") for peer servants / general members.
+ * - Viewers / Public: See FIRST name only.
+ */
+export const getPrivacyDisplayName = (
+  personOrName?: { id?: string; name?: string; role?: UserRole | string; ledMinistries?: string[]; isPastorOrStaff?: boolean } | string | null,
+  currentUserRole?: UserRole | string | null,
+  myPersonName?: string | null,
+  currentUserEmail?: string | null,
+  currentUserId?: string | null,
+  allPeople?: ({ id?: string; name?: string; role?: UserRole | string; ledMinistries?: string[]; isPastorOrStaff?: boolean })[]
+): string => {
+  if (!personOrName) return '';
+  const fullName = typeof personOrName === 'string' ? personOrName.trim() : (personOrName.name || '').trim();
+  if (!fullName) return '';
+
+  // 1. Superadmin, Admin, Leader see full name for everyone
+  if (currentUserEmail && isSuperAdmin(currentUserEmail)) return fullName;
+  if (currentUserRole === 'Admin' || currentUserRole === 'Leader') return fullName;
+
+  // 2. User viewing themselves sees their own full name
+  const targetId = typeof personOrName === 'object' ? personOrName.id : undefined;
+  if (currentUserId && targetId && currentUserId === targetId) return fullName;
+  if (myPersonName && myPersonName.trim().toLowerCase() === fullName.toLowerCase()) return fullName;
+
+  // 3. Check if target is a Leader, Admin, or Ministry Coordinator
+  let targetObj = typeof personOrName === 'object' ? personOrName : undefined;
+  if (!targetObj && allPeople) {
+    targetObj = allPeople.find(p => p && p.name && p.name.trim().toLowerCase() === fullName.toLowerCase());
+  }
+
+  const isTargetLeader = 
+    targetObj?.role === 'Leader' || 
+    targetObj?.role === 'Admin' || 
+    Boolean(targetObj?.isPastorOrStaff) ||
+    (Array.isArray(targetObj?.ledMinistries) && targetObj!.ledMinistries!.length > 0);
+
+  // Servants can see full name of Leaders & Admins
+  if (isTargetLeader && currentUserRole === 'Servant') {
+    return fullName;
+  }
+
+  // 4. Extract First Name (e.g., "Barbara Bukovec Breznikar" -> "Barbara")
+  const parts = fullName.split(' ').filter(Boolean);
+  if (parts.length <= 1) return fullName;
+
+  return parts[0];
+};
+
 export type Language = 'en' | 'sl';
 
 export type ServiceStatus = 'draft' | 'ready' | 'completed';
@@ -92,7 +146,7 @@ export interface Ministry {
   name?: string;
   nameSl: string;
   nameEn: string;
-  category: 'cleaning' | 'hospitality' | 'sermon_prayer' | 'av_tech' | 'kids' | 'other';
+  category: 'cleaning' | 'hospitality' | 'sermon_prayer' | 'worship' | 'audio_video' | 'kids' | 'post_service' | 'other' | 'av_tech';
   color: string; // Tailwind class color for visual indication
   icon?: string; // Lucide icon name for visual representation
   leader?: string;
@@ -324,6 +378,7 @@ export interface WorshipSong {
   demoUrl?: string;
   timesSung: number;
   isNew?: boolean;
+  category?: 'favorite' | 'great' | 'kids' | 'christmas' | 'standard';
   sasuNumber?: string;
   sasuLink?: string;
   docLink?: string;
@@ -403,6 +458,7 @@ export interface SundaySchoolLesson {
   group: SundaySchoolGroupKey; // Mlajša (3-9 let) or Starejša (10-15+ let) or Oboji
   topicSl: string;
   bibleStorySl: string;
+  descriptionSl?: string;
   memoryVerseSl?: string;
   craftAndGamesSl?: string;
   materialsNeeded?: string[];
@@ -416,7 +472,7 @@ export interface SundaySchoolLesson {
 export interface SundaySchoolSupply {
   id: string;
   nameSl: string;
-  category: 'crafts' | 'stationery' | 'snacks' | 'equipment' | 'other';
+  category: 'basic' | 'paper' | 'christmas' | 'decorations' | 'wood' | 'things' | 'random' | 'crafts' | 'stationery' | 'snacks' | 'equipment' | 'other';
   quantity: string;
   status: 'ok' | 'low' | 'buy'; // Green (Na zalogi), Yellow (Zmanjkuje), Red (Kupiti)
   notes?: string;

@@ -803,7 +803,20 @@ export const INITIAL_WORSHIP_ROSTER: WorshipRosterEntry[] = [
   }
 ];
 
-export const INITIAL_WORSHIP_SONGS: WorshipSong[] = [
+export const getSongCategory = (song: Partial<WorshipSong> & { id?: string }): 'favorite' | 'great' | 'kids' | 'christmas' | 'standard' => {
+  if (song.category) return song.category;
+  if (!song.id) return 'standard';
+  const num = parseInt(song.id.replace('song_', ''), 10);
+  if (isNaN(num)) return 'standard';
+  if (num >= 1 && num <= 70) return 'favorite';
+  if (num >= 71 && num <= 128) return 'great';
+  if (num >= 129 && num <= 145) return 'kids';
+  if (num >= 146 && num <= 163) return 'christmas';
+  if (num >= 164 && num <= 176) return 'kids';
+  return 'standard';
+};
+
+const RAW_INITIAL_WORSHIP_SONGS: WorshipSong[] = [
   {
     "id": "song_1",
     "number": "1",
@@ -2848,6 +2861,41 @@ export const INITIAL_WORSHIP_SONGS: WorshipSong[] = [
     "docLink": "https://docs.google.com/document/d/14zbH30rMLVQTYbmKHDZE_L4mLXTY1D7tTv3zIWu2pyQ/edit"
   }
 ];
+
+export const INITIAL_WORSHIP_SONGS: WorshipSong[] = (() => {
+  let wCount = 0;
+  let kCount = 0;
+  let bCount = 0;
+
+  return RAW_INITIAL_WORSHIP_SONGS
+    .filter(s => {
+      const title = (s.titleSl || '').trim().toUpperCase();
+      return title !== 'OTROŠKA PESMARICA' && title !== 'RR PESMARICA';
+    })
+    .map(s => {
+      const category = getSongCategory(s);
+      let number = s.number;
+
+      if (!number || number.trim() === '' || !isNaN(Number(number)) || !number.includes('-')) {
+        if (category === 'kids') {
+          kCount++;
+          number = `K-${kCount}`;
+        } else if (category === 'christmas') {
+          bCount++;
+          number = `B-${bCount}`;
+        } else {
+          wCount++;
+          number = `W-${wCount}`;
+        }
+      }
+
+      return {
+        ...s,
+        number,
+        category
+      };
+    });
+})();
 
 
 export const INITIAL_ARCHIVED_SONGS: ArchivedSong[] = [

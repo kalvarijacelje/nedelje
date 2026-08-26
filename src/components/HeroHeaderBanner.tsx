@@ -89,12 +89,19 @@ export default function HeroHeaderBanner({
 
       {/* Main Content Layout */}
       <div className="relative z-10 space-y-4">
-        {/* Top Eyebrow Bar */}
-        {eyebrow && (
-          <div className="flex items-center">
-            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-xs font-mono font-bold uppercase tracking-wider border backdrop-blur-md ${styles.eyebrowBg} ${styles.eyebrowText}`}>
-              <span>{eyebrow}</span>
-            </div>
+        {/* Top Eyebrow & Actions Bar */}
+        {(eyebrow || actions) && (
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            {eyebrow ? (
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-xs font-mono font-bold uppercase tracking-wider border backdrop-blur-md ${styles.eyebrowBg} ${styles.eyebrowText}`}>
+                <span>{eyebrow}</span>
+              </div>
+            ) : <div />}
+            {actions && (
+              <div className="flex flex-wrap items-center gap-2">
+                {actions}
+              </div>
+            )}
           </div>
         )}
 
@@ -109,13 +116,6 @@ export default function HeroHeaderBanner({
             </p>
           )}
         </div>
-
-        {/* Optional Action Slot (Buttons / Filters) */}
-        {actions && (
-          <div className="pt-2 flex flex-wrap items-center gap-2 sm:gap-3">
-            {actions}
-          </div>
-        )}
 
         {/* Optional Children Slot (Widgets / Extra Stats) */}
         {children && <div className="pt-2">{children}</div>}

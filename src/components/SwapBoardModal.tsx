@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShiftSwapRequest, ServiceSunday, Ministry, Person, Language, UserRole, canAccessPersonalData } from '../types';
+import { ShiftSwapRequest, ServiceSunday, Ministry, Person, Language, UserRole, canAccessPersonalData, getPrivacyDisplayName } from '../types';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import {
   ArrowRightLeft,
@@ -318,7 +318,7 @@ export default function SwapBoardModal({
                           </div>
                           <p className="text-xs text-gray-600 flex items-center gap-1.5">
                             <span>{currentLanguage === 'sl' ? 'Išče zamenjavo:' : 'Requested by:'}</span>
-                            <strong className="text-gray-900 font-semibold">{req.requesterName}</strong>
+                            <strong className="text-gray-900 font-semibold">{getPrivacyDisplayName(req.requesterName, userRole, currentPersonName, undefined, undefined, people)}</strong>
                           </p>
                         </div>
 

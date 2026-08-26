@@ -112,119 +112,130 @@ export default function ScheduleView({
         actions={
           <button
             onClick={onOpenStatistics}
-            className="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md transition active:scale-95 cursor-pointer flex items-center gap-2"
+            className="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md transition active:scale-95 cursor-pointer flex items-center gap-1.5"
             title={currentLanguage === 'sl' ? 'Odpri analitiko in pregled pokritosti služb' : 'Open analytics and ministry coverage overview'}
           >
-            <BarChart3 className="w-4 h-4 text-amber-300 shrink-0" />
-            <span>{currentLanguage === 'sl' ? '📊 Statistika & Pregled Pokritosti' : '📊 Statistics & Coverage'}</span>
+            <BarChart3 className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+            <span>{currentLanguage === 'sl' ? '📊 Statistika & Pokritost' : '📊 Statistics & Coverage'}</span>
           </button>
         }
-      />
-      {/* Academic Year vs History Main Tabs & Filters Card */}
-      <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-gray-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.02)] space-y-3">
-        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-0.5">
-          <button
-            onClick={() => setYearView('2026_2027')}
-            className={`text-xs px-3 py-2 sm:px-3.5 rounded-xl transition font-medium flex items-center gap-1.5 sm:gap-2 cursor-pointer shrink-0 ${
-              yearView === '2026_2027'
-                ? 'bg-[#EEF2FF] text-[#4338CA] border border-indigo-200/80 font-semibold shadow-2xs'
-                : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200/70'
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">{currentLanguage === 'sl' ? 'Šolsko leto 2026/2027' : 'School Year 2026/2027'}</span>
-            <span className="sm:hidden">{currentLanguage === 'sl' ? 'Šol. leto 26/27' : 'Year 26/27'}</span>
-            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
-              yearView === '2026_2027' ? 'bg-[#4338CA] text-white' : 'bg-gray-200 text-gray-700'
-            }`}>
-              {count2627}
+      >
+        {/* School Year / Archive Period Selector Line */}
+        <div className="pt-2.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-white/85 font-medium flex items-center gap-1.5 text-xs mr-1">
+              <Calendar className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'Obdobje:' : 'Period:'}</span>
             </span>
-          </button>
 
-          <button
-            onClick={() => setYearView('history')}
-            className={`text-xs px-3 py-2 sm:px-3.5 rounded-xl transition font-medium flex items-center gap-1.5 sm:gap-2 cursor-pointer shrink-0 ${
-              yearView === 'history'
-                ? 'bg-amber-50 text-amber-800 border border-amber-200 font-semibold shadow-2xs'
-                : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200/70'
-            }`}
-          >
-            <History className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">{currentLanguage === 'sl' ? 'Arhiv / Zgodovina (do avg. 2026)' : 'Past Archive (until Aug 2026)'}</span>
-            <span className="sm:hidden">{currentLanguage === 'sl' ? 'Arhiv <=2026' : 'Archive <=2026'}</span>
-            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
-              yearView === 'history' ? 'bg-amber-700 text-white' : 'bg-gray-200 text-gray-700'
-            }`}>
-              {countHistory}
-            </span>
-          </button>
+            <button
+              onClick={() => setYearView('2026_2027')}
+              className={`text-xs px-3 py-1 sm:px-3.5 rounded-xl transition font-medium flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                yearView === '2026_2027'
+                  ? 'bg-white text-indigo-950 border-white font-bold shadow-xs scale-[1.02]'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/15 backdrop-blur-xs'
+              }`}
+            >
+              <span className="hidden sm:inline">{currentLanguage === 'sl' ? 'Šolsko leto 2026/2027' : 'School Year 2026/2027'}</span>
+              <span className="sm:hidden">{currentLanguage === 'sl' ? 'Šol. leto 26/27' : 'Year 26/27'}</span>
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+                yearView === '2026_2027' ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'
+              }`}>
+                {count2627}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setYearView('all')}
-            className={`text-xs px-3 py-2 sm:px-3.5 rounded-xl transition font-medium flex items-center gap-1.5 sm:gap-2 cursor-pointer shrink-0 ${
-              yearView === 'all'
-                ? 'bg-gray-900 text-white border border-gray-900 font-semibold shadow-2xs'
-                : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200/70'
-            }`}
-          >
-            <span>{currentLanguage === 'sl' ? 'Vse nedelje' : 'All Sundays'}</span>
-            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
-              yearView === 'all' ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-700'
-            }`}>
-              {sundays.length}
+            <button
+              onClick={() => setYearView('history')}
+              className={`text-xs px-3 py-1 sm:px-3.5 rounded-xl transition font-medium flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                yearView === 'history'
+                  ? 'bg-amber-400 text-amber-950 border-amber-300 font-bold shadow-xs scale-[1.02]'
+                  : 'bg-white/10 hover:bg-white/20 text-amber-200 border-white/15 backdrop-blur-xs'
+              }`}
+            >
+              <History className="w-3 h-3 shrink-0" />
+              <span className="hidden sm:inline">{currentLanguage === 'sl' ? 'Arhiv / Zgodovina (do avg. 2026)' : 'Past Archive (until Aug 2026)'}</span>
+              <span className="sm:hidden">{currentLanguage === 'sl' ? 'Arhiv <=2026' : 'Archive <=2026'}</span>
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+                yearView === 'history' ? 'bg-amber-800 text-white' : 'bg-white/20 text-amber-100'
+              }`}>
+                {countHistory}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setYearView('all')}
+              className={`text-xs px-3 py-1 sm:px-3.5 rounded-xl transition font-medium flex items-center gap-1.5 cursor-pointer shrink-0 border ${
+                yearView === 'all'
+                  ? 'bg-slate-900 text-white border-slate-700 font-bold shadow-xs scale-[1.02]'
+                  : 'bg-white/10 hover:bg-white/20 text-white/85 border-white/15 backdrop-blur-xs'
+              }`}
+            >
+              <span>{currentLanguage === 'sl' ? 'Vse nedelje' : 'All Sundays'}</span>
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ${
+                yearView === 'all' ? 'bg-white/30 text-white' : 'bg-white/20 text-white'
+              }`}>
+                {sundays.length}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono text-white/80">
+              {filteredSundays.length} {currentLanguage === 'sl' ? 'nedelj' : 'Sundays'}
             </span>
-          </button>
+          </div>
         </div>
+      </HeroHeaderBanner>
 
-        {/* Filter Badges (Draft, Ready, Completed) */}
-        <div id="schedule-filters" className="flex items-center gap-2 overflow-x-auto custom-scrollbar pt-1 pb-0.5">
-          <span className="text-[10px] text-gray-400 font-mono uppercase font-bold tracking-wider mr-0.5 shrink-0">
-            {currentLanguage === 'sl' ? 'Status:' : 'Status:'}
-          </span>
-          <button
-            onClick={() => setFilter('all')}
-            className={`text-[11px] px-2.5 sm:px-3 py-1 rounded-lg transition shrink-0 focus:outline-none cursor-pointer ${
-              filter === 'all'
-                ? 'bg-gray-950 text-white font-semibold'
-                : 'bg-white hover:bg-gray-50 text-gray-600 border border-gray-200'
-            }`}
-          >
-            {currentLanguage === 'sl' ? 'Vsi statusi' : 'All status'}
-          </button>
-          <button
-            onClick={() => setFilter('draft')}
-            className={`text-[11px] px-2.5 sm:px-3 py-1 rounded-lg transition shrink-0 focus:outline-none flex items-center gap-1 cursor-pointer ${
-              filter === 'draft'
-                ? 'tag-neutral font-semibold'
-                : 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200'
-            }`}
-          >
-            <AlertCircle className="w-3 h-3 shrink-0" />
-            <span>{translations.statusDraft}</span>
-          </button>
-          <button
-            onClick={() => setFilter('ready')}
-            className={`text-[11px] px-2.5 sm:px-3 py-1 rounded-lg transition shrink-0 focus:outline-none flex items-center gap-1 cursor-pointer ${
-              filter === 'ready'
-                ? 'tag-ready font-semibold'
-                : 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200'
-            }`}
-          >
-            <Check className="w-3 h-3 shrink-0" />
-            <span>{translations.statusReady}</span>
-          </button>
-          <button
-            onClick={() => setFilter('completed')}
-            className={`text-[11px] px-2.5 sm:px-3 py-1 rounded-lg transition shrink-0 focus:outline-none flex items-center gap-1 cursor-pointer ${
-              filter === 'completed'
-                ? 'bg-[#EEF2FF] text-[#4338CA] border border-indigo-200 font-semibold'
-                : 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200'
-            }`}
-          >
-            <FolderArchive className="w-3 h-3 shrink-0" />
-            <span>{translations.statusCompleted}</span>
-          </button>
-        </div>
+      {/* Filter Badges (All, Draft, Ready, Completed) */}
+      <div id="schedule-status-filters" className="flex items-center gap-2 overflow-x-auto custom-scrollbar pt-1 pb-1">
+        <span className="text-[10px] text-gray-400 font-mono uppercase font-bold tracking-wider mr-0.5 shrink-0">
+          {currentLanguage === 'sl' ? 'Status:' : 'Status:'}
+        </span>
+        <button
+          onClick={() => setFilter('all')}
+          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border ${
+            filter === 'all'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+              : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+          }`}
+        >
+          {currentLanguage === 'sl' ? 'Vsi statusi' : 'All status'}
+        </button>
+        <button
+          onClick={() => setFilter('draft')}
+          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+            filter === 'draft'
+              ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+              : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
+          }`}
+        >
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{translations.statusDraft}</span>
+        </button>
+        <button
+          onClick={() => setFilter('ready')}
+          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+            filter === 'ready'
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200'
+          }`}
+        >
+          <Check className="w-3.5 h-3.5 shrink-0" />
+          <span>{translations.statusReady}</span>
+        </button>
+        <button
+          onClick={() => setFilter('completed')}
+          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border flex items-center gap-1.5 ${
+            filter === 'completed'
+              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+              : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
+          }`}
+        >
+          <FolderArchive className="w-3.5 h-3.5 shrink-0" />
+          <span>{translations.statusCompleted}</span>
+        </button>
       </div>
 
       {/* Empty State Banner if 2026/2027 is selected but empty */}

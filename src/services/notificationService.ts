@@ -222,11 +222,23 @@ export function generateBatchInviteEmail({
   leaderName,
   baseUrl
 }: BatchInviteEmailParams): { subject: string; html: string; text: string } {
-  const count = items.length;
+  // Deduplicate items by sundayDate so no duplicate dates can appear
+  const seenDates = new Set<string>();
+  const uniqueItems: { sundayDate: string; token: string }[] = [];
+  items.forEach(item => {
+    const key = item.sundayDate.trim();
+    if (!seenDates.has(key)) {
+      seenDates.add(key);
+      uniqueItems.push(item);
+    }
+  });
+
+  const effectiveItems = uniqueItems.length > 0 ? uniqueItems : items;
+  const count = effectiveItems.length;
   const subject = `Povabilo k služenju: ${ministryName} (${count} terminov) - KC Kalvarija`;
 
   let itemsText = '';
-  items.forEach((item, idx) => {
+  effectiveItems.forEach((item, idx) => {
     const accUrl = generatePublicConfirmationUrl(item.token, 'accept', baseUrl);
     const decUrl = generatePublicConfirmationUrl(item.token, 'decline', baseUrl);
     itemsText += `\n${idx + 1}. 📅 ${item.sundayDate} – ${ministryName}\n   [ Sprejmi ]: ${accUrl}\n   [ Zavrni ]: ${decUrl}\n`;
@@ -245,7 +257,7 @@ Lep pozdrav,
 Ekipa KC Kalvarija
 `;
 
-  const itemRowsHtml = items.map(item => {
+  const itemRowsHtml = effectiveItems.map(item => {
     const accUrl = generatePublicConfirmationUrl(item.token, 'accept', baseUrl);
     const decUrl = generatePublicConfirmationUrl(item.token, 'decline', baseUrl);
     return `

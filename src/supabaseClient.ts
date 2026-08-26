@@ -8,18 +8,17 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
   (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) ||
-  'https://placeholder.supabase.co';
+  'https://ptdvcobgplmngnhkjqag.supabase.co';
 
 const supabaseAnonKey = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
   (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) ||
-  'placeholder-anon-key';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0ZHZjb2JncGxtbmduaGtqcWFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0MTIwNzcsImV4cCI6MjEwMjk4ODA3N30.i9-UFVwAavIuDZO51YEkL0-yt6Rzmg6ZkMGqkRl_JMo';
 
 export const IS_SUPABASE_CONFIGURED = Boolean(
   supabaseUrl && 
-  supabaseUrl !== 'https://placeholder.supabase.co' &&
-  supabaseAnonKey && 
-  supabaseAnonKey !== 'placeholder-anon-key'
+  supabaseAnonKey &&
+  !supabaseUrl.includes('placeholder')
 );
 
 /**

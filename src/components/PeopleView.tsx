@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { ServiceSunday, Ministry, Person, Translation, UserRole, User, canAccessPersonalData, canViewPersonContactInfo } from '../types';
+import { ServiceSunday, Ministry, Person, Translation, UserRole, User, canAccessPersonalData, canViewPersonContactInfo, getPrivacyDisplayName } from '../types';
 import { 
   Plus, Search, Phone, Mail, UserCheck, ShieldAlert, X, Crown, Pencil, Trash2, Link as LinkIcon, Unlink, AlertTriangle, Camera, Star, Award, HeartPulse, BatteryCharging, Info, MessageSquare, Send, Copy, ExternalLink, Link2, CheckCircle2, Check, Users, Archive, RotateCcw, Bell, Lock, Sliders, Loader2, Smile, GraduationCap, Footprints, Building2
 } from 'lucide-react';
@@ -150,24 +150,43 @@ function PendingUserItemCard({
     });
   };
 
+  const linkedPerson = (people || []).find(p => p && (
+    p.name === user.personName || 
+    p.id === user.personName || 
+    (p.email && user.email && p.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
+    ((p as any).auth_user_id && (p as any).auth_user_id === user.uid)
+  ));
+  const isUnlinked = !linkedPerson;
+
   return (
-    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 font-sans transition shadow-xs">
+    <div className={`p-4 rounded-2xl space-y-3 font-sans transition shadow-xs ${
+      isUnlinked 
+        ? 'bg-amber-50/90 border-2 border-amber-500 ring-2 ring-amber-400/20 shadow-md' 
+        : 'bg-slate-50 border border-slate-200'
+    }`}>
       {/* Header Info */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200/80">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white font-bold flex items-center justify-center text-sm font-mono shrink-0 shadow-2xs">
+          <div className={`w-10 h-10 rounded-2xl font-bold flex items-center justify-center text-sm font-mono shrink-0 shadow-2xs ${
+            isUnlinked ? 'bg-amber-600 text-white' : 'bg-indigo-600 text-white'
+          }`}>
             {(user.displayName || user.email || 'U').substring(0, 2).toUpperCase()}
           </div>
           <div>
-            <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+            <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2 flex-wrap">
               <span>{user.displayName || (currentLanguage === 'sl' ? 'Neregistrirano ime' : 'Unregistered Name')}</span>
-              {user.personName ? (
+              {linkedPerson ? (
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 font-mono font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-                  ✓ {user.personName}
+                  ✓ {currentLanguage === 'sl' ? 'Povezan: ' : 'Linked: '}{linkedPerson.name}
                 </span>
               ) : (
-                <span className="text-[10px] bg-amber-100 text-amber-900 font-mono font-bold px-2 py-0.5 rounded-full border border-amber-300">
-                  ⚠️ {currentLanguage === 'sl' ? 'Čaka na povezavo' : 'Pending Link'}
+                <span className="text-[10px] bg-amber-600 text-white font-mono font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                  ⚠️ {currentLanguage === 'sl' ? 'NI POVEZAN S PROFILOM' : 'NOT LINKED'}
+                </span>
+              )}
+              {user.role === 'Viewer' && (
+                <span className="text-[10px] bg-slate-200 text-slate-800 font-mono font-bold px-2 py-0.5 rounded-full border border-slate-300">
+                  👁️ {currentLanguage === 'sl' ? 'Čaka na vlogo' : 'Pending Role'}
                 </span>
               )}
             </h4>
@@ -176,7 +195,7 @@ function PendingUserItemCard({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono font-bold text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-250 shadow-2xs">
+          <span className="text-[11px] font-mono font-bold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-250 shadow-2xs">
             🔑 {user.role}
           </span>
           {onDeleteUser && (
@@ -216,9 +235,13 @@ function PendingUserItemCard({
               <select
                 value={selectedPersonName}
                 onChange={(e) => setSelectedPersonName(e.target.value)}
-                className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer shadow-2xs"
+                className={`w-full text-xs px-3 py-2 border rounded-xl font-medium focus:outline-none focus:ring-2 cursor-pointer shadow-2xs ${
+                  isUnlinked 
+                    ? 'bg-amber-50 border-2 border-amber-400 text-amber-950 font-bold focus:ring-amber-500' 
+                    : 'bg-white border-slate-300 text-slate-900 focus:ring-indigo-600'
+                }`}
               >
-                <option value="">-- {currentLanguage === 'sl' ? 'Izberite sodelavca iz baze' : 'Select roster volunteer'} --</option>
+                <option value="">-- {currentLanguage === 'sl' ? '⚠️ Izberite sodelavca iz baze' : '⚠️ Select roster volunteer'} --</option>
                 {(people || [])
                   .filter(p => p && p.name && !p.isArchived)
                   .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -237,14 +260,26 @@ function PendingUserItemCard({
             {/* Role Assignment */}
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-600 font-mono mb-1">
-                🔑 {currentLanguage === 'sl' ? 'Vloga v aplikaciji:' : 'Assigned Role:'}
+                🔑 {currentLanguage === 'sl' ? 'Vloga v aplikaciji (samodejno shranjevanje):' : 'Assigned Role (auto-saved):'}
               </label>
               <select
                 value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value as UserRole)}
-                className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer shadow-2xs"
+                onChange={(e) => {
+                  const nextRole = e.target.value as UserRole;
+                  setSelectedRole(nextRole);
+                  if (onUpdateUserRole) {
+                    onUpdateUserRole(user.uid, nextRole);
+                    setStatusMsg({
+                      text: currentLanguage === 'sl'
+                        ? `✓ Vloga uporabnika ${user.displayName || user.email} shranjena (${nextRole})!`
+                        : `✓ Role updated to ${nextRole}!`,
+                      type: 'success'
+                    });
+                  }
+                }}
+                className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 cursor-pointer shadow-2xs"
               >
-                <option value="Servant">👤 Servant / Služabnik (Privzeto)</option>
+                <option value="Servant">👤 Servant / Služabnik</option>
                 <option value="Leader">📋 Leader / Vodja službe</option>
                 <option value="Admin">🛠️ Admin (Poln nadzor)</option>
                 <option value="Viewer">👁️ Viewer / Gledalec</option>
@@ -261,7 +296,7 @@ function PendingUserItemCard({
               className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-2xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
             >
               <UserCheck className="w-4 h-4" />
-              <span>{currentLanguage === 'sl' ? '✓ Poveži račun in nastavi vlogo' : '✓ Link Account & Assign Role'}</span>
+              <span>{currentLanguage === 'sl' ? '✓ Poveži račun in shrani profil' : '✓ Link Account & Save Profile'}</span>
             </button>
 
             <button
@@ -401,7 +436,7 @@ export default function PeopleView({
   const [newPersonName, setNewPersonName] = useState('');
   const [newPersonPhone, setNewPersonPhone] = useState('');
   const [newPersonEmail, setNewPersonEmail] = useState('');
-  const [newPersonRole, setNewPersonRole] = useState<UserRole>('Servant');
+  const [newPersonRole, setNewPersonRole] = useState<UserRole>('Visitor');
   const [newPastorOrStaff, setNewPastorOrStaff] = useState<boolean>(false);
   const [newAvatarUrl, setNewAvatarUrl] = useState<string | undefined>(undefined);
   const [newSelectedUserId, setNewSelectedUserId] = useState<string>('');
@@ -688,13 +723,15 @@ export default function PeopleView({
 
   const pendingUsers = useMemo(() => {
     return (users || []).filter(u => {
-      const isMatched = (people || []).some(p => p && (
+      const linkedPerson = (people || []).find(p => p && (
         (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
         (u.personName && p.name && p.name.toLowerCase().trim() === u.personName.toLowerCase().trim()) ||
         (u.displayName && p.name && (u.displayName.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(u.displayName.toLowerCase()))) ||
         ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
       ));
-      return !isMatched;
+      const isUnlinked = !linkedPerson;
+      const isViewer = u.role === 'Viewer';
+      return isUnlinked || isViewer;
     });
   }, [users, people]);
 
@@ -788,42 +825,66 @@ export default function PeopleView({
   return (
     <div id="people-view-component" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-12 px-3 sm:px-4">
       {/* Admin Notification Banner for Unlinked / Pending New Users (People tab only) */}
-      {userRole === 'Admin' && pendingUsers.length > 0 && (
-        <div 
-          onClick={() => setShowPendingUsersModal(true)}
-          className="p-3.5 sm:p-4 bg-amber-500/10 border-2 border-amber-500/40 hover:bg-amber-500/15 text-amber-950 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm cursor-pointer transition"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white font-bold flex items-center justify-center shrink-0 text-base shadow-2xs">
-              🔔
-            </div>
-            <div>
-              <h4 className="font-bold text-xs sm:text-sm text-amber-950 font-display flex items-center gap-1.5">
-                <span>{currentLanguage === 'sl' ? 'Novo obvestilo o prijavi uporabnikov' : 'New Registered User Notification'}</span>
-                <span className="text-[10px] bg-amber-600 text-white font-mono font-bold px-1.5 py-0.2 rounded-full">
-                  {pendingUsers.length}
-                </span>
-              </h4>
-              <p className="text-[11px] text-amber-900 font-mono mt-0.5 font-medium">
-                {currentLanguage === 'sl'
-                  ? `${pendingUsers.map(u => u.displayName || u.email).join(', ')} – Vloge še niso dodeljene ali profili niso povezani.`
-                  : `${pendingUsers.map(u => u.displayName || u.email).join(', ')} – Pending role assignment or profile linking.`}
-              </p>
-            </div>
-          </div>
+      {userRole === 'Admin' && pendingUsers.length > 0 && (() => {
+        const unlinkedList = pendingUsers.filter(u => !people.some(p => p && (
+          p.name === u.personName || 
+          p.id === u.personName || 
+          (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
+          ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
+        )));
+        const viewersList = pendingUsers.filter(u => !unlinkedList.some(un => un.uid === u.uid));
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowPendingUsersModal(true);
-            }}
-            className="w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-xl transition cursor-pointer shrink-0 shadow-xs flex items-center justify-center gap-1.5"
+        return (
+          <div 
+            onClick={() => setShowPendingUsersModal(true)}
+            className="p-3.5 sm:p-4 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-2 border-amber-500/50 hover:border-amber-500/70 text-amber-950 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md cursor-pointer transition"
           >
-            <span>{currentLanguage === 'sl' ? '⚡ Poveži & Nastavi vloge' : '⚡ Link & Assign Roles'}</span>
-          </button>
-        </div>
-      )}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white font-bold flex items-center justify-center shrink-0 text-base shadow-sm">
+                🔔
+              </div>
+              <div className="space-y-1 min-w-0">
+                <h4 className="font-bold text-xs sm:text-sm text-amber-950 font-display flex items-center gap-2 flex-wrap">
+                  <span>{currentLanguage === 'sl' ? 'Novo obvestilo o registracijah & vlogah' : 'User Registration & Role Notification'}</span>
+                  <span className="text-[10px] bg-amber-600 text-white font-mono font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                    {pendingUsers.length}
+                  </span>
+                  {unlinkedList.length > 0 && (
+                    <span className="text-[10px] bg-amber-600 text-white font-mono font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                      ⚠️ {unlinkedList.length} {currentLanguage === 'sl' ? 'nepovezanih' : 'unlinked'}
+                    </span>
+                  )}
+                  {viewersList.length > 0 && (
+                    <span className="text-[10px] bg-slate-800 text-slate-100 font-mono font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                      👁️ {viewersList.length} {currentLanguage === 'sl' ? 'gledalcev (čaka na vlogo)' : 'viewers (pending role)'}
+                    </span>
+                  )}
+                </h4>
+                <p className="text-[11px] text-amber-900 font-mono mt-0.5 font-medium leading-relaxed">
+                  {currentLanguage === 'sl'
+                    ? (unlinkedList.length > 0 && viewersList.length > 0
+                        ? `${pendingUsers.map(u => u.displayName || u.email).join(', ')} – Vloge še niso dodeljene ali profili niso povezani s sodelavci.`
+                        : unlinkedList.length > 0
+                          ? `${unlinkedList.map(u => u.displayName || u.email).join(', ')} – Čaka na povezavo s profilom v bazi sodelavcev.`
+                          : `${viewersList.map(u => u.displayName || u.email).join(', ')} – Novi uporabniki imajo vlogo Gledalec (Viewer), nastavite njihovo vlogo.`)
+                    : `${pendingUsers.map(u => u.displayName || u.email).join(', ')} – Pending role assignment or profile linking.`}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPendingUsersModal(true);
+              }}
+              className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-xl transition cursor-pointer shrink-0 shadow-sm flex items-center justify-center gap-1.5"
+            >
+              <span>{currentLanguage === 'sl' ? '⚡ Poveži & Nastavi vloge' : '⚡ Link & Assign Roles'}</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Hero Header Banner with subtle serving balance integration */}
       <HeroHeaderBanner
@@ -1194,12 +1255,18 @@ export default function PeopleView({
               {[
                 { key: 'cleaning', labelSl: '🧹 Čistoča & Priprava prostora', labelEn: '🧹 Cleaning & Space Setup' },
                 { key: 'hospitality', labelSl: '☕ Gostoljubje & Kavarna', labelEn: '☕ Hospitality & Café' },
-                { key: 'sermon_prayer', labelSl: '📖 Beseda & Molitev', labelEn: '📖 Word & Prayer' },
-                { key: 'av_tech', labelSl: '🎵 Slavljenje & A/V Tehnika', labelEn: '🎵 Worship & A/V Tech' },
+                { key: 'sermon_prayer', labelSl: '📖 Bogoslužje', labelEn: '📖 Main Service' },
+                { key: 'worship', labelSl: '🎵 Slavljenje', labelEn: '🎵 Worship' },
+                { key: 'audio_video', labelSl: '🎥 Avdio Video', labelEn: '🎥 Audio Video' },
                 { key: 'kids', labelSl: '👶 KCK Otroci / Nedeljska šola', labelEn: '👶 KCK Kids / Sunday School' },
-                { key: 'other', labelSl: '🌐 Drugo & Administracija', labelEn: '🌐 Other & Administration' },
+                { key: 'post_service', labelSl: '🤝 Po bogoslužju', labelEn: '🤝 Post-Service' },
               ].map(cat => {
-                const catMinistries = ministries.filter(m => m.category === cat.key);
+                const catMinistries = ministries.filter(m => 
+                  m.category === cat.key || 
+                  (cat.key === 'post_service' && m.category === 'other') ||
+                  (cat.key === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) ||
+                  (cat.key === 'audio_video' && m.category === 'av_tech' && (m.id !== 'slavilna_ekipa' && m.id !== 'uvod_slavljenje' && m.id !== 'zvok'))
+                );
                 if (catMinistries.length === 0) return null;
 
                 return (
@@ -1396,7 +1463,8 @@ export default function PeopleView({
         const renderPersonCard = (person: Person, isMyCard = false, cardIdx = 0) => {
           if (!person || !person.name) return null;
           const personNameStr = person.name || 'Neznano';
-          const firstChar = personNameStr[0] || '?';
+          const displayPersonName = getPrivacyDisplayName(person, userRole, myPersonCard?.name, authUser?.email, authUser?.id || authUser?.uid, people);
+          const firstChar = displayPersonName[0] || personNameStr[0] || '?';
           const chosenCount = person.preferredMinistries ? person.preferredMinistries.length : 0;
           const servingCount = calculateServingCount(personNameStr);
           const attStats = calculateAttendanceStats(personNameStr);
@@ -1420,7 +1488,7 @@ export default function PeopleView({
                   {person.avatarUrl ? (
                     <img
                       src={person.avatarUrl}
-                      alt={personNameStr}
+                      alt={displayPersonName}
                       className="w-8 h-8 rounded-full object-cover border border-indigo-200 shrink-0 shadow-xs select-none"
                     />
                   ) : (
@@ -1430,7 +1498,7 @@ export default function PeopleView({
                   )}
                   <div className="min-w-0">
                     <h3 className="font-display font-semibold text-gray-950 text-sm truncate leading-tight flex items-center gap-1.5 flex-wrap">
-                      <span>{personNameStr}</span>
+                      <span>{displayPersonName}</span>
                       {isMyCard && (
                         <span className="text-[9px] bg-indigo-600 text-white font-mono font-bold px-1.5 py-0.2 rounded-full flex items-center gap-0.5 shadow-2xs">
                           ⭐ {currentLanguage === 'sl' ? 'Vi (Prijavljeni)' : 'You (Logged-in)'}
@@ -2283,14 +2351,14 @@ export default function PeopleView({
       {/* EDIT PERSON MODAL */}
       {editingPerson && (
         <div 
-          className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in"
         >
           <form 
             onSubmit={handleSaveEditPerson}
-            className="bg-white rounded-2xl max-w-4xl w-full max-h-[88vh] sm:max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-gray-200 animate-scale-up"
+            className="bg-white rounded-2xl max-w-4xl w-full h-[90vh] max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-gray-200 animate-scale-up"
           >
             {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-gray-150 bg-slate-50/80 flex items-center justify-between shrink-0">
+            <div className="p-4 sm:p-5 border-b border-gray-150 bg-slate-50/90 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs border border-indigo-200">
                   <Pencil className="w-4 h-4" />
@@ -2307,14 +2375,14 @@ export default function PeopleView({
               <button
                 type="button"
                 onClick={handleCancelEditPerson}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg transition cursor-pointer"
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-slate-200 transition cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Scrollable Form Body */}
-            <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1 min-h-0 overscroll-contain">
               {editError && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
@@ -2719,14 +2787,20 @@ export default function PeopleView({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {[
-                    { key: 'cleaning', labelSl: '🧹 Čistoča & Priprava prostora', labelEn: '🧹 Cleaning & Space Setup' },
-                    { key: 'hospitality', labelSl: '☕ Gostoljubje & Kavarna', labelEn: '☕ Hospitality & Café' },
-                    { key: 'sermon_prayer', labelSl: '📖 Beseda & Molitev', labelEn: '📖 Word & Prayer' },
-                    { key: 'av_tech', labelSl: '🎵 Slavljenje & A/V Tehnika', labelEn: '🎵 Worship & A/V Tech' },
-                    { key: 'kids', labelSl: '👶 KCK Otroci / Nedeljska šola', labelEn: '👶 KCK Kids / Sunday School' },
-                    { key: 'other', labelSl: '🌐 Drugo & Administracija', labelEn: '🌐 Other & Administration' },
+                    { key: 'cleaning', labelSl: '🧹 Priprava & Čiščenje', labelEn: '🧹 Setup & Cleaning' },
+                    { key: 'hospitality', labelSl: '☕ Gostoljubje & Kava', labelEn: '☕ Hospitality & Snacks' },
+                    { key: 'sermon_prayer', labelSl: '📖 Bogoslužje', labelEn: '📖 Main Service' },
+                    { key: 'worship', labelSl: '🎵 Slavljenje', labelEn: '🎵 Worship' },
+                    { key: 'audio_video', labelSl: '🎥 Avdio Video', labelEn: '🎥 Audio Video' },
+                    { key: 'kids', labelSl: '👶 Nedeljska šola', labelEn: '👶 Sunday Kids School' },
+                    { key: 'post_service', labelSl: '🤝 Po bogoslužju', labelEn: '🤝 Post-Service' },
                   ].map(cat => {
-                    const catMinistries = ministries.filter(m => m.category === cat.key);
+                    const catMinistries = ministries.filter(m => 
+                      m.category === cat.key || 
+                      (cat.key === 'post_service' && m.category === 'other') ||
+                      (cat.key === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) ||
+                      (cat.key === 'audio_video' && m.category === 'av_tech' && (m.id !== 'slavilna_ekipa' && m.id !== 'uvod_slavljenje' && m.id !== 'zvok'))
+                    );
                     if (catMinistries.length === 0) return null;
 
                     return (
@@ -3072,21 +3146,29 @@ export default function PeopleView({
             {/* Modal Body - Scrollable list of pending users */}
             <div className="overflow-y-auto space-y-4 pr-1 flex-1">
               {(() => {
-                const pendingUsers = (users || []).filter(u => !u.personName || u.role === 'Viewer');
+                const list = (users || []).filter(u => {
+                  const linkedPerson = (people || []).find(p => p && (
+                    p.name === u.personName || 
+                    p.id === u.personName || 
+                    (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
+                    ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
+                  ));
+                  return !linkedPerson || u.role === 'Viewer';
+                });
                 
-                if (pendingUsers.length === 0) {
+                if (list.length === 0) {
                   return (
                     <div className="p-8 text-center bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-3 font-sans">
                       <div className="w-12 h-12 mx-auto bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center text-xl font-bold">
                         ✓
                       </div>
                       <h4 className="font-bold text-sm text-emerald-950">
-                        {currentLanguage === 'sl' ? 'Vsi uporabniki so povezani!' : 'All Users Linked & Assigned!'}
+                        {currentLanguage === 'sl' ? 'Vsi uporabniki so povezani in imajo vloge!' : 'All Users Linked & Roles Assigned!'}
                       </h4>
                       <p className="text-xs text-emerald-800 max-w-sm mx-auto">
                         {currentLanguage === 'sl' 
-                          ? 'Vsi registrirani Google računi imajo dodeljene profile in ustrezna dovoljenja.' 
-                          : 'All registered Google accounts have linked roster profiles and permissions set.'}
+                          ? 'Vsi registrirani Google računi so povezani s profili v bazi in imajo dodeljene ustrezne vloge.' 
+                          : 'All registered Google accounts have linked roster profiles and roles assigned.'}
                       </p>
                       <button
                         type="button"
@@ -3099,7 +3181,7 @@ export default function PeopleView({
                   );
                 }
 
-                return pendingUsers.map((pendingUser) => (
+                return list.map((pendingUser) => (
                   <PendingUserItemCard
                     key={pendingUser.uid}
                     user={pendingUser}

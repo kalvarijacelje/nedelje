@@ -63,7 +63,8 @@ import {
   ChevronDown,
   ChevronUp,
   MoreHorizontal,
-  Trash2
+  Trash2,
+  CheckCircle2
 } from 'lucide-react';
 
 // Import Firebase Firestore utilities conditionally (fallback)
@@ -305,28 +306,41 @@ const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] =>
 
   const map = new Map<string, Person>();
 
-  // 1. Always seed with all INITIAL_PEOPLE defaults so roster members are never dropped
+  // 1. Initial baseline from INITIAL_PEOPLE
   INITIAL_PEOPLE.forEach(p => {
     if (p && p.id && !isInvalidOrDeleted(p)) {
       map.set(p.id, ensurePersonId(p));
     }
   });
 
-  // 2. Overlay local memory/saved records
-  (base || []).forEach(p => {
+  // 2. Overlay fetched remote database records
+  (fetched || []).forEach(p => {
     if (p && p.id && !isInvalidOrDeleted(p)) {
-      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase() === p.name.toLowerCase()) : null);
+      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase().trim() === p.name.toLowerCase().trim()) : null);
       const targetId = existing?.id || p.id;
       map.set(targetId, { ...(existing || {}), ...ensurePersonId(p), id: targetId });
     }
   });
 
-  // 3. Overlay fetched remote database records
-  (fetched || []).forEach(p => {
+  // 3. Overlay local base records, preserving local user edits and ministry lists
+  (base || []).forEach(p => {
     if (p && p.id && !isInvalidOrDeleted(p)) {
-      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase() === p.name.toLowerCase()) : null);
+      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase().trim() === p.name.toLowerCase().trim()) : null);
       const targetId = existing?.id || p.id;
-      map.set(targetId, { ...(existing || {}), ...ensurePersonId(p), id: targetId });
+      const mergedPrefs = (p.preferredMinistries && p.preferredMinistries.length > 0)
+        ? p.preferredMinistries
+        : (existing?.preferredMinistries || []);
+      const mergedLeds = (p.ledMinistries && p.ledMinistries.length > 0)
+        ? p.ledMinistries
+        : (existing?.ledMinistries || []);
+
+      map.set(targetId, {
+        ...(existing || {}),
+        ...ensurePersonId(p),
+        id: targetId,
+        preferredMinistries: mergedPrefs,
+        ledMinistries: mergedLeds
+      });
     }
   });
 
@@ -452,6 +466,16 @@ export default function App() {
     setIsRundownModalOpen(true);
   };
 
+  // Toast notification for user role actions & profile linking
+  const [roleActionToast, setRoleActionToast] = useState<{ message: string; type?: 'success' | 'info' } | null>(null);
+
+  useEffect(() => {
+    if (roleActionToast) {
+      const timer = setTimeout(() => setRoleActionToast(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [roleActionToast]);
+
   // --- Visitor & Coffee Shop Connections ---
   const [visitorConnections, setVisitorConnections] = useState<VisitorConnection[]>(() => {
     const saved = localStorage.getItem('church_roster_visitors_v1');
@@ -490,15 +514,22 @@ export default function App() {
   };
 
   const [sundaySchoolSupplies, setSundaySchoolSupplies] = useState<SundaySchoolSupply[]>(() => {
-    const saved = localStorage.getItem('church_roster_nsl_supplies_v1');
+    const saved = localStorage.getItem('church_roster_nsl_supplies_v3');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { /* ignore */ }
+      try { 
+        const parsed: SundaySchoolSupply[] = JSON.parse(saved);
+        return parsed.map(s => {
+          if ((s.category as string) === 'wood') return { ...s, category: 'crafts' as const };
+          if ((s.category as string) === 'other' || (s.category as string) === 'things') return { ...s, category: 'random' as const };
+          return s;
+        });
+      } catch (e) { /* ignore */ }
     }
     return INITIAL_SUNDAY_SCHOOL_SUPPLIES;
   });
 
   useEffect(() => {
-    localStorage.setItem('church_roster_nsl_supplies_v1', JSON.stringify(sundaySchoolSupplies));
+    localStorage.setItem('church_roster_nsl_supplies_v3', JSON.stringify(sundaySchoolSupplies));
   }, [sundaySchoolSupplies]);
 
   // Initial Shift Swap Requests
@@ -815,14 +846,14 @@ export default function App() {
           return [alesUserObj, ...filtered];
         });
 
-        // Set auth_user_id on p-ales and delete any duplicate UUID row
+        // Set auth_user_id on p-ales_lajlar and clean duplicate rows
         try {
           await supabase.from('profiles').update({
             auth_user_id: sessionUser.id,
             email: 'ales.lajlar@gmail.com',
             role: 'Admin'
-          }).eq('id', 'p-ales');
-          if (sessionUser.id !== 'p-ales') {
+          }).or('id.eq.p-ales_lajlar,email.ilike.ales.lajlar@gmail.com');
+          if (sessionUser.id !== 'p-ales_lajlar') {
             await supabase.from('profiles').delete().eq('id', sessionUser.id);
           }
         } catch (e) { /* ignore */ }
@@ -1213,10 +1244,41 @@ export default function App() {
 
   // --- Role Promotion Callback (Used by Admin in People View) ---
   const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
+    const targetUser = users.find(u => u.uid === userId);
+    const userName = targetUser?.displayName || targetUser?.personName || targetUser?.email || 'Uporabnik';
+
     // 1. Optimistic React state update
     setUsers(prev => prev.map(u => u.uid === userId ? { ...u, role: newRole } : u));
 
-    // 2. Persist to Supabase
+    // 2. Also update linked person in `people` roster if exists
+    const linkedPerson = (people || []).find(p => p && (
+      p.name === targetUser?.personName || 
+      p.id === targetUser?.personName ||
+      (p.email && targetUser?.email && p.email.toLowerCase().trim() === targetUser.email.toLowerCase().trim()) ||
+      (p as any).auth_user_id === userId
+    ));
+    if (linkedPerson) {
+      handleUpdatePerson(linkedPerson.id, { ...linkedPerson, role: newRole });
+    }
+
+    // 3. Show instant save toast popup
+    const roleLabels: Record<string, string> = {
+      Admin: 'Admin 🛠️',
+      Leader: currentLanguage === 'sl' ? 'Vodja 📋' : 'Leader 📋',
+      Servant: currentLanguage === 'sl' ? 'Služabnik 👤' : 'Servant 👤',
+      Viewer: currentLanguage === 'sl' ? 'Gledalec 👁️' : 'Viewer 👁️',
+      Visitor: currentLanguage === 'sl' ? 'Obiskovalec 👋' : 'Visitor 👋',
+      Minor: currentLanguage === 'sl' ? 'Otrok 👶' : 'Minor 👶',
+    };
+    const roleText = roleLabels[newRole] || newRole;
+    setRoleActionToast({
+      message: currentLanguage === 'sl'
+        ? `✓ Vloga shranjena: ${userName} ima zdaj vlogo ${roleText}.`
+        : `✓ Role change saved: ${userName} is now ${roleText}.`,
+      type: 'success'
+    });
+
+    // 4. Persist to Supabase
     if (IS_SUPABASE_CONFIGURED) {
       try {
         const { error } = await supabase
@@ -1232,18 +1294,19 @@ export default function App() {
       }
     }
 
-    if (IS_FIREBASE_ENABLED && db) {
+    if (IS_FIREBASE_ENABLED && db && !IS_SUPABASE_CONFIGURED) {
       try {
         const docRef = doc(db, 'users', userId);
         await setDoc(docRef, sanitizeForFirestore({ role: newRole }), { merge: true });
       } catch (err) {
-        console.error('Failed to promote user role in Firestore:', err);
+        console.warn('Firestore role notice:', err);
       }
     }
   };
 
   const handleLinkUserPerson = async (userId: string, personNameOrId: string | undefined) => {
     const targetPerson = (people || []).find(p => p && (p.id === personNameOrId || p.name === personNameOrId));
+    const targetUser = (users || []).find(u => u.uid === userId);
     
     // 1. Optimistic React Memory State Update
     setUsers(prev => prev.map(u => {
@@ -1259,14 +1322,21 @@ export default function App() {
 
     // Auto-populate person's email with Google email if unwritten or updating
     if (userId && targetPerson) {
-      const targetUser = (users || []).find(u => u.uid === userId);
-      if (targetUser && targetUser.email && targetPerson && (!targetPerson.email || targetPerson.email.trim() === '')) {
+      if (targetUser && targetUser.email && (!targetPerson.email || targetPerson.email.trim() === '')) {
         handleUpdatePerson(targetPerson.id, {
           ...targetPerson,
           email: targetUser.email
         });
       }
     }
+
+    // Show instant save toast popup
+    setRoleActionToast({
+      message: currentLanguage === 'sl'
+        ? (targetPerson ? `✓ Povezava shranjena: Račun povezan s profilom "${targetPerson.name}".` : '✓ Povezava profila odstranjena.')
+        : (targetPerson ? `✓ Profile link saved: Linked to "${targetPerson.name}".` : '✓ Profile link removed.'),
+      type: 'success'
+    });
 
     // 2. Persist to Supabase
     if (IS_SUPABASE_CONFIGURED) {
@@ -1276,14 +1346,14 @@ export default function App() {
       }
     }
 
-    if (IS_FIREBASE_ENABLED && db) {
+    if (IS_FIREBASE_ENABLED && db && !IS_SUPABASE_CONFIGURED) {
       try {
         await linkUserToPerson(userId, targetPerson);
         if (authUser && (authUser.uid === userId || authUser.id === userId) && targetPerson?.name) {
           setActivePersonName(targetPerson.name);
         }
       } catch (err) {
-        console.error('Failed to link user profile in Firestore:', err);
+        console.warn('Firestore link notice:', err);
       }
     }
   };
@@ -1481,7 +1551,7 @@ export default function App() {
     }
 
     // Persist to Supabase
-    upsertPersonToSupabase(personWithId).catch(console.warn);
+    await upsertPersonToSupabase(personWithId).catch(console.warn);
 
     // 3. Persist to Firestore: overwrite /people/{person.id} directly
     if (IS_FIREBASE_ENABLED && db) {
@@ -1982,6 +2052,7 @@ export default function App() {
             onSetGoogleToken={handleSetGoogleToken}
             onOpenVisitorModal={() => setIsVisitorModalOpen(true)}
             onOpenInspectionModal={handleOpenInspectionModal}
+            authUser={authUser}
           />
         ) : (
           <div className="animate-fade-in">
@@ -2049,7 +2120,10 @@ export default function App() {
                 currentLanguage={currentLanguage}
                 canEdit={activeRole !== 'Viewer'}
                 onSelectSunday={(id) => setSelectedSundayId(id)}
+                onUpdateSunday={handleUpdateSunday}
                 onGenerateAcademicYear={handleGenerateAcademicYear}
+                blackoutDates={blackoutDates}
+                ministries={ministries}
               />
             )}
 
@@ -2106,65 +2180,122 @@ export default function App() {
             )}
 
             {/* Extra Admin Controls Block (Collapsible) */}
-            {activeTab === 'people' && activeRole === 'Admin' && IS_FIREBASE_ENABLED && users.length > 0 && (
+            {activeTab === 'people' && activeRole === 'Admin' && users.length > 0 && (
               <div className="px-4 pb-6 max-w-lg mx-auto w-full space-y-3">
-                <div className="border-t border-gray-200/80 my-4 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowManageUserRoles(!showManageUserRoles)}
-                    className="w-full flex items-center justify-between p-3 bg-slate-100 hover:bg-slate-200/80 border border-slate-250 rounded-xl transition cursor-pointer font-sans"
-                  >
+                {/* Save confirmation toast inside section */}
+                {roleActionToast && (
+                  <div className="bg-emerald-600 text-white p-3 rounded-xl text-xs font-semibold flex items-center justify-between shadow-md border border-emerald-500 animate-fade-in">
                     <div className="flex items-center gap-2 min-w-0">
-                      <ShieldAlert className="w-4 h-4 text-indigo-600 shrink-0" />
-                      <span className="font-display font-semibold text-xs uppercase tracking-wider text-slate-800 font-mono truncate">
-                        {currentLanguage === 'sl' ? 'Upravljanje Vlog Planerja' : 'Manage User Roles'}
-                      </span>
-                      <span className="text-[10px] bg-indigo-100 text-indigo-800 font-mono font-bold px-2 py-0.5 rounded-full border border-indigo-200 shrink-0">
-                        {users.length}
-                      </span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
+                      <span className="truncate">{roleActionToast.message}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold shrink-0">
-                      <span>{showManageUserRoles ? (currentLanguage === 'sl' ? 'Skrij' : 'Hide') : (currentLanguage === 'sl' ? 'Prikaži' : 'Show')}</span>
-                      {showManageUserRoles ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setRoleActionToast(null)}
+                      className="text-emerald-200 hover:text-white font-bold text-sm shrink-0 ml-2 cursor-pointer"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )}
+
+                <div className="border-t border-gray-200/80 my-4 pt-4">
+                  {(() => {
+                    const unlinkedCount = users.filter(u => !people.some(p => p && (
+                      p.name === u.personName || 
+                      p.id === u.personName || 
+                      (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
+                      ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
+                    ))).length;
+                    const viewerCount = users.filter(u => u.role === 'Viewer').length;
+
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setShowManageUserRoles(!showManageUserRoles)}
+                        className={`w-full flex items-center justify-between p-3 rounded-xl transition cursor-pointer font-sans border ${
+                          unlinkedCount > 0 
+                            ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 shadow-xs' 
+                            : 'bg-slate-100 hover:bg-slate-200/80 border-slate-250'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                          <ShieldAlert className={`w-4 h-4 shrink-0 ${unlinkedCount > 0 ? 'text-amber-600' : 'text-indigo-600'}`} />
+                          <span className="font-display font-semibold text-xs uppercase tracking-wider text-slate-800 font-mono truncate">
+                            {currentLanguage === 'sl' ? 'Upravljanje Vlog Planerja' : 'Manage User Roles'}
+                          </span>
+                          <span className="text-[10px] bg-indigo-100 text-indigo-800 font-mono font-bold px-2 py-0.5 rounded-full border border-indigo-200 shrink-0">
+                            {users.length}
+                          </span>
+                          {unlinkedCount > 0 && (
+                            <span className="text-[10px] bg-amber-500 text-white font-mono font-bold px-2 py-0.5 rounded-full shrink-0 shadow-2xs">
+                              ⚠️ {unlinkedCount} {currentLanguage === 'sl' ? 'nepovezanih' : 'unlinked'}
+                            </span>
+                          )}
+                          {viewerCount > 0 && (
+                            <span className="text-[10px] bg-slate-200 text-slate-700 font-mono font-bold px-2 py-0.5 rounded-full shrink-0">
+                              👁️ {viewerCount} {currentLanguage === 'sl' ? 'gledalcev' : 'viewers'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold shrink-0">
+                          <span>{showManageUserRoles ? (currentLanguage === 'sl' ? 'Skrij' : 'Hide') : (currentLanguage === 'sl' ? 'Prikaži' : 'Show')}</span>
+                          {showManageUserRoles ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                        </div>
+                      </button>
+                    );
+                  })()}
                 </div>
 
                 {showManageUserRoles && (
                   <div className="space-y-3.5 animate-fade-in bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
-                    <p className="text-[11px] text-slate-600 leading-relaxed font-sans">
-                      {currentLanguage === 'sl' 
-                        ? 'Kot administrator lahko spremenite vloge registriranih uporabnikov ter jih povežete s profili v bazi sodelavcev.' 
-                        : 'As an Administrator, verify, link profiles, and update roles of collaborative leaders.'}
-                    </p>
+                    <div className="flex items-center justify-between text-[11px] text-slate-600 leading-relaxed font-sans">
+                      <p>
+                        {currentLanguage === 'sl' 
+                          ? 'Kot administrator lahko spremenite vloge registriranih uporabnikov (samodejno shranjevanje) ter jih povežete s profili sodelavcev.' 
+                          : 'As an Administrator, change user roles (auto-saved) and link Google accounts to volunteer profiles.'}
+                      </p>
+                    </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {users.map((u) => {
                         const linkedPerson = people.find(p => p && (
                           p.name === u.personName || 
                           p.id === u.personName || 
-                          (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim())
+                          (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
+                          ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
                         ));
                         const currentLinkVal = linkedPerson ? linkedPerson.name : (u.personName || '');
                         const isUnlinked = !linkedPerson;
 
                         return (
-                          <div key={u.uid} className={`bg-white border rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs transition ${
-                            isUnlinked ? 'border-amber-300 bg-amber-50/40' : 'border-gray-200'
+                          <div key={u.uid} className={`rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition ${
+                            isUnlinked 
+                              ? 'border-2 border-amber-500 bg-amber-50/90 shadow-md ring-2 ring-amber-400/20' 
+                              : 'bg-white border border-gray-200 shadow-xs'
                           }`}>
-                            <div className="space-y-0.5 min-w-0">
-                              <div className="flex items-center gap-1.5">
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-xs font-bold text-slate-900 leading-none truncate">{u.displayName || 'Google User'}</span>
-                                {isUnlinked && (
-                                  <span className="text-[9px] font-mono font-bold bg-amber-500 text-white px-1.5 py-0.2 rounded-full">
-                                    {currentLanguage === 'sl' ? '🔔 Čaka na povezavo' : '🔔 Unlinked'}
+                                {isUnlinked ? (
+                                  <span className="text-[9px] font-mono font-bold bg-amber-600 text-white px-2 py-0.5 rounded-full shadow-2xs flex items-center gap-1">
+                                    <span>⚠️</span>
+                                    <span>{currentLanguage === 'sl' ? 'NI POVEZAN S PROFILOM' : 'NOT LINKED TO ROSTER'}</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-mono font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                                    ✓ {currentLanguage === 'sl' ? 'Povezan' : 'Linked'}
                                   </span>
                                 )}
                               </div>
                               <span className="text-[10px] text-slate-500 font-mono block truncate">{u.email}</span>
-                              {linkedPerson && (
+                              {linkedPerson ? (
                                 <span className="text-[10px] text-indigo-700 font-bold block truncate">
-                                  ✔ {currentLanguage === 'sl' ? 'Povezan z: ' : 'Linked to: '}{linkedPerson.name}
+                                  👤 {currentLanguage === 'sl' ? 'Profil v bazi: ' : 'Roster profile: '}{linkedPerson.name}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-amber-800 font-semibold block truncate">
+                                  🔔 {currentLanguage === 'sl' ? 'Izberite profil sodelavca za povezavo:' : 'Choose a volunteer profile to link:'}
                                 </span>
                               )}
                             </div>
@@ -2174,12 +2305,14 @@ export default function App() {
                               <select
                                 value={currentLinkVal}
                                 onChange={(e) => handleLinkUserPerson(u.uid, e.target.value || undefined)}
-                                className={`text-[10px] border p-1.5 px-2 rounded-lg focus:outline-none font-medium cursor-pointer ${
-                                  isUnlinked ? 'bg-amber-100 border-amber-300 text-amber-950 font-bold' : 'bg-slate-50 border-gray-250 text-slate-800'
+                                className={`text-[10px] border p-1.5 px-2 rounded-lg focus:outline-none font-medium cursor-pointer transition ${
+                                  isUnlinked 
+                                    ? 'bg-amber-100 border-2 border-amber-500 text-amber-950 font-bold focus:ring-2 focus:ring-amber-500 shadow-xs animate-pulse-short' 
+                                    : 'bg-slate-50 border-gray-250 text-slate-800'
                                 }`}
                                 title={currentLanguage === 'sl' ? 'Poveži z imenom v bazi sodelavcev' : 'Link to volunteer in database'}
                               >
-                                <option value="">{currentLanguage === 'sl' ? '-- Poveži sodelavca --' : '-- Link volunteer --'}</option>
+                                <option value="">{currentLanguage === 'sl' ? '⚠️ -- Poveži sodelavca --' : '⚠️ -- Link volunteer --'}</option>
                                 {people
                                   .filter(p => p && p.name)
                                   .map(p => (
@@ -2190,11 +2323,12 @@ export default function App() {
                                 }
                               </select>
 
-                              {/* Role selection */}
+                              {/* Role selection - Auto saves immediately with popup feedback */}
                               <select
                                 value={u.role}
                                 onChange={(e) => handleUpdateUserRole(u.uid, e.target.value as UserRole)}
-                                className="text-[11px] bg-slate-50 border border-gray-250 p-1.5 px-2 rounded-lg focus:outline-none font-bold cursor-pointer"
+                                className="text-[11px] bg-slate-50 hover:bg-slate-100 border border-gray-300 p-1.5 px-2 rounded-lg focus:outline-none font-bold cursor-pointer text-slate-800 transition"
+                                title={currentLanguage === 'sl' ? 'Spremeni vlogo (samodejno shranjeno)' : 'Change role (automatically saved)'}
                               >
                                 <option value="Admin">🛠️ Admin</option>
                                 <option value="Leader">📋 Vodja</option>
@@ -2416,6 +2550,23 @@ export default function App() {
 
         {/* 10-Minute Assignment Grace Queue Floating Bar */}
         <NotificationQueueBar />
+
+        {/* Floating Role & User Link Action Toast Pop-up */}
+        {roleActionToast && (
+          <div className="fixed bottom-20 md:bottom-8 right-4 left-4 sm:left-auto sm:max-w-md z-50 animate-fade-in bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/60 flex items-center justify-between gap-3 text-xs font-semibold">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <span className="truncate">{roleActionToast.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRoleActionToast(null)}
+              className="text-slate-400 hover:text-white text-base font-bold shrink-0 cursor-pointer ml-2"
+            >
+              &times;
+            </button>
+          </div>
+        )}
 
         {/* Mobile/Desktop PWA Install Banner */}
         <PwaInstallBanner currentLang={currentLanguage} />

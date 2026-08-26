@@ -156,12 +156,19 @@ export default function PhotoCropperModal({
         const previewSize = 240;
         const scaleFactor = 250 / previewSize;
 
-        // Calculate dimensions
-        const baseScale = Math.min(previewSize / (sourceImg.width || 1), previewSize / (sourceImg.height || 1));
-        const drawWidth = (sourceImg.width || 1) * baseScale * zoom * scaleFactor;
-        const drawHeight = (sourceImg.height || 1) * baseScale * zoom * scaleFactor;
-        const drawX = position.x * scaleFactor - drawWidth / 2;
-        const drawY = position.y * scaleFactor - drawHeight / 2;
+        const imgAspect = (sourceImg.width || 1) / (sourceImg.height || 1);
+        let baseW = previewSize;
+        let baseH = previewSize;
+        if (imgAspect >= 1) {
+          baseW = previewSize * imgAspect;
+        } else {
+          baseH = previewSize / imgAspect;
+        }
+
+        const drawWidth = baseW * zoom * scaleFactor;
+        const drawHeight = baseH * zoom * scaleFactor;
+        const drawX = (position.x * scaleFactor) - (drawWidth / 2);
+        const drawY = (position.y * scaleFactor) - (drawHeight / 2);
 
         ctx.drawImage(sourceImg, drawX, drawY, drawWidth, drawHeight);
 

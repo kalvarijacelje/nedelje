@@ -244,7 +244,7 @@ export default function InspectionChecklistModal({
               }`}
             >
               <Volume2 className="w-3.5 h-3.5" />
-              <span>{currentLanguage === 'sl' ? 'Ozvočenje & Oder' : 'Sound & Stage'}</span>
+              <span>{currentLanguage === 'sl' ? 'Ozvočenje' : 'Sound Guide'}</span>
             </button>
 
             <button

@@ -20,12 +20,12 @@ import {
 const envUrl = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
   (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) ||
-  '';
+  'https://ptdvcobgplmngnhkjqag.supabase.co';
 
 const envKey = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
   (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) ||
-  '';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB0ZHZjb2JncGxtbmduaGtqcWFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0MTIwNzcsImV4cCI6MjEwMjk4ODA3N30.i9-UFVwAavIuDZO51YEkL0-yt6Rzmg6ZkMGqkRl_JMo';
 
 export const IS_SUPABASE_CONFIGURED = Boolean(
   envUrl && 
@@ -347,36 +347,102 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
   }
 }
 
+export function toCanonicalPersonId(idOrName: string): string {
+  if (!idOrName) return 'p-unknown';
+  let str = idOrName.trim();
+  if (str.startsWith('p-')) {
+    str = str.substring(2);
+  }
+  // Transliterate Slovenian characters to standard latin
+  str = str
+    .replace(/[čČ]/g, 'c')
+    .replace(/[šŠ]/g, 's')
+    .replace(/[žŽ]/g, 'z')
+    .replace(/[ćĆ]/g, 'c')
+    .replace(/[đĐ]/g, 'd');
+  const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  return `p-${clean}`;
+}
+
 export async function upsertPersonToSupabase(person: Person): Promise<boolean> {
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
-    const cleanId = person.id || ('p-' + person.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '_'));
-    const { error } = await supabase
-      .from('profiles')
-      .upsert({
-        id: cleanId,
-        full_name: person.name,
-        name: person.name,
-        email: person.email || null,
-        phone: person.phone || null,
-        avatar_url: person.avatarUrl || null,
-        role: person.role || 'Viewer',
-        member_type: person.memberType || (person.role === 'Minor' ? 'minor' : (person.role === 'Visitor' ? 'visitor' : 'adult')),
-        birth_date: person.birthDate || null,
-        preferred_ministries: person.preferredMinistries || [],
-        led_ministries: person.ledMinistries || [],
-        family_members: person.familyMembers || [],
-        is_exempt_from_burnout: Boolean(person.isExemptFromBurnout || person.isPastorOrStaff),
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+    const canonicalId = toCanonicalPersonId(person.id || person.name);
+    const emailToMatch = (person.email || '').trim().toLowerCase();
+    const nameToMatch = person.name.trim();
 
-    if (error) {
-      console.warn('[Supabase] upsertPerson error:', error.message);
-      return false;
+    const cleanMemberType = (person.memberType === 'minor' || person.role === 'Minor') ? 'minor' : 'adult';
+    const cleanRole = (person.role === 'Admin' || emailToMatch === 'ales.lajlar@gmail.com') 
+      ? 'superadmin' 
+      : (person.role === 'Leader' ? 'leader' : (person.role === 'Servant' ? 'volunteer' : 'member'));
+
+    // Check avatar size - if giant base64 (> 80KB), avoid sending in standard update to prevent payload timeouts
+    const isBase64Avatar = person.avatarUrl && person.avatarUrl.startsWith('data:image');
+    const safeAvatarUrl = (isBase64Avatar && person.avatarUrl!.length > 80000) ? undefined : (person.avatarUrl || null);
+
+    const payload: any = {
+      full_name: person.name,
+      email: person.email || null,
+      phone: person.phone || null,
+      role: cleanRole,
+      member_type: cleanMemberType,
+      birth_date: person.birthDate || null,
+      preferred_ministries: person.preferredMinistries || [],
+      led_ministries: person.ledMinistries || [],
+      family_members: person.familyMembers || [],
+      is_exempt_from_burnout: Boolean(person.isExemptFromBurnout || person.isPastorOrStaff),
+      updated_at: new Date().toISOString()
+    };
+
+    if (safeAvatarUrl !== undefined) {
+      payload.avatar_url = safeAvatarUrl;
     }
-    return true;
+
+    // 1. Try updating directly by canonical ID
+    let { error: updErr, count } = await supabase
+      .from('profiles')
+      .update(payload, { count: 'exact' })
+      .eq('id', canonicalId);
+
+    // 2. If ID didn't update any row, update directly by email (handles auth UUIDs & email matches)
+    if ((!count || count === 0) && emailToMatch) {
+      const byEmailRes = await supabase
+        .from('profiles')
+        .update(payload, { count: 'exact' })
+        .ilike('email', emailToMatch);
+      count = byEmailRes.count;
+      updErr = byEmailRes.error;
+    }
+
+    // 3. If still 0 rows, update by full_name
+    if ((!count || count === 0) && nameToMatch) {
+      const byNameRes = await supabase
+        .from('profiles')
+        .update(payload, { count: 'exact' })
+        .ilike('full_name', nameToMatch);
+      count = byNameRes.count;
+      updErr = byNameRes.error;
+    }
+
+    if (!updErr && count && count > 0) {
+      console.log(`[Supabase] Successfully updated profile for ${person.name} (${count} row(s) updated)`);
+      return true;
+    }
+
+    // 4. If no existing row matched, upsert
+    const { error: upsertErr } = await supabase
+      .from('profiles')
+      .upsert({ id: canonicalId, ...payload }, { onConflict: 'id' });
+
+    if (!upsertErr) {
+      console.log(`[Supabase] Successfully upserted profile for ${person.name}`);
+      return true;
+    }
+
+    console.error('[Supabase] Profile save notice:', updErr?.message || upsertErr?.message);
+    return false;
   } catch (err) {
-    console.warn('[Supabase] Error in upsertPersonToSupabase:', err);
+    console.error('[Supabase] Error in upsertPersonToSupabase:', err);
     return false;
   }
 }

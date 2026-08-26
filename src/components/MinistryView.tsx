@@ -12,7 +12,8 @@ import {
   AlertTriangle, CheckCircle, ClipboardCheck, ExternalLink, FileText, Layers,
   Home, Unlock, Lock, Coffee, Utensils, HeartHandshake, BookOpen, Volume2, 
   MessageSquare, Heart, Music, Camera, Sliders, Monitor, Film, Smile, 
-  GraduationCap, Globe, Coins, CupSoda, Crown, PhoneCall, Phone, Mail, X, Wine, Clock, Check
+  GraduationCap, Globe, Coins, CupSoda, Crown, PhoneCall, Phone, Mail, X, Wine, Clock, Check,
+  Key, Flame, Mic, HandHelping, Video, Tv, Radio
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { isExemptFromBurnout } from '../lib/burnoutAnalytics';
@@ -25,6 +26,7 @@ interface MinistryViewProps {
   translations: Translation;
   currentLanguage: 'sl' | 'en';
   userRole?: UserRole;
+  activePerson?: Person | null;
   worshipRoster?: WorshipRosterEntry[];
   sundaySchoolLessons?: SundaySchoolLesson[];
   onSelectSunday: (id: string) => void;
@@ -44,16 +46,19 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'ClipboardCheck':
     case 'koncni_pregled':
       return <ClipboardCheck className={className} />;
+    case 'Key':
     case 'Unlock':
     case 'odklepanje':
-      return <Unlock className={className} />;
+      return <Key className={className} />;
     case 'Lock':
     case 'zaklepanje':
       return <Lock className={className} />;
     case 'Coffee':
     case 'kava':
-    case 'barista':
       return <Coffee className={className} />;
+    case 'Flame':
+    case 'barista':
+      return <Flame className={className} />;
     case 'Utensils':
     case 'hrana':
       return <Utensils className={className} />;
@@ -63,6 +68,10 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'HeartHandshake':
     case 'sprejem_reditelji':
       return <HeartHandshake className={className} />;
+    case 'HandHelping':
+    case 'uvodna_molitev_darovi':
+    case 'molitev_po':
+      return <HandHelping className={className} />;
     case 'BookOpen':
     case 'ucenje':
       return <BookOpen className={className} />;
@@ -72,13 +81,12 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'MessageSquare':
     case 'pricevanja':
       return <MessageSquare className={className} />;
-    case 'Heart':
-    case 'molitev_po':
-      return <Heart className={className} />;
     case 'Music':
     case 'slavilna_ekipa':
-    case 'uvod_slavljenje':
       return <Music className={className} />;
+    case 'Mic':
+    case 'uvod_slavljenje':
+      return <Mic className={className} />;
     case 'Camera':
     case 'postavitev_av':
       return <Camera className={className} />;
@@ -88,6 +96,11 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
     case 'Monitor':
     case 'besedila':
       return <Monitor className={className} />;
+    case 'Video':
+    case 'Tv':
+    case 'Radio':
+    case 'youtube_prenos':
+      return <Video className={className} />;
     case 'Film':
     case 'editiranje':
       return <Film className={className} />;
@@ -111,6 +124,30 @@ const renderMinistryIcon = (ministry: Ministry, className = "w-4 h-4") => {
   }
 };
 
+const renderCategoryIcon = (catId: string, className = "w-3.5 h-3.5") => {
+  switch (catId) {
+    case 'all':
+      return <Layers className={className} />;
+    case 'cleaning':
+      return <Sparkles className={className} />;
+    case 'hospitality':
+      return <Coffee className={className} />;
+    case 'sermon_prayer':
+      return <BookOpen className={className} />;
+    case 'worship':
+    case 'av_tech':
+      return <Music className={className} />;
+    case 'audio_video':
+      return <Video className={className} />;
+    case 'kids':
+      return <Smile className={className} />;
+    case 'post_service':
+    case 'other':
+    default:
+      return <HeartHandshake className={className} />;
+  }
+};
+
 const getTeamTheme = (category: string) => {
   switch (category) {
     case 'cleaning':
@@ -120,7 +157,8 @@ const getTeamTheme = (category: string) => {
         badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
         iconBoxBg: 'bg-amber-100 text-amber-800 border-amber-300',
         assignedBg: 'bg-amber-100/90 text-amber-950 border-amber-300',
-        activeTab: 'bg-amber-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-amber-600 text-white border-amber-600 shadow-xs font-semibold scale-[1.02]',
+        inactiveTab: 'bg-amber-50/80 hover:bg-amber-100/90 text-amber-900 border-amber-200/90 shadow-2xs font-medium',
         dot: 'bg-amber-500',
         labelSl: 'Priprava & Čiščenje',
         labelEn: 'Setup & Cleaning'
@@ -132,7 +170,8 @@ const getTeamTheme = (category: string) => {
         badgeBg: 'bg-rose-100 text-rose-900 border-rose-300',
         iconBoxBg: 'bg-rose-100 text-rose-800 border-rose-300',
         assignedBg: 'bg-rose-100/90 text-rose-950 border-rose-300',
-        activeTab: 'bg-rose-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-rose-600 text-white border-rose-600 shadow-xs font-semibold scale-[1.02]',
+        inactiveTab: 'bg-rose-50/80 hover:bg-rose-100/90 text-rose-900 border-rose-200/90 shadow-2xs font-medium',
         dot: 'bg-rose-500',
         labelSl: 'Gostoljubje & Kava',
         labelEn: 'Hospitality & Snacks'
@@ -144,11 +183,13 @@ const getTeamTheme = (category: string) => {
         badgeBg: 'bg-sky-100 text-sky-900 border-sky-300',
         iconBoxBg: 'bg-sky-100 text-sky-800 border-sky-300',
         assignedBg: 'bg-sky-100/90 text-sky-950 border-sky-300',
-        activeTab: 'bg-sky-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-sky-600 text-white border-sky-600 shadow-xs font-semibold scale-[1.02]',
+        inactiveTab: 'bg-sky-50/80 hover:bg-sky-100/90 text-sky-900 border-sky-200/90 shadow-2xs font-medium',
         dot: 'bg-sky-500',
-        labelSl: 'Učenje & Molitev',
-        labelEn: 'Word & Prayer'
+        labelSl: 'Bogoslužje',
+        labelEn: 'Main Service'
       };
+    case 'worship':
     case 'av_tech':
       return {
         cardBorder: 'border-l-4 border-l-purple-400 border-gray-200 bg-gradient-to-r from-purple-50/30 to-white hover:border-purple-300',
@@ -156,10 +197,24 @@ const getTeamTheme = (category: string) => {
         badgeBg: 'bg-purple-100 text-purple-900 border-purple-300',
         iconBoxBg: 'bg-purple-100 text-purple-800 border-purple-300',
         assignedBg: 'bg-purple-100/90 text-purple-950 border-purple-300',
-        activeTab: 'bg-purple-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-purple-600 text-white border-purple-600 shadow-xs font-semibold scale-[1.02]',
+        inactiveTab: 'bg-purple-50/80 hover:bg-purple-100/90 text-purple-900 border-purple-200/90 shadow-2xs font-medium',
         dot: 'bg-purple-500',
-        labelSl: 'Slavljenje & Tehnika',
-        labelEn: 'Worship & Tech'
+        labelSl: 'Slavljenje',
+        labelEn: 'Worship'
+      };
+    case 'audio_video':
+      return {
+        cardBorder: 'border-l-4 border-l-cyan-500 border-gray-200 bg-gradient-to-r from-cyan-50/30 to-white hover:border-cyan-400',
+        headerBg: 'bg-cyan-50/60',
+        badgeBg: 'bg-cyan-100 text-cyan-900 border-cyan-300',
+        iconBoxBg: 'bg-cyan-100 text-cyan-800 border-cyan-300',
+        assignedBg: 'bg-cyan-100/90 text-cyan-950 border-cyan-300',
+        activeTab: 'bg-cyan-600 text-white border-cyan-600 shadow-xs font-semibold scale-[1.02]',
+        inactiveTab: 'bg-cyan-50/80 hover:bg-cyan-100/90 text-cyan-950 border-cyan-200/90 shadow-2xs font-medium',
+        dot: 'bg-cyan-500',
+        labelSl: 'Avdio Video',
+        labelEn: 'Audio Video'
       };
     case 'kids':
       return {
@@ -168,11 +223,13 @@ const getTeamTheme = (category: string) => {
         badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
         iconBoxBg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
         assignedBg: 'bg-emerald-100/90 text-emerald-950 border-emerald-300',
-        activeTab: 'bg-emerald-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-semibold scale-[1.02]',
+        inactiveTab: 'bg-emerald-50/80 hover:bg-emerald-100/90 text-emerald-900 border-emerald-200/90 shadow-2xs font-medium',
         dot: 'bg-emerald-500',
         labelSl: 'Nedeljska šola',
         labelEn: 'Sunday School'
       };
+    case 'post_service':
     case 'other':
     default:
       return {
@@ -181,10 +238,11 @@ const getTeamTheme = (category: string) => {
         badgeBg: 'bg-indigo-100 text-indigo-900 border-indigo-300',
         iconBoxBg: 'bg-indigo-100 text-indigo-800 border-indigo-300',
         assignedBg: 'bg-indigo-100/90 text-indigo-950 border-indigo-300',
-        activeTab: 'bg-indigo-600 text-white shadow-xs font-semibold',
+        activeTab: 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold scale-[1.02]',
+        inactiveTab: 'bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-900 border-indigo-200/90 shadow-2xs font-medium',
         dot: 'bg-indigo-500',
-        labelSl: 'Ostale zadolžitve',
-        labelEn: 'Other services'
+        labelSl: 'Po bogoslužju',
+        labelEn: 'Post-Service'
       };
   }
 };
@@ -506,10 +564,11 @@ export default function MinistryView({
     { id: 'all', labelSl: 'Vse skupine', labelEn: 'All Areas' },
     { id: 'cleaning', labelSl: 'Priprava & Čiščenje', labelEn: 'Setup & Cleaning' },
     { id: 'hospitality', labelSl: 'Gostoljubje & Kava', labelEn: 'Hospitality & Snacks' },
-    { id: 'sermon_prayer', labelSl: 'Učenje & Molitev', labelEn: 'Word & Prayer' },
-    { id: 'av_tech', labelSl: 'Slavljenje & Tehnika', labelEn: 'Worship & Tech' },
+    { id: 'sermon_prayer', labelSl: 'Bogoslužje', labelEn: 'Main Service' },
+    { id: 'worship', labelSl: 'Slavljenje', labelEn: 'Worship' },
+    { id: 'audio_video', labelSl: 'Avdio Video', labelEn: 'Audio Video' },
     { id: 'kids', labelSl: 'Nedeljska šola', labelEn: 'Sunday Kids School' },
-    { id: 'other', labelSl: 'Ostale zadolžitve', labelEn: 'Other services' },
+    { id: 'post_service', labelSl: 'Po bogoslužju', labelEn: 'Post-Service' },
   ];
 
   // Upcoming sundays from today onwards
@@ -581,7 +640,13 @@ export default function MinistryView({
 
   const filteredMinistries = selectedCategory === 'all'
     ? ministries
-    : ministries.filter((m) => m.category === selectedCategory);
+    : ministries.filter((m) => {
+        if (m.category === selectedCategory) return true;
+        if (selectedCategory === 'post_service' && m.category === 'other') return true;
+        if (selectedCategory === 'worship' && m.category === 'av_tech' && (m.id === 'slavilna_ekipa' || m.id === 'uvod_slavljenje' || m.id === 'zvok')) return true;
+        if (selectedCategory === 'audio_video' && m.category === 'av_tech' && (m.id !== 'slavilna_ekipa' && m.id !== 'uvod_slavljenje' && m.id !== 'zvok')) return true;
+        return false;
+      });
 
   return (
     <div id="ministries-matrix-component" className="max-w-5xl mx-auto w-full space-y-5 animate-fade-in pb-12 px-3 sm:px-4">
@@ -597,182 +662,60 @@ export default function MinistryView({
             {filteredMinistries.length} {currentLanguage === 'sl' ? 'aktivnih služb' : 'active ministries'}
           </span>
         }
-      />
-
-      {/* Setup & Inspection List Banner */}
-      <div className="bg-gradient-to-r from-teal-900 via-emerald-850 to-teal-950 text-white rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-emerald-700/60">
-        <div className="flex items-start gap-3">
-          <div className="p-2.5 bg-emerald-500/20 rounded-xl text-emerald-200 border border-emerald-400/30 shrink-0">
-            <ClipboardCheck className="w-5 h-5 text-emerald-300" />
+      >
+        {/* Inspection Protocols & Standards Summary Line */}
+        <div className="pt-2.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-white/85 font-medium flex items-center gap-1.5 text-xs mr-1">
+              <ClipboardCheck className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'Kontrolni pregledi:' : 'Area Checklists:'}</span>
+            </span>
+            {onOpenInspectionModal && (
+              <>
+                <button
+                  onClick={() => onOpenInspectionModal('coffee_upper_hall')}
+                  className="px-2.5 py-1 text-[11px] font-medium text-amber-100 bg-white/10 hover:bg-white/20 rounded-lg border border-white/15 transition flex items-center gap-1.5 cursor-pointer backdrop-blur-xs shadow-2xs"
+                >
+                  <Coffee className="w-3 h-3 text-amber-300" />
+                  <span>{currentLanguage === 'sl' ? 'Kava & Dvorana' : 'Coffee & Upper Hall'}</span>
+                </button>
+                <button
+                  onClick={() => onOpenInspectionModal('tech_stage')}
+                  className="px-2.5 py-1 text-[11px] font-medium text-sky-100 bg-white/10 hover:bg-white/20 rounded-lg border border-white/15 transition flex items-center gap-1.5 cursor-pointer backdrop-blur-xs shadow-2xs"
+                >
+                  <Sliders className="w-3 h-3 text-sky-300" />
+                  <span>{currentLanguage === 'sl' ? 'Tehnika & Oder' : 'Tech & Stage'}</span>
+                </button>
+                <button
+                  onClick={() => onOpenInspectionModal('kids_classrooms')}
+                  className="px-2.5 py-1 text-[11px] font-medium text-emerald-100 bg-white/10 hover:bg-white/20 rounded-lg border border-white/15 transition flex items-center gap-1.5 cursor-pointer backdrop-blur-xs shadow-2xs"
+                >
+                  <Smile className="w-3 h-3 text-emerald-300" />
+                  <span>{currentLanguage === 'sl' ? 'Nedeljska šola' : 'Kids Rooms'}</span>
+                </button>
+                <button
+                  onClick={() => onOpenInspectionModal('general_cleaning')}
+                  className="px-2.5 py-1 text-[11px] font-medium text-purple-100 bg-white/10 hover:bg-white/20 rounded-lg border border-white/15 transition flex items-center gap-1.5 cursor-pointer backdrop-blur-xs shadow-2xs"
+                >
+                  <Sparkles className="w-3 h-3 text-purple-300" />
+                  <span>{currentLanguage === 'sl' ? 'Čiščenje' : 'Cleaning'}</span>
+                </button>
+              </>
+            )}
           </div>
-          <div className="space-y-0.5">
-            <h3 className="text-xs sm:text-sm font-bold font-display text-emerald-50">
-              {currentLanguage === 'sl' 
-                ? 'Kontrolni Seznam: Zgornja Dvorana in Kavarna (Upper Hall & Coffee Setup)' 
-                : 'Inspection List: Upper Hall & Coffee Shop Setup'}
-            </h3>
-            <p className="text-[11px] text-emerald-200/90 leading-relaxed">
-              {currentLanguage === 'sl'
-                ? 'Ureditev prostorov, navodila za kavo ter kontrolni pregled za ekipi gostoljubja in čiščenja.'
-                : 'Step-by-step setup guide and inspection standards for hospitality & cleaning teams.'}
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          {onOpenInspectionModal && (
-            <button
-              onClick={() => onOpenInspectionModal('coffee_upper_hall')}
-              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs flex items-center gap-1.5"
-            >
-              <ClipboardCheck className="w-4 h-4" />
-              <span>{currentLanguage === 'sl' ? 'Odpri V Aplikaciji' : 'View In App'}</span>
-            </button>
-          )}
           <a
             href="https://docs.google.com/document/d/1wmI85X8MY501sqgY-z0dm03VtB3lFTCyi46TObb_f40/edit?usp=sharing"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-3.5 py-2 bg-black/25 hover:bg-black/45 text-emerald-100 border border-emerald-400/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+            className="px-2.5 py-1 text-[11px] font-medium text-emerald-100 bg-black/25 hover:bg-black/40 border border-emerald-400/30 rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0"
           >
-            <FileText className="w-4 h-4 text-emerald-300" />
+            <FileText className="w-3 h-3 text-emerald-300" />
             <span>Google Doc</span>
-            <ExternalLink className="w-3.5 h-3.5 text-emerald-300" />
+            <ExternalLink className="w-2.5 h-2.5 text-emerald-300" />
           </a>
         </div>
-      </div>
-
-      {/* Roster Health & Alerts Collapsible Panel */}
-      <div id="roster-health-panel" className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-        <button
-          onClick={() => setShowHealthReport(!showHealthReport)}
-          className="w-full flex items-center justify-between p-4 bg-gray-50/50 hover:bg-gray-50 active:bg-gray-100/60 transition focus:outline-none cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-[#4338CA]" />
-            <span className="text-xs font-bold uppercase font-mono tracking-wider text-gray-700">
-              {currentLanguage === 'sl' ? 'Stanje in Analiza Razporeda' : 'Roster Health & Alerts'}
-            </span>
-          </div>
-          {showHealthReport ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-        </button>
-
-        {showHealthReport && (
-          <div className="p-4 border-t border-gray-100 space-y-4 text-xs animate-fade-in">
-            {overAssignedPeople.length === 0 && understaffedRoles.length === 0 ? (
-              <div className="p-3 bg-emerald-50 text-emerald-800 rounded-lg flex items-center gap-2.5 border border-emerald-200">
-                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span className="font-semibold">
-                  {currentLanguage === 'sl' ? 'Čudovito! Nobenih preobremenitev ali pomanjkanja kadra.' : 'Roster is looking healthy! No overloads or under-staffing.'}
-                </span>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {understaffedRoles.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="text-[10px] uppercase font-bold text-rose-500 font-mono tracking-wider block">
-                      ⚠️ {currentLanguage === 'sl' ? 'Konsistentno prazna mesta' : 'Critically Understaffed Roles'}
-                    </span>
-                    <div className="space-y-1.5">
-                      {understaffedRoles.map(({ ministry: m, vacantCount, vacantDates }) => (
-                        <div key={m.id} className="bg-rose-50/40 border border-rose-200/60 p-2.5 rounded-lg flex flex-col gap-1">
-                          <div className="flex items-center justify-between font-semibold text-rose-950">
-                            <span className="flex items-center gap-1.5">
-                              {renderMinistryIcon(m, "w-3.5 h-3.5 text-rose-600")}
-                              <span>{currentLanguage === 'sl' ? m.nameSl : m.nameEn}</span>
-                            </span>
-                            <span className="bg-rose-100 text-rose-800 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
-                              {vacantCount}/5 {currentLanguage === 'sl' ? 'tednov prazno' : 'weeks vacant'}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-rose-700/80 font-mono">
-                            {currentLanguage === 'sl' ? 'Prazni datumi: ' : 'Vacant dates: '} {vacantDates.join(', ')}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {overAssignedPeople.length > 0 && (
-                  <div className="space-y-2 pt-1 border-t border-gray-100">
-                    <span className="text-[10px] uppercase font-bold text-amber-500 font-mono tracking-wider block">
-                      ⏳ {currentLanguage === 'sl' ? 'Izrazito Obremenjeni Sodelavci (v naslednjih 5 tednih)' : 'Over-committed Volunteers (Over next 5 weeks)'}
-                    </span>
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {overAssignedPeople.map(({ name, totalCount, conflictWeeks }) => (
-                        <div key={name} className="bg-amber-50/40 border border-amber-200/60 p-2.5 rounded-lg flex flex-col gap-0.5">
-                          <div className="flex items-center justify-between text-amber-950 font-semibold">
-                            <span>{name}</span>
-                            <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-md font-mono font-bold">
-                              {totalCount}x {currentLanguage === 'sl' ? 'zadolžitev' : 'tasks'}
-                            </span>
-                          </div>
-                          {conflictWeeks.length > 0 && (
-                            <p className="text-[9px] text-amber-800 font-mono font-medium italic mt-0.5">
-                              ⚠️ {currentLanguage === 'sl' ? 'Isti dan več služb na: ' : 'Multiple assignments on: '} {conflictWeeks.join(', ')}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Area Checklists & Run of Show Button Bar */}
-      {onOpenInspectionModal && (
-        <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100">
-              <ClipboardCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-slate-900 font-display">
-                {currentLanguage === 'sl' ? 'Standardni kontrolni seznami in pregledi' : 'Area Checklists & Inspections'}
-              </h4>
-              <p className="text-[11px] text-slate-500">
-                {currentLanguage === 'sl' ? 'Navodila za pripravo kave, odra, učilnic in čiščenja' : 'Standard protocols for coffee, tech, kids classrooms & cleaning'}
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              onClick={() => onOpenInspectionModal('coffee_upper_hall')}
-              className="px-2.5 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Coffee className="w-3.5 h-3.5 text-amber-600" />
-              <span>{currentLanguage === 'sl' ? 'Kava & Dvorana' : 'Coffee & Upper Hall'}</span>
-            </button>
-            <button
-              onClick={() => onOpenInspectionModal('tech_stage')}
-              className="px-2.5 py-1.5 text-xs font-medium text-sky-800 bg-sky-50 hover:bg-sky-100 rounded-lg border border-sky-200 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Sliders className="w-3.5 h-3.5 text-sky-600" />
-              <span>{currentLanguage === 'sl' ? 'Tehnika & Oder' : 'Tech & Stage'}</span>
-            </button>
-            <button
-              onClick={() => onOpenInspectionModal('kids_classrooms')}
-              className="px-2.5 py-1.5 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Smile className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{currentLanguage === 'sl' ? 'Nedeljska šola' : 'Kids Rooms'}</span>
-            </button>
-            <button
-              onClick={() => onOpenInspectionModal('general_cleaning')}
-              className="px-2.5 py-1.5 text-xs font-medium text-purple-800 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-              <span>{currentLanguage === 'sl' ? 'Čiščenje' : 'Cleaning'}</span>
-            </button>
-          </div>
-        </div>
-      )}
+      </HeroHeaderBanner>
 
       {/* Category selector pills */}
       <div id="ministry-category-pills" className="flex flex-wrap gap-2 pt-1 pb-1">
@@ -784,13 +727,17 @@ export default function MinistryView({
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition duration-150 flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition duration-150 flex items-center gap-1.5 cursor-pointer border ${
                 isSelected
-                  ? 'bg-slate-900 text-white shadow-xs scale-[1.02]'
-                  : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border border-slate-200/80 shadow-2xs'
+                  ? cat.id === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs scale-[1.02]'
+                    : theme.activeTab
+                  : cat.id === 'all'
+                    ? 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border-slate-200/80 shadow-2xs'
+                    : theme.inactiveTab
               }`}
             >
-              {cat.id !== 'all' && <span className={`w-2 h-2 rounded-full ${theme.dot}`} />}
+              {renderCategoryIcon(cat.id, "w-3.5 h-3.5 shrink-0")}
               <span>{currentLanguage === 'sl' ? cat.labelSl : cat.labelEn}</span>
             </button>
           );

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   WorshipRosterEntry, 
   WorshipSong, 
@@ -57,6 +57,11 @@ import {
   CheckCircle2,
   Edit,
   Pencil,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  BarChart3,
+  History,
   X
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
@@ -87,6 +92,108 @@ const parseSheetDate = (dateStr: string): Date => {
 
 const academicYear2627Start = new Date(2026, 8, 1);  // Sep 1, 2026 (first Sunday: Sep 6, 2026)
 const academicYear2627End = new Date(2027, 7, 31);   // Aug 31, 2027
+
+export const getCategoryBadge = (category?: WorshipSong['category'], lang: 'sl' | 'en' = 'sl') => {
+  switch (category) {
+    case 'favorite':
+      return {
+        label: lang === 'sl' ? '⭐ Glavni repertoar' : '⭐ Core Repertoire',
+        shortLabel: lang === 'sl' ? '⭐ Glavna' : '⭐ Core',
+        codePrefix: 'W',
+        badgeClass: 'bg-amber-200 text-amber-950 border border-amber-300 font-bold',
+        numBadgeClass: 'bg-amber-50 text-amber-900 border border-amber-300 font-bold font-mono',
+        rowClass: 'bg-amber-100/70 hover:bg-amber-100/90 text-amber-950',
+        cardClass: 'bg-amber-50/90 hover:bg-amber-100/70 border-amber-300/80 ring-1 ring-amber-200/60',
+        cardAccent: 'border-l-4 border-l-amber-500',
+        icon: '⭐'
+      };
+    case 'great':
+      return {
+        label: lang === 'sl' ? '👍 Standardno slavljenje' : '👍 Standard Worship',
+        shortLabel: lang === 'sl' ? '👍 Standard' : '👍 Standard',
+        codePrefix: 'W',
+        badgeClass: 'bg-yellow-100 text-yellow-900 border border-yellow-300 font-semibold',
+        numBadgeClass: 'bg-yellow-50 text-yellow-900 border border-yellow-300 font-bold font-mono',
+        rowClass: 'bg-yellow-50/80 hover:bg-yellow-100/80 text-yellow-950',
+        cardClass: 'bg-yellow-50/70 hover:bg-yellow-50 border-yellow-200 ring-1 ring-yellow-100',
+        cardAccent: 'border-l-4 border-l-yellow-400',
+        icon: '👍'
+      };
+    case 'kids':
+      return {
+        label: lang === 'sl' ? '👶 Otroška pesem' : '👶 Kids Song',
+        shortLabel: lang === 'sl' ? '👶 Otroška' : '👶 Kids',
+        codePrefix: 'K',
+        badgeClass: 'bg-emerald-100 text-emerald-900 border border-emerald-300 font-semibold',
+        numBadgeClass: 'bg-emerald-50 text-emerald-900 border border-emerald-300 font-bold font-mono',
+        rowClass: 'bg-emerald-50/80 hover:bg-emerald-100/80 text-emerald-950',
+        cardClass: 'bg-emerald-50/70 hover:bg-emerald-50 border-emerald-200 ring-1 ring-emerald-100',
+        cardAccent: 'border-l-4 border-l-emerald-500',
+        icon: '👶'
+      };
+    case 'christmas':
+      return {
+        label: lang === 'sl' ? '🎄 Božična / Praznična' : '🎄 Christmas / Seasonal',
+        shortLabel: lang === 'sl' ? '🎄 Božična' : '🎄 Christmas',
+        codePrefix: 'B',
+        badgeClass: 'bg-sky-100 text-sky-900 border border-sky-300 font-semibold',
+        numBadgeClass: 'bg-sky-50 text-sky-900 border border-sky-300 font-bold font-mono',
+        rowClass: 'bg-sky-50/80 hover:bg-sky-100/80 text-sky-950',
+        cardClass: 'bg-sky-50/70 hover:bg-sky-50 border-sky-200 ring-1 ring-sky-100',
+        cardAccent: 'border-l-4 border-l-sky-500',
+        icon: '🎄'
+      };
+    default:
+      return {
+        label: lang === 'sl' ? '✨ Nove pesmi' : '✨ New Songs',
+        shortLabel: lang === 'sl' ? '✨ Nova' : '✨ New',
+        codePrefix: 'W',
+        badgeClass: 'bg-purple-100 text-purple-900 border border-purple-300 font-semibold',
+        numBadgeClass: 'bg-purple-50 text-purple-900 border border-purple-300 font-bold font-mono',
+        rowClass: 'bg-purple-50/40 hover:bg-purple-100/60 text-purple-950',
+        cardClass: 'bg-purple-50/50 hover:bg-purple-50 border-purple-200 ring-1 ring-purple-100',
+        cardAccent: 'border-l-4 border-l-purple-500',
+        icon: '✨'
+      };
+  }
+};
+
+export const getTimesSungBadge = (count: number, lang: 'sl' | 'en' = 'sl') => {
+  if (count === 0) {
+    return {
+      className: 'bg-slate-100/80 text-slate-400 border border-slate-200/70 font-normal',
+      label: '0×',
+      tierName: lang === 'sl' ? 'Neizvedena v tem obdobju (0×)' : 'Not sung in this period (0×)'
+    };
+  }
+  if (count === 1) {
+    return {
+      className: 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-semibold shadow-2xs',
+      label: '1×',
+      tierName: lang === 'sl' ? 'Enkrat izvedena (1×)' : 'Sung once (1×)'
+    };
+  }
+  if (count >= 2 && count <= 3) {
+    return {
+      className: 'bg-amber-100 text-amber-950 border border-amber-300 font-bold shadow-2xs',
+      label: `${count}×`,
+      tierName: lang === 'sl' ? `Zmerna rotacija (${count}×)` : `Moderate rotation (${count}×)`
+    };
+  }
+  if (count >= 4 && count <= 7) {
+    return {
+      className: 'bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold shadow-2xs',
+      label: `${count}×`,
+      tierName: lang === 'sl' ? `Glavna rotacija (${count}×)` : `Core rotation (${count}×)`
+    };
+  }
+  // 8+ times (Top anthems)
+  return {
+    className: 'bg-gradient-to-r from-orange-100 to-amber-100 text-orange-950 border border-orange-400 font-black shadow-2xs ring-1 ring-orange-300',
+    label: `🔥 ${count}×`,
+    tierName: lang === 'sl' ? `Top uspešnica / Največkrat zapeta (${count}×)` : `Top Anthem / Heavy rotation (${count}×)`
+  };
+};
 
 export default function WorshipTeamView({
   userRole,
@@ -163,27 +270,147 @@ export default function WorshipTeamView({
     ref.current.scrollLeft = scrollLeftRef.current - walk;
   };
 
-  // View modes
-  const [songViewMode, setSongViewMode] = useState<'table' | 'cards'>('table');
+  // View modes - defaults to 'table' (Table view) with automatic phone view support
+  const [songViewMode, setSongViewMode] = useState<'table' | 'cards'>(() => {
+    if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      if (isMobile) return 'table';
+      const saved = localStorage.getItem('worship_song_view_mode');
+      if (saved === 'table' || saved === 'cards') return saved;
+    }
+    return 'table';
+  });
+
+  const handleSetSongViewMode = (mode: 'table' | 'cards') => {
+    setSongViewMode(mode);
+    try {
+      localStorage.setItem('worship_song_view_mode', mode);
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setSongViewMode('table');
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [rosterViewMode, setRosterViewMode] = useState<'cards' | 'table'>('cards');
   const [sasuViewMode, setSasuViewMode] = useState<'table' | 'cards'>('table');
 
+  // Academic Year / Period Mode for Song Times Sung
+  const [songYearMode, setSongYearMode] = useState<'2026/2027' | '2025/2026' | 'all'>('2026/2027');
+
+  // Songbook Sorting States
+  const [sortField, setSortField] = useState<'number' | 'titleSl' | 'titleEn' | 'timesSung'>('number');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   // Search & Filter States
   const [songSearch, setSongSearch] = useState('');
+  const [songCategoryFilter, setSongCategoryFilter] = useState<'all' | 'favorite' | 'great' | 'kids' | 'christmas' | 'standard'>('all');
   const [rosterSearch, setRosterSearch] = useState('');
   const [archiveSearch, setArchiveSearch] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [selectedLeaderFilter, setSelectedLeaderFilter] = useState<string>('all');
+
+  // Archive Tab View Mode (Historical 2025/26 stats vs Retired songs)
+  const [archiveTabMode, setArchiveTabMode] = useState<'historical_times' | 'retired_songs'>('historical_times');
+  const [archiveSortField, setArchiveSortField] = useState<'number' | 'titleSl' | 'titleEn' | 'timesSung'>('timesSung');
+  const [archiveSortDirection, setArchiveSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // SASU Search & Filter States
   const [sasuSearch, setSasuSearch] = useState('');
   const [sasuOnlyKalvarija, setSasuOnlyKalvarija] = useState(false);
   const [sasuDisplayLimit, setSasuDisplayLimit] = useState(100);
 
-  // Data states (in-memory editable)
-  const [songs, setSongs] = useState<WorshipSong[]>(INITIAL_WORSHIP_SONGS);
+  // Natural comparison for hybrid song numbers (W-1, W-2... W-10, K-1, B-1)
+  const compareSongNumbers = (numA: string, numB: string): number => {
+    const parse = (val: string) => {
+      const match = (val || '').trim().match(/^([a-zA-Z]+)-?(\d+)$/);
+      if (match) {
+        return { prefix: match[1].toUpperCase(), num: parseInt(match[2], 10) };
+      }
+      const pureNum = parseInt(val, 10);
+      if (!isNaN(pureNum)) {
+        return { prefix: 'W', num: pureNum };
+      }
+      return { prefix: val || '', num: 0 };
+    };
+
+    const a = parse(numA);
+    const b = parse(numB);
+
+    const prefixOrder: Record<string, number> = { W: 1, K: 2, B: 3, NEW: 4 };
+    const orderA = prefixOrder[a.prefix] || 99;
+    const orderB = prefixOrder[b.prefix] || 99;
+
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    if (a.prefix !== b.prefix) {
+      return a.prefix.localeCompare(b.prefix);
+    }
+    return a.num - b.num;
+  };
+
+  // Helper to compute next available prefix number for a category
+  const getNextSuggestedSongNumber = React.useCallback((cat: WorshipSong['category'], songList: WorshipSong[]) => {
+    let prefix = 'W';
+    if (cat === 'kids') prefix = 'K';
+    if (cat === 'christmas') prefix = 'B';
+
+    let maxNum = 0;
+    songList.forEach(s => {
+      const numStr = s.number || '';
+      const match = numStr.match(/^([a-zA-Z]+)-?(\d+)$/);
+      if (match && match[1].toUpperCase() === prefix) {
+        const n = parseInt(match[2], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+
+    return `${prefix}-${maxNum + 1}`;
+  }, []);
+
+  // Data states (persisted with localStorage, auto-migrated with prefixes)
+  const [songs, setSongs] = useState<WorshipSong[]>(() => {
+    try {
+      const saved = localStorage.getItem('kck_worship_songs_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasPrefixes = parsed.some(s => s.number && s.number.includes('-'));
+          if (hasPrefixes) {
+            return parsed.filter(s => {
+              const t = (s.titleSl || '').trim().toUpperCase();
+              return t !== 'OTROŠKA PESMARICA' && t !== 'RR PESMARICA';
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load songs from storage', e);
+    }
+    return INITIAL_WORSHIP_SONGS;
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('kck_worship_songs_v1', JSON.stringify(songs));
+    } catch (e) {
+      console.warn('Failed to save songs to storage', e);
+    }
+  }, [songs]);
+
   const activeRoster = worshipRoster || INITIAL_WORSHIP_ROSTER;
   const [editingRosterEntry, setEditingRosterEntry] = useState<WorshipRosterEntry | null>(null);
+
+  // Edit Song Modal State
+  const [editingSong, setEditingSong] = useState<WorshipSong | null>(null);
 
   // Full Roster combined with all Sunday dates from the main schedule
   const combinedRoster = useMemo(() => {
@@ -248,12 +475,29 @@ export default function WorshipTeamView({
 
   // New Song Modal State
   const [isAddSongOpen, setIsAddSongOpen] = useState(false);
+  const [newSongNumber, setNewSongNumber] = useState('');
   const [newSongTitleSl, setNewSongTitleSl] = useState('');
   const [newSongTitleEn, setNewSongTitleEn] = useState('');
   const [newSongYoutube, setNewSongYoutube] = useState('');
+  const [newSongCategory, setNewSongCategory] = useState<WorshipSong['category']>('favorite');
+
+  // When opening add song modal or changing category, suggest next number
+  const handleOpenAddSong = () => {
+    const suggested = getNextSuggestedSongNumber('favorite', songs);
+    setNewSongNumber(suggested);
+    setNewSongCategory('favorite');
+    setIsAddSongOpen(true);
+  };
+
+  const handleCategoryChangeInAdd = (cat: WorshipSong['category']) => {
+    setNewSongCategory(cat);
+    const suggested = getNextSuggestedSongNumber(cat, songs);
+    setNewSongNumber(suggested);
+  };
 
   useBackdropHistory(!!editingRosterEntry, () => setEditingRosterEntry(null), 'worship-edit-roster-modal');
   useBackdropHistory(isAddSongOpen, () => setIsAddSongOpen(false), 'worship-add-song-modal');
+  useBackdropHistory(!!editingSong, () => setEditingSong(null), 'worship-edit-song-modal');
 
   // Setup Checklist Completed Steps
   const [completedSteps, setCompletedSteps] = useState<Record<string, boolean>>({});
@@ -277,13 +521,17 @@ export default function WorshipTeamView({
     e.preventDefault();
     if (!newSongTitleSl.trim()) return;
 
+    const assignedNumber = newSongNumber.trim() || getNextSuggestedSongNumber(newSongCategory || 'favorite', songs);
+
     const newSong: WorshipSong = {
       id: `song_${Date.now()}`,
-      number: String(songs.length + 1),
+      number: assignedNumber,
       titleSl: newSongTitleSl.trim(),
       titleEn: newSongTitleEn.trim(),
       youtubeUrl: newSongYoutube.trim(),
-      timesSung: 0
+      category: newSongCategory || 'favorite',
+      timesSung: 0,
+      isNew: true
     };
 
     setSongs(prev => [newSong, ...prev]);
@@ -291,7 +539,39 @@ export default function WorshipTeamView({
     setNewSongTitleSl('');
     setNewSongTitleEn('');
     setNewSongYoutube('');
+    setNewSongNumber('');
+    setNewSongCategory('favorite');
   };
+
+  const handleUpdateSongCategory = (songId: string, newCategory: WorshipSong['category']) => {
+    setSongs(prev => prev.map(s => s.id === songId ? { ...s, category: newCategory } : s));
+  };
+
+  const handleSaveEditSong = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSong || !editingSong.titleSl.trim()) return;
+    setSongs(prev => prev.map(s => s.id === editingSong.id ? editingSong : s));
+    setEditingSong(null);
+  };
+
+  // Song Category Counts
+  const songCategoryCounts = useMemo(() => {
+    const counts = {
+      all: songs.length,
+      favorite: 0,
+      great: 0,
+      kids: 0,
+      christmas: 0,
+      standard: 0
+    };
+    songs.forEach(s => {
+      const cat = s.category || 'standard';
+      if (counts[cat] !== undefined) {
+        counts[cat]++;
+      }
+    });
+    return counts;
+  }, [songs]);
 
   // Academic Year item counts
   const count2627 = useMemo(() => {
@@ -307,6 +587,72 @@ export default function WorshipTeamView({
       return d < academicYear2627Start;
     }).length;
   }, [combinedRoster]);
+
+  // Dynamically compute times sung in the 2026/2027 school year (Sep 1, 2026 - Aug 31, 2027)
+  const songUsageCounts2627 = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!sundays || sundays.length === 0) return counts;
+
+    sundays.forEach(sunday => {
+      const d = parseSheetDate(sunday.date);
+      // Check if on or after Sep 1, 2026
+      if (d >= academicYear2627Start && d <= academicYear2627End) {
+        const setlist = sunday.worshipSetlist || [];
+        setlist.forEach(item => {
+          const titleSl = (item.titleSl || item.title || '').trim().toLowerCase();
+          const titleEn = (item.titleEn || '').trim().toLowerCase();
+          const songId = item.songId || '';
+
+          if (songId) {
+            counts[songId] = (counts[songId] || 0) + 1;
+          }
+          if (titleSl) {
+            counts[`title_${titleSl}`] = (counts[`title_${titleSl}`] || 0) + 1;
+          }
+          if (titleEn) {
+            counts[`titleEn_${titleEn}`] = (counts[`titleEn_${titleEn}`] || 0) + 1;
+          }
+        });
+      }
+    });
+
+    return counts;
+  }, [sundays]);
+
+  // Helper to get times sung for a song in a given school year mode
+  const getSongTimesSung = React.useCallback((song: WorshipSong, yearMode: '2026/2027' | '2025/2026' | 'all') => {
+    const historical2526 = Number(song.timesSung) || 0;
+    const count2627 = songUsageCounts2627[song.id] 
+      || songUsageCounts2627[`title_${song.titleSl.trim().toLowerCase()}`]
+      || (song.titleEn ? songUsageCounts2627[`titleEn_${song.titleEn.trim().toLowerCase()}`] : 0)
+      || 0;
+
+    if (yearMode === '2026/2027') {
+      return count2627;
+    }
+    if (yearMode === '2025/2026') {
+      return historical2526;
+    }
+    return historical2526 + count2627;
+  }, [songUsageCounts2627]);
+
+  const handleSortToggle = (field: 'number' | 'titleSl' | 'titleEn' | 'timesSung') => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection(field === 'timesSung' ? 'desc' : 'asc');
+    }
+  };
+
+  const handleArchiveSortToggle = (field: 'number' | 'titleSl' | 'titleEn' | 'timesSung') => {
+    if (archiveSortField === field) {
+      setArchiveSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setArchiveSortField(field);
+      setArchiveSortDirection(field === 'timesSung' ? 'desc' : 'asc');
+    }
+  };
 
   const handleDeleteSong = (id: string) => {
     if (window.confirm(currentLanguage === 'sl' ? 'Ali res želite odstraniti to pesem iz pesmarice?' : 'Are you sure you want to remove this song from the songbook?')) {
@@ -335,14 +681,64 @@ export default function WorshipTeamView({
     return null;
   };
 
-  // Filtered Songs
+  // Filtered & Sorted Songs for main Songbook
   const filteredSongs = useMemo(() => {
-    return songs.filter(s => 
-      s.titleSl.toLowerCase().includes(songSearch.toLowerCase()) ||
-      s.titleEn.toLowerCase().includes(songSearch.toLowerCase()) ||
-      (s.sasuNumber && s.sasuNumber.toLowerCase().includes(songSearch.toLowerCase()))
-    );
-  }, [songs, songSearch]);
+    const list = songs.filter(s => {
+      const cat = s.category || 'standard';
+      const matchesCategory = songCategoryFilter === 'all' || cat === songCategoryFilter;
+      const q = songSearch.toLowerCase().trim();
+      const matchesSearch = !q ||
+        s.titleSl.toLowerCase().includes(q) ||
+        s.titleEn.toLowerCase().includes(q) ||
+        (s.sasuNumber && s.sasuNumber.toLowerCase().includes(q));
+      return matchesCategory && matchesSearch;
+    });
+
+    list.sort((a, b) => {
+      let comparison = 0;
+      if (sortField === 'number') {
+        comparison = compareSongNumbers(a.number, b.number);
+      } else if (sortField === 'titleSl') {
+        comparison = a.titleSl.localeCompare(b.titleSl, 'sl', { sensitivity: 'base' });
+      } else if (sortField === 'titleEn') {
+        comparison = (a.titleEn || '').localeCompare(b.titleEn || '', 'en', { sensitivity: 'base' });
+      } else if (sortField === 'timesSung') {
+        const timesA = getSongTimesSung(a, songYearMode);
+        const timesB = getSongTimesSung(b, songYearMode);
+        comparison = timesA - timesB;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return list;
+  }, [songs, songSearch, songCategoryFilter, sortField, sortDirection, songYearMode, getSongTimesSung]);
+
+  // 2025/2026 Historical Archive list for the Archive Tab
+  const filteredArchivedHistorical = useMemo(() => {
+    const list = songs.filter(s => {
+      const q = archiveSearch.toLowerCase().trim();
+      return !q ||
+        s.titleSl.toLowerCase().includes(q) ||
+        s.titleEn.toLowerCase().includes(q) ||
+        (s.sasuNumber && s.sasuNumber.toLowerCase().includes(q));
+    });
+
+    list.sort((a, b) => {
+      let comparison = 0;
+      if (archiveSortField === 'number') {
+        comparison = compareSongNumbers(a.number, b.number);
+      } else if (archiveSortField === 'titleSl') {
+        comparison = a.titleSl.localeCompare(b.titleSl, 'sl', { sensitivity: 'base' });
+      } else if (archiveSortField === 'titleEn') {
+        comparison = (a.titleEn || '').localeCompare(b.titleEn || '', 'en', { sensitivity: 'base' });
+      } else if (archiveSortField === 'timesSung') {
+        comparison = (Number(a.timesSung) || 0) - (Number(b.timesSung) || 0);
+      }
+      return archiveSortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return list;
+  }, [songs, archiveSearch, archiveSortField, archiveSortDirection]);
 
   // Filtered SASU Songs
   const filteredSasuSongs = useMemo(() => {
@@ -427,106 +823,89 @@ export default function WorshipTeamView({
         title={currentLanguage === 'sl' ? 'Slavilna Skupina' : 'Worship Team Hub'}
         subtitle={currentLanguage === 'sl' ? 'Celotna evidenca slavilne skupine: razpored po nedeljah, pesmarica KCK s statistiko in vodnik po opremi ter ozvočenju.' : 'Complete worship portal: Sunday schedules, songbook with stats, and stage guidelines.'}
         icon={Music}
-      />
-
-      {/* Sub-Navigation Bar with Scroll Arrows */}
-      <div className="relative flex items-center gap-1.5 border-b border-gray-200 pb-2">
-        <button
-          onClick={() => scrollNav('left')}
-          type="button"
-          className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:text-indigo-600 hover:bg-gray-50 shadow-2xs transition shrink-0 cursor-pointer"
-          title="Pomakni levo"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-
-        <div 
-          ref={navRef}
-          className="flex items-center gap-2 overflow-x-auto custom-scrollbar scroll-smooth py-1 px-1 flex-1 text-xs font-semibold"
-        >
-          <button
-            onClick={() => setActiveSubTab('songs')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition whitespace-nowrap cursor-pointer ${
-              activeSubTab === 'songs' 
-                ? 'bg-indigo-600 text-white shadow-xs font-bold' 
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
-            }`}
+      >
+        {/* Sub-Navigation Line */}
+        <div className="pt-2.5 border-t border-white/15 flex items-center justify-between gap-2 text-xs">
+          <div 
+            ref={navRef}
+            className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar no-scrollbar py-0.5 w-full flex-wrap sm:flex-nowrap"
           >
-            <Music className="w-4 h-4 shrink-0" />
-            <span>{currentLanguage === 'sl' ? 'Pesmarica & Statistika' : 'Songbook & Stats'}</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${activeSubTab === 'songs' ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-              {songs.length}
-            </span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab('songs')}
+              className={`flex items-center gap-1.5 px-3 py-1 sm:px-3.5 rounded-xl transition whitespace-nowrap cursor-pointer shrink-0 border ${
+                activeSubTab === 'songs' 
+                  ? 'bg-white text-indigo-950 font-bold border-white shadow-xs scale-[1.02]' 
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/15 backdrop-blur-xs font-medium'
+              }`}
+            >
+              <Music className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'Pesmarica & Statistika' : 'Songbook & Stats'}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${activeSubTab === 'songs' ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'}`}>
+                {songs.length}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab('sasu')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition whitespace-nowrap cursor-pointer ${
-              activeSubTab === 'sasu' 
-                ? 'bg-amber-600 text-white shadow-xs font-bold' 
-                : 'bg-white text-gray-700 hover:bg-amber-50 border border-gray-200'
-            }`}
-          >
-            <BookOpen className={`w-4 h-4 shrink-0 ${activeSubTab === 'sasu' ? 'text-white' : 'text-amber-600'}`} />
-            <span>{currentLanguage === 'sl' ? 'SASU vse pesmi' : 'SASU All Songs'}</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${activeSubTab === 'sasu' ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-800'}`}>
-              {SASU_ALL_SONGS.length}
-            </span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab('sasu')}
+              className={`flex items-center gap-1.5 px-3 py-1 sm:px-3.5 rounded-xl transition whitespace-nowrap cursor-pointer shrink-0 border ${
+                activeSubTab === 'sasu' 
+                  ? 'bg-amber-400 text-amber-950 font-bold border-amber-300 shadow-xs scale-[1.02]' 
+                  : 'bg-white/10 hover:bg-white/20 text-amber-200 border-white/15 backdrop-blur-xs font-medium'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'SASU vse pesmi' : 'SASU All Songs'}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${activeSubTab === 'sasu' ? 'bg-amber-800 text-white' : 'bg-white/20 text-amber-100'}`}>
+                {SASU_ALL_SONGS.length}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab('roster')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition whitespace-nowrap cursor-pointer ${
-              activeSubTab === 'roster' 
-                ? 'bg-indigo-600 text-white shadow-xs font-bold' 
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
-            }`}
-          >
-            <Calendar className="w-4 h-4 shrink-0" />
-            <span>{currentLanguage === 'sl' ? 'Razpored Nedelj' : 'Sunday Schedule'}</span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${activeSubTab === 'roster' ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
-              {activeRoster.length}
-            </span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab('roster')}
+              className={`flex items-center gap-1.5 px-3 py-1 sm:px-3.5 rounded-xl transition whitespace-nowrap cursor-pointer shrink-0 border ${
+                activeSubTab === 'roster' 
+                  ? 'bg-white text-indigo-950 font-bold border-white shadow-xs scale-[1.02]' 
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/15 backdrop-blur-xs font-medium'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'Razpored Nedelj' : 'Sunday Schedule'}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${activeSubTab === 'roster' ? 'bg-indigo-600 text-white' : 'bg-white/20 text-white'}`}>
+                {activeRoster.length}
+              </span>
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab('sound')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition whitespace-nowrap cursor-pointer ${
-              activeSubTab === 'sound' 
-                ? 'bg-indigo-600 text-white shadow-xs font-bold' 
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
-            }`}
-          >
-            <Sliders className="w-4 h-4 shrink-0" />
-            <span>{currentLanguage === 'sl' ? 'Ozvočenje in Oder' : 'Stage & Sound Guide'}</span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab('sound')}
+              className={`flex items-center gap-1.5 px-3 py-1 sm:px-3.5 rounded-xl transition whitespace-nowrap cursor-pointer shrink-0 border ${
+                activeSubTab === 'sound' 
+                  ? 'bg-white text-indigo-950 font-bold border-white shadow-xs scale-[1.02]' 
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/15 backdrop-blur-xs font-medium'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'Ozvočenje' : 'Sound Guide'}</span>
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab('archive')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition whitespace-nowrap cursor-pointer ${
-              activeSubTab === 'archive' 
-                ? 'bg-indigo-600 text-white shadow-xs font-bold' 
-                : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
-            }`}
-          >
-            <Archive className="w-4 h-4 shrink-0" />
-            <span>{currentLanguage === 'sl' ? 'Arhiv Pesmi' : 'Song Archive'}</span>
-          </button>
+            <button
+              onClick={() => setActiveSubTab('archive')}
+              className={`flex items-center gap-1.5 px-3 py-1 sm:px-3.5 rounded-xl transition whitespace-nowrap cursor-pointer shrink-0 border ${
+                activeSubTab === 'archive' 
+                  ? 'bg-white text-indigo-950 font-bold border-white shadow-xs scale-[1.02]' 
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/15 backdrop-blur-xs font-medium'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5 shrink-0" />
+              <span>{currentLanguage === 'sl' ? 'Arhiv Pesmi' : 'Song Archive'}</span>
+            </button>
+          </div>
         </div>
-
-        <button
-          onClick={() => scrollNav('right')}
-          type="button"
-          className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 hover:text-indigo-600 hover:bg-gray-50 shadow-2xs transition shrink-0 cursor-pointer"
-          title="Pomakni desno"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
+      </HeroHeaderBanner>
 
       {/* ==================== SUB-TAB 1: SONGS & STATS ==================== */}
       {activeSubTab === 'songs' && (
         <div className="space-y-4 animate-fade-in">
+          {/* Top Bar: Search, View Mode, Add Song */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
             {/* Search Input */}
             <div className="relative flex-1">
@@ -545,7 +924,7 @@ export default function WorshipTeamView({
               <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-gray-200 text-xs">
                 <button
                   type="button"
-                  onClick={() => setSongViewMode('table')}
+                  onClick={() => handleSetSongViewMode('table')}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition cursor-pointer font-medium ${
                     songViewMode === 'table' ? 'bg-white text-indigo-700 shadow-2xs font-bold' : 'text-gray-600 hover:text-gray-900'
                   }`}
@@ -555,7 +934,7 @@ export default function WorshipTeamView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSongViewMode('cards')}
+                  onClick={() => handleSetSongViewMode('cards')}
                   className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition cursor-pointer font-medium ${
                     songViewMode === 'cards' ? 'bg-white text-indigo-700 shadow-2xs font-bold' : 'text-gray-600 hover:text-gray-900'
                   }`}
@@ -567,7 +946,7 @@ export default function WorshipTeamView({
 
               {canEdit && (
                 <button
-                  onClick={() => setIsAddSongOpen(true)}
+                  onClick={handleOpenAddSong}
                   type="button"
                   className="flex items-center justify-center gap-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg transition shadow-2xs cursor-pointer"
                 >
@@ -575,6 +954,208 @@ export default function WorshipTeamView({
                   <span>{currentLanguage === 'sl' ? 'Dodaj pesem' : 'Add Song'}</span>
                 </button>
               )}
+            </div>
+          </div>
+
+          {/* Quick Category Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
+            <button
+              type="button"
+              onClick={() => setSongCategoryFilter('all')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer shrink-0 ${
+                songCategoryFilter === 'all'
+                  ? 'bg-slate-900 text-white font-bold shadow-2xs'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
+              }`}
+            >
+              <span>{currentLanguage === 'sl' ? 'Vse pesmi' : 'All Songs'}</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                songCategoryFilter === 'all' ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {songCategoryCounts.all}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSongCategoryFilter('favorite')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer shrink-0 ${
+                songCategoryFilter === 'favorite'
+                  ? 'bg-amber-400 text-amber-950 font-bold border border-amber-500 shadow-2xs ring-2 ring-amber-300'
+                  : 'bg-amber-50/90 text-amber-900 hover:bg-amber-100/80 border border-amber-300/80'
+              }`}
+            >
+              <span>⭐ {currentLanguage === 'sl' ? 'Glavni repertoar' : 'Core Repertoire'}</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-200/90 text-amber-950 font-bold">
+                {songCategoryCounts.favorite}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSongCategoryFilter('great')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer shrink-0 ${
+                songCategoryFilter === 'great'
+                  ? 'bg-yellow-300 text-yellow-950 font-bold border border-yellow-400 shadow-2xs ring-2 ring-yellow-200'
+                  : 'bg-yellow-50/90 text-yellow-900 hover:bg-yellow-100/80 border border-yellow-200'
+              }`}
+            >
+              <span>👍 {currentLanguage === 'sl' ? 'Standardno slavljenje' : 'Standard Worship'}</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-yellow-200/90 text-yellow-950 font-bold">
+                {songCategoryCounts.great}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSongCategoryFilter('kids')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer shrink-0 ${
+                songCategoryFilter === 'kids'
+                  ? 'bg-emerald-500 text-white font-bold border border-emerald-600 shadow-2xs ring-2 ring-emerald-200'
+                  : 'bg-emerald-50/90 text-emerald-900 hover:bg-emerald-100/80 border border-emerald-200'
+              }`}
+            >
+              <span>👶 {currentLanguage === 'sl' ? 'Otroške pesmi' : 'Kids Songs'}</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                songCategoryFilter === 'kids' ? 'bg-emerald-700 text-white' : 'bg-emerald-200/90 text-emerald-950'
+              }`}>
+                {songCategoryCounts.kids}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSongCategoryFilter('christmas')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer shrink-0 ${
+                songCategoryFilter === 'christmas'
+                  ? 'bg-sky-500 text-white font-bold border border-sky-600 shadow-2xs ring-2 ring-sky-200'
+                  : 'bg-sky-50/90 text-sky-900 hover:bg-sky-100/80 border border-sky-200'
+              }`}
+            >
+              <span>🎄 {currentLanguage === 'sl' ? 'Božične & Praznične' : 'Christmas & Seasonal'}</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                songCategoryFilter === 'christmas' ? 'bg-sky-700 text-white' : 'bg-sky-200/90 text-sky-950'
+              }`}>
+                {songCategoryCounts.christmas}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSongCategoryFilter('standard')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium transition cursor-pointer shrink-0 ${
+                songCategoryFilter === 'standard'
+                  ? 'bg-purple-600 text-white font-bold border border-purple-700 shadow-2xs ring-2 ring-purple-300'
+                  : 'bg-purple-50/80 text-purple-900 hover:bg-purple-100/80 border border-purple-200'
+              }`}
+            >
+              <span>✨ {currentLanguage === 'sl' ? 'Nove pesmi' : 'New Songs'}</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                songCategoryFilter === 'standard' ? 'bg-purple-800 text-white' : 'bg-purple-200 text-purple-950'
+              }`}>
+                {songCategoryCounts.standard}
+              </span>
+            </button>
+          </div>
+
+          {/* School Year (Academic Year) & Quick Sort Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-50/90 border border-gray-200/80 p-2.5 rounded-xl text-xs">
+            {/* School Year Mode Selector */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-mono font-bold uppercase text-gray-500 flex items-center gap-1 shrink-0 px-1">
+                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                <span>{currentLanguage === 'sl' ? 'Šolsko leto (izvedbe):' : 'School Year (Times Sung):'}</span>
+              </span>
+              <div className="inline-flex p-0.5 bg-white border border-gray-200 rounded-lg shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setSongYearMode('2026/2027')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    songYearMode === '2026/2027'
+                      ? 'bg-indigo-600 text-white shadow-2xs font-bold'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  title={currentLanguage === 'sl' ? 'Tekoče šolsko leto 2026/27 (začne z 0 v septembru)' : 'Current 2026/27 School Year (resets to 0 in September)'}
+                >
+                  <span>2026/27</span>
+                  <span className={`text-[9px] px-1 py-0.2 rounded-full font-mono ${
+                    songYearMode === '2026/2027' ? 'bg-indigo-800 text-white' : 'bg-indigo-50 text-indigo-700'
+                  }`}>
+                    {currentLanguage === 'sl' ? 'Tekoče' : 'Current'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSongYearMode('2025/2026')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    songYearMode === '2025/2026'
+                      ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  title={currentLanguage === 'sl' ? 'Prejšnje šolsko leto 2025/26 (arhivirane izvedbe)' : 'Previous 2025/26 School Year (archived counts)'}
+                >
+                  <span>2025/26</span>
+                  <span className={`text-[9px] px-1 py-0.2 rounded-full font-mono ${
+                    songYearMode === '2025/2026' ? 'bg-amber-800 text-white' : 'bg-amber-50 text-amber-800'
+                  }`}>
+                    {currentLanguage === 'sl' ? 'Arhiv' : 'Archive'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSongYearMode('all')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    songYearMode === 'all'
+                      ? 'bg-slate-800 text-white shadow-2xs font-bold'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                  title={currentLanguage === 'sl' ? 'Vsa leta skupaj' : 'All time combined'}
+                >
+                  <span>{currentLanguage === 'sl' ? 'Vse skupaj' : 'All time'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Sort Dropdown - Bilingual */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] font-mono font-bold uppercase text-gray-500 flex items-center gap-1">
+                <ArrowUpDown className="w-3.5 h-3.5 text-indigo-600" />
+                <span>{currentLanguage === 'sl' ? 'Razvrsti:' : 'Sort:'}</span>
+              </span>
+              <select
+                value={`${sortField}_${sortDirection}`}
+                onChange={(e) => {
+                  const [f, d] = e.target.value.split('_') as ['number' | 'titleSl' | 'titleEn' | 'timesSung', 'asc' | 'desc'];
+                  setSortField(f);
+                  setSortDirection(d);
+                }}
+                className="text-xs px-2.5 py-1 bg-white border border-gray-300 rounded-lg text-gray-800 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+              >
+                <option value="number_asc">
+                  {currentLanguage === 'sl' ? '# Po kodi / številki (W-1 → W-99)' : '# By Code / Number (W-1 → W-99)'}
+                </option>
+                <option value="number_desc">
+                  {currentLanguage === 'sl' ? '# Po kodi padajoče' : '# By Code Descending'}
+                </option>
+                <option value="titleSl_asc">
+                  {currentLanguage === 'sl' ? '🔤 Slovenski naslov (A → Z)' : '🔤 Slovenian Title (A → Z)'}
+                </option>
+                <option value="titleSl_desc">
+                  {currentLanguage === 'sl' ? '🔤 Slovenski naslov (Z → A)' : '🔤 Slovenian Title (Z → A)'}
+                </option>
+                <option value="titleEn_asc">
+                  {currentLanguage === 'sl' ? '🔤 Originalni naslov (A → Z)' : '🔤 Original Title (A → Z)'}
+                </option>
+                <option value="titleEn_desc">
+                  {currentLanguage === 'sl' ? '🔤 Originalni naslov (Z → A)' : '🔤 Original Title (Z → A)'}
+                </option>
+                <option value="timesSung_desc">
+                  {currentLanguage === 'sl' ? '🔥 Največkrat izvedene (najprej)' : '🔥 Most Sung First'}
+                </option>
+                <option value="timesSung_asc">
+                  {currentLanguage === 'sl' ? '❄️ Najmanjkrat izvedene (najprej)' : '❄️ Least Sung First'}
+                </option>
+              </select>
             </div>
           </div>
 
@@ -586,8 +1167,21 @@ export default function WorshipTeamView({
                 <span>{currentLanguage === 'sl' ? 'Nova Pesem v Pesmarici' : 'Add New Worship Song'}</span>
               </h3>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                 <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                    {currentLanguage === 'sl' ? 'Koda / Številka *' : 'Code / Song # *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newSongNumber}
+                    onChange={(e) => setNewSongNumber(e.target.value)}
+                    placeholder="e.g. W-129, K-32"
+                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="sm:col-span-2">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
                     {currentLanguage === 'sl' ? 'Slovenski naslov *' : 'Slovenian Title *'}
                   </label>
@@ -597,8 +1191,27 @@ export default function WorshipTeamView({
                     value={newSongTitleSl}
                     onChange={(e) => setNewSongTitleSl(e.target.value)}
                     placeholder="Npr. ČUDOVITO IME"
-                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                    {currentLanguage === 'sl' ? 'Kategorija pesmi' : 'Song Category'}
+                  </label>
+                  <select
+                    value={newSongCategory}
+                    onChange={(e) => handleCategoryChangeInAdd(e.target.value as any)}
+                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                  >
+                    <option value="favorite">⭐ {currentLanguage === 'sl' ? 'Glavni repertoar (W-)' : 'Core Repertoire (W-)'}</option>
+                    <option value="great">👍 {currentLanguage === 'sl' ? 'Standardno slavljenje (W-)' : 'Standard Worship (W-)'}</option>
+                    <option value="kids">👶 {currentLanguage === 'sl' ? 'Otroška pesem (K-)' : 'Kids Song (K-)'}</option>
+                    <option value="christmas">🎄 {currentLanguage === 'sl' ? 'Božična / Praznična (B-)' : 'Christmas & Holiday (B-)'}</option>
+                    <option value="standard">✨ {currentLanguage === 'sl' ? 'Nove pesmi (W-)' : 'New Songs (W-)'}</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
@@ -653,8 +1266,8 @@ export default function WorshipTeamView({
                   <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                   <span className="truncate">
                     {currentLanguage === 'sl' 
-                      ? '💡 Vodoravni pomik tabele za vse povezave:'
-                      : '💡 Table horizontal scroll for links & details:'}
+                      ? '💡 Klikni na glavo stolpca za razvrščanje ali pomakni vodoravno za povezave:'
+                      : '💡 Click column header to sort or scroll horizontally for links:'}
                   </span>
                 </span>
 
@@ -696,17 +1309,63 @@ export default function WorshipTeamView({
                 onMouseMove={(e) => handleMouseMove(e, songsTableRef)}
               >
                 <table className="w-full text-left text-xs border-collapse min-w-[760px]">
-                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
-                    <tr className="bg-slate-100 text-gray-600 font-mono text-[10px] uppercase tracking-wider border-b border-gray-200 select-none">
-                      <th className="py-2.5 px-3 w-12 text-center shrink-0">#</th>
-                      <th className="py-2.5 px-3 min-w-[200px]">{currentLanguage === 'sl' ? 'Naslov pesmi & akordi' : 'Song Title & Chords'}</th>
-                      <th className="py-2.5 px-3 min-w-[180px]">{currentLanguage === 'sl' ? 'Originalni naslov' : 'Original Title'}</th>
-                      <th className="py-2.5 px-3 text-center min-w-[90px]">{currentLanguage === 'sl' ? 'Izvedbe' : 'Times Sung'}</th>
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs select-none">
+                    <tr className="bg-slate-100 text-gray-600 font-mono text-[10px] uppercase tracking-wider border-b border-gray-200">
+                      <th 
+                        onClick={() => handleSortToggle('number')}
+                        className="py-2.5 px-3 w-16 text-center shrink-0 cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za razvrščanje po kodi pesmi' : 'Click to sort by song code'}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>#</span>
+                          {sortField === 'number' ? (
+                            <span className="text-indigo-600 font-bold">{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                          ) : (
+                            <span className="text-gray-400 opacity-40">↕</span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleSortToggle('titleSl')}
+                        className="py-2.5 px-3 min-w-[220px] cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za abecedno razvrščanje (slovenski naslov)' : 'Click to sort alphabetically (Slovenian title)'}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>{currentLanguage === 'sl' ? 'Naslov pesmi & akordi' : 'Song Title & Chords'}</span>
+                          <span className={`text-[10px] font-bold ${sortField === 'titleSl' ? 'text-indigo-600' : 'text-gray-400 opacity-40'}`}>
+                            {sortField === 'titleSl' ? (sortDirection === 'asc' ? '▲ A-Z' : '▼ Z-A') : '⇅'}
+                          </span>
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleSortToggle('titleEn')}
+                        className="py-2.5 px-3 min-w-[180px] cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za abecedno razvrščanje (originalni naslov)' : 'Click to sort alphabetically (Original title)'}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>{currentLanguage === 'sl' ? 'Originalni naslov' : 'Original Title'}</span>
+                          <span className={`text-[10px] font-bold ${sortField === 'titleEn' ? 'text-indigo-600' : 'text-gray-400 opacity-40'}`}>
+                            {sortField === 'titleEn' ? (sortDirection === 'asc' ? '▲ A-Z' : '▼ Z-A') : '⇅'}
+                          </span>
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleSortToggle('timesSung')}
+                        className="py-2.5 px-3 text-center min-w-[110px] cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za razvrščanje po številu izvedb (največ / najmanj)' : 'Click to sort by times sung (most / least)'}
+                      >
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>{currentLanguage === 'sl' ? 'Izvedbe' : 'Times Sung'}</span>
+                          <span className={`text-[10px] font-bold ${sortField === 'timesSung' ? 'text-indigo-600' : 'text-gray-400 opacity-40'}`}>
+                            {sortField === 'timesSung' ? (sortDirection === 'desc' ? '▼ Največ' : '▲ Najmanj') : '⇅'}
+                          </span>
+                        </div>
+                      </th>
                       <th className="py-2.5 px-3 text-right min-w-[220px]">{currentLanguage === 'sl' ? 'Povezave' : 'Media Links'}</th>
-                      {canEdit && <th className="py-2.5 px-3 w-10 text-center shrink-0"></th>}
+                      {canEdit && <th className="py-2.5 px-3 w-14 text-center shrink-0"></th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-150 text-gray-800">
+                  <tbody className="divide-y divide-gray-200/70 text-gray-800">
                     {filteredSongs.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="text-center py-8 text-xs text-gray-400 font-mono">
@@ -714,100 +1373,141 @@ export default function WorshipTeamView({
                         </td>
                       </tr>
                     ) : (
-                      filteredSongs.map((song, i) => (
-                        <tr key={song.id} className="hover:bg-slate-50/80 transition">
-                          <td className="py-2.5 px-3 text-center font-mono text-gray-400 text-[11px]">
-                            {song.number || i + 1}
-                          </td>
-                          <td className="py-2.5 px-3 font-semibold text-slate-900">
-                            <div className="flex items-center gap-1.5">
-                              <span>{song.titleSl}</span>
-                              {song.isNew && (
-                                <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">
-                                  NEW
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3 text-gray-500 italic">
-                            {song.titleEn || '-'}
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                              song.timesSung > 5 
-                                ? 'bg-indigo-100 text-indigo-800' 
-                                : song.timesSung > 0 
-                                  ? 'bg-slate-100 text-slate-700' 
-                                  : 'bg-gray-50 text-gray-400'
-                            }`}>
-                              {song.timesSung}×
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {song.sasuNumber && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSasuSearch(song.titleSl || song.titleEn);
-                                    setActiveSubTab('sasu');
-                                  }}
-                                  className="inline-flex items-center gap-1 text-[11px] text-amber-800 hover:text-amber-900 font-bold bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md border border-amber-200 shadow-2xs transition cursor-pointer"
-                                  title={`Prikaži v zbirki SASU vse pesmi (#${song.sasuNumber})`}
-                                >
-                                  <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                  <span>SASU #{song.sasuNumber}</span>
-                                </button>
-                              )}
-                              {(() => {
-                                const docUrl = getSongDocUrl(song);
-                                if (docUrl) {
-                                  return (
-                                    <a
-                                      href={docUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:text-blue-800 font-medium hover:underline bg-blue-50 px-2 py-1 rounded-md border border-blue-100"
-                                      title="Odpri Google Doc pesmi (besedilo / akordi)"
-                                    >
-                                      <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-                                      <span>Google Doc</span>
-                                    </a>
-                                  );
-                                }
-                                return null;
-                              })()}
-                              {song.youtubeUrl && (
-                                <a
-                                  href={song.youtubeUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-medium hover:underline bg-red-50 px-2 py-1 rounded-md border border-red-100"
-                                  title="YouTube Video"
-                                >
-                                  <Youtube className="w-3.5 h-3.5 shrink-0" />
-                                  <span>YouTube</span>
-                                </a>
-                              )}
-                              {!song.youtubeUrl && !getSongDocUrl(song) && (
-                                <span className="text-[10px] text-gray-300 font-mono">-</span>
-                              )}
-                            </div>
-                          </td>
-                          {canEdit && (
+                      filteredSongs.map((song, i) => {
+                        const badge = getCategoryBadge(song.category, currentLanguage);
+                        const timesCount = getSongTimesSung(song, songYearMode);
+                        return (
+                          <tr key={song.id} className={`${badge.rowClass} transition border-b border-gray-200/50`}>
                             <td className="py-2.5 px-3 text-center">
-                              <button
-                                onClick={() => handleDeleteSong(song.id)}
-                                type="button"
-                                className="text-gray-300 hover:text-rose-600 transition p-1 cursor-pointer"
-                                title="Delete song"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] ${badge.numBadgeClass}`}>
+                                #{song.number}
+                              </span>
                             </td>
-                          )}
-                        </tr>
-                      ))
+                            <td className="py-2.5 px-3 font-semibold">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-slate-900">{song.titleSl}</span>
+                                {canEdit ? (
+                                  <div className="relative inline-flex items-center">
+                                    <select
+                                      value={song.category || 'standard'}
+                                      onChange={(e) => handleUpdateSongCategory(song.id, e.target.value as WorshipSong['category'])}
+                                      className={`text-[10px] pl-1.5 pr-4 py-0.5 rounded-md font-mono font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none shadow-2xs ${badge.badgeClass}`}
+                                      title={currentLanguage === 'sl' ? 'Klikni za spremembo kategorije pesmi' : 'Click to change song category'}
+                                    >
+                                      <option value="favorite">⭐ {currentLanguage === 'sl' ? 'Glavni repertoar' : 'Core Repertoire'}</option>
+                                      <option value="great">👍 {currentLanguage === 'sl' ? 'Standardno slavljenje' : 'Standard Worship'}</option>
+                                      <option value="kids">👶 {currentLanguage === 'sl' ? 'Otroška pesem' : 'Kids Song'}</option>
+                                      <option value="christmas">🎄 {currentLanguage === 'sl' ? 'Božična / Praznična' : 'Christmas & Seasonal'}</option>
+                                      <option value="standard">✨ {currentLanguage === 'sl' ? 'Nove pesmi' : 'New Songs'}</option>
+                                    </select>
+                                    <span className="absolute right-1 pointer-events-none text-[8px] opacity-70">▾</span>
+                                  </div>
+                                ) : (
+                                  song.category && song.category !== 'standard' && (
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono ${badge.badgeClass}`}>
+                                      {badge.shortLabel}
+                                    </span>
+                                  )
+                                )}
+                                {song.isNew && (
+                                  <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">
+                                    NEW
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-gray-600 italic">
+                              {song.titleEn || '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {(() => {
+                                const sungBadge = getTimesSungBadge(timesCount, currentLanguage);
+                                return (
+                                  <span 
+                                    className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono transition ${sungBadge.className}`}
+                                    title={`${songYearMode === '2026/2027' ? (currentLanguage === 'sl' ? 'Šolsko leto 2026/27 (tekoče)' : '2026/27 (Current)') : songYearMode === '2025/2026' ? (currentLanguage === 'sl' ? 'Šolsko leto 2025/26 (arhivirano)' : '2025/26 (Archive)') : (currentLanguage === 'sl' ? 'Vsa leta' : 'All time')}: ${sungBadge.tierName}`}
+                                  >
+                                    {sungBadge.label}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {song.sasuNumber && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSasuSearch(song.titleSl || song.titleEn);
+                                      setActiveSubTab('sasu');
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[11px] text-amber-800 hover:text-amber-900 font-bold bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md border border-amber-200 shadow-2xs transition cursor-pointer"
+                                    title={`Prikaži v zbirki SASU vse pesmi (#${song.sasuNumber})`}
+                                  >
+                                    <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>SASU #{song.sasuNumber}</span>
+                                  </button>
+                                )}
+                                {(() => {
+                                  const docUrl = getSongDocUrl(song);
+                                  if (docUrl) {
+                                    return (
+                                      <a
+                                        href={docUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:text-blue-800 font-medium hover:underline bg-white px-2 py-1 rounded-md border border-blue-200 shadow-2xs"
+                                        title="Odpri Google Doc pesmi (besedilo / akordi)"
+                                      >
+                                        <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                                        <span>Google Doc</span>
+                                      </a>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                                {song.youtubeUrl && (
+                                  <a
+                                    href={song.youtubeUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-medium hover:underline bg-white px-2 py-1 rounded-md border border-red-200 shadow-2xs"
+                                    title="YouTube Video"
+                                  >
+                                    <Youtube className="w-3.5 h-3.5 shrink-0" />
+                                    <span>YouTube</span>
+                                  </a>
+                                )}
+                                {!song.youtubeUrl && !getSongDocUrl(song) && (
+                                  <span className="text-[10px] text-gray-400 font-mono">-</span>
+                                )}
+                              </div>
+                            </td>
+                            {canEdit && (
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    onClick={() => setEditingSong(song)}
+                                    type="button"
+                                    className="text-gray-400 hover:text-indigo-600 transition p-1 cursor-pointer rounded"
+                                    title={currentLanguage === 'sl' ? 'Uredi pesem' : 'Edit song'}
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSong(song.id)}
+                                    type="button"
+                                    className="text-gray-400 hover:text-rose-600 transition p-1 cursor-pointer rounded"
+                                    title={currentLanguage === 'sl' ? 'Odstrani pesem' : 'Delete song'}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -816,91 +1516,137 @@ export default function WorshipTeamView({
           ) : (
             /* Cards View for Songbook */
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {filteredSongs.map((song, i) => (
-                <div key={song.id} className="bg-white border border-gray-200 rounded-xl p-3.5 shadow-2xs space-y-2.5 hover:border-indigo-200 transition">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
-                        #{song.number || i + 1}
-                      </span>
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900 font-display flex items-center gap-1">
-                          <span>{song.titleSl}</span>
-                          {song.isNew && (
-                            <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold">
-                              NEW
-                            </span>
+              {filteredSongs.map((song, i) => {
+                const badge = getCategoryBadge(song.category, currentLanguage);
+                const timesCount = getSongTimesSung(song, songYearMode);
+                return (
+                  <div key={song.id} className={`${badge.cardClass} ${badge.cardAccent} rounded-xl p-3.5 shadow-2xs space-y-2.5 transition`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded shadow-2xs ${badge.numBadgeClass}`}>
+                          #{song.number}
+                        </span>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 font-display flex items-center gap-1.5 flex-wrap">
+                            <span>{song.titleSl}</span>
+                            {canEdit ? (
+                              <div className="relative inline-flex items-center">
+                                <select
+                                  value={song.category || 'standard'}
+                                  onChange={(e) => handleUpdateSongCategory(song.id, e.target.value as WorshipSong['category'])}
+                                  className={`text-[10px] pl-1.5 pr-4 py-0.5 rounded-md font-mono font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none shadow-2xs ${badge.badgeClass}`}
+                                  title={currentLanguage === 'sl' ? 'Klikni za spremembo kategorije pesmi' : 'Click to change song category'}
+                                >
+                                  <option value="favorite">⭐ {currentLanguage === 'sl' ? 'Glavni repertoar' : 'Core Repertoire'}</option>
+                                  <option value="great">👍 {currentLanguage === 'sl' ? 'Standardno slavljenje' : 'Standard Worship'}</option>
+                                  <option value="kids">👶 {currentLanguage === 'sl' ? 'Otroška pesem' : 'Kids Song'}</option>
+                                  <option value="christmas">🎄 {currentLanguage === 'sl' ? 'Božična / Praznična' : 'Christmas & Seasonal'}</option>
+                                  <option value="standard">✨ {currentLanguage === 'sl' ? 'Nove pesmi' : 'New Songs'}</option>
+                                </select>
+                                <span className="absolute right-1 pointer-events-none text-[8px] opacity-70">▾</span>
+                              </div>
+                            ) : (
+                              song.category && song.category !== 'standard' && (
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono ${badge.badgeClass}`}>
+                                  {badge.shortLabel}
+                                </span>
+                              )
+                            )}
+                            {song.isNew && (
+                              <span className="text-[9px] font-mono bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-bold">
+                                NEW
+                              </span>
+                            )}
+                          </h4>
+                          {song.titleEn && (
+                            <p className="text-[11px] text-gray-600 italic">{song.titleEn}</p>
                           )}
-                        </h4>
-                        {song.titleEn && (
-                          <p className="text-[11px] text-gray-500 italic">{song.titleEn}</p>
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const sungBadge = getTimesSungBadge(timesCount, currentLanguage);
+                        return (
+                          <span 
+                            className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full transition shrink-0 ${sungBadge.className}`}
+                            title={`${songYearMode === '2026/2027' ? (currentLanguage === 'sl' ? 'Šolsko leto 2026/27 (tekoče)' : '2026/27 (Current)') : songYearMode === '2025/2026' ? (currentLanguage === 'sl' ? 'Šolsko leto 2025/26 (arhivirano)' : '2025/26 (Archive)') : (currentLanguage === 'sl' ? 'Vsa leta' : 'All time')}: ${sungBadge.tierName}`}
+                          >
+                            {sungBadge.label}
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-gray-200/60 pt-2 text-xs">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {song.sasuNumber && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSasuSearch(song.titleSl || song.titleEn);
+                              setActiveSubTab('sasu');
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-amber-800 hover:text-amber-900 font-bold bg-white hover:bg-amber-50 px-2 py-1 rounded border border-amber-200 shadow-2xs transition cursor-pointer"
+                          >
+                            <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>SASU #{song.sasuNumber}</span>
+                          </button>
+                        )}
+                        {(() => {
+                          const docUrl = getSongDocUrl(song);
+                          if (docUrl) {
+                            return (
+                              <a
+                                href={docUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:underline font-medium bg-white px-2 py-1 rounded border border-blue-200 shadow-2xs"
+                                title="Odpri Google Doc pesmi (besedilo / akordi)"
+                              >
+                                <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                                <span>Google Doc</span>
+                              </a>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {song.youtubeUrl && (
+                          <a
+                            href={song.youtubeUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] text-red-600 hover:underline font-medium bg-white px-2 py-1 rounded border border-red-200 shadow-2xs"
+                          >
+                            <Youtube className="w-3.5 h-3.5 shrink-0" />
+                            <span>YouTube</span>
+                          </a>
                         )}
                       </div>
-                    </div>
 
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-slate-100 text-slate-800 rounded-full shrink-0">
-                      {song.timesSung}×
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-gray-100 pt-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {song.sasuNumber && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSasuSearch(song.titleSl || song.titleEn);
-                            setActiveSubTab('sasu');
-                          }}
-                          className="inline-flex items-center gap-1 text-[11px] text-amber-800 hover:text-amber-900 font-bold bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded border border-amber-200 transition cursor-pointer"
-                        >
-                          <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <span>SASU #{song.sasuNumber}</span>
-                        </button>
-                      )}
-                      {(() => {
-                        const docUrl = getSongDocUrl(song);
-                        if (docUrl) {
-                          return (
-                            <a
-                              href={docUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:underline font-medium bg-blue-50 px-2 py-1 rounded border border-blue-100"
-                              title="Odpri Google Doc pesmi (besedilo / akordi)"
-                            >
-                              <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-                              <span>Google Doc</span>
-                            </a>
-                          );
-                        }
-                        return null;
-                      })()}
-                      {song.youtubeUrl && (
-                        <a
-                          href={song.youtubeUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] text-red-600 hover:underline font-medium bg-red-50 px-2 py-1 rounded border border-red-100"
-                        >
-                          <Youtube className="w-3.5 h-3.5 shrink-0" />
-                          <span>YouTube</span>
-                        </a>
+                      {canEdit && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setEditingSong(song)}
+                            type="button"
+                            className="text-gray-400 hover:text-indigo-600 p-1 cursor-pointer transition rounded"
+                            title={currentLanguage === 'sl' ? 'Uredi pesem' : 'Edit song'}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSong(song.id)}
+                            type="button"
+                            className="text-gray-400 hover:text-rose-600 p-1 cursor-pointer transition rounded"
+                            title={currentLanguage === 'sl' ? 'Odstrani pesem' : 'Delete song'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                     </div>
-
-                    {canEdit && (
-                      <button
-                        onClick={() => handleDeleteSong(song.id)}
-                        type="button"
-                        className="text-gray-300 hover:text-rose-600 p-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1683,6 +2429,93 @@ export default function WorshipTeamView({
       {/* ==================== SUB-TAB 5: SONG ARCHIVE ==================== */}
       {activeSubTab === 'archive' && (
         <div className="space-y-4 animate-fade-in">
+          {/* Top Archive Mode Switcher & Stats Banner */}
+          <div className="bg-gradient-to-r from-indigo-900 via-indigo-950 to-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Archive className="w-5 h-5 text-indigo-400 shrink-0" />
+                  <h3 className="text-base sm:text-lg font-bold font-display">
+                    {currentLanguage === 'sl' ? 'Arhiv Pesmarice in Izvedb' : 'Songbook & Performance Archive'}
+                  </h3>
+                </div>
+                <p className="text-xs text-indigo-200/90 font-mono">
+                  {currentLanguage === 'sl' 
+                    ? 'Pregled zgodovine izvedb prejšnjih šolskih let ter neaktivnih pesmi' 
+                    : 'History of songs sung in previous school years and inactive songs'}
+                </p>
+              </div>
+
+              {/* Toggle between 2025/26 Historical Stats & Retired Songs */}
+              <div className="inline-flex p-1 bg-white/10 backdrop-blur-md rounded-xl border border-white/15 text-xs font-semibold self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setArchiveTabMode('historical_times')}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                    archiveTabMode === 'historical_times'
+                      ? 'bg-white text-indigo-950 font-bold shadow-xs'
+                      : 'text-indigo-200 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <BarChart3 className="w-3.5 h-3.5 text-amber-500" />
+                  <span>{currentLanguage === 'sl' ? 'Izvedbe 2025/26' : '2025/26 Times Sung'}</span>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                    archiveTabMode === 'historical_times' ? 'bg-indigo-100 text-indigo-950 font-bold' : 'bg-white/15 text-indigo-100'
+                  }`}>
+                    {songs.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setArchiveTabMode('retired_songs')}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                    archiveTabMode === 'retired_songs'
+                      ? 'bg-white text-indigo-950 font-bold shadow-xs'
+                      : 'text-indigo-200 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <span>🚫 {currentLanguage === 'sl' ? 'Upokojene pesmi' : 'Retired Songs'}</span>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                    archiveTabMode === 'retired_songs' ? 'bg-indigo-100 text-indigo-950 font-bold' : 'bg-white/15 text-indigo-100'
+                  }`}>
+                    {archivedSongs.length}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Stats Grid for 2025/26 when in historical mode */}
+            {archiveTabMode === 'historical_times' && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-white/10 text-xs">
+                <div className="bg-white/10 rounded-xl p-2.5 border border-white/10">
+                  <div className="text-[10px] uppercase font-mono text-indigo-300">{currentLanguage === 'sl' ? 'Šolsko leto' : 'School Year'}</div>
+                  <div className="text-sm font-bold text-white font-mono mt-0.5">2025 / 2026</div>
+                </div>
+                <div className="bg-white/10 rounded-xl p-2.5 border border-white/10">
+                  <div className="text-[10px] uppercase font-mono text-indigo-300">{currentLanguage === 'sl' ? 'Skupaj pesmi' : 'Total Songs'}</div>
+                  <div className="text-sm font-bold text-amber-300 font-mono mt-0.5">{songs.length}</div>
+                </div>
+                <div className="bg-white/10 rounded-xl p-2.5 border border-white/10">
+                  <div className="text-[10px] uppercase font-mono text-indigo-300">{currentLanguage === 'sl' ? 'Vse izvedbe 2025/26' : 'Total Plays'}</div>
+                  <div className="text-sm font-bold text-emerald-300 font-mono mt-0.5">
+                    {songs.reduce((sum, s) => sum + (Number(s.timesSung) || 0), 0)}×
+                  </div>
+                </div>
+                <div className="bg-white/10 rounded-xl p-2.5 border border-white/10">
+                  <div className="text-[10px] uppercase font-mono text-indigo-300">{currentLanguage === 'sl' ? 'Največkrat zapeta' : 'Top Sung Song'}</div>
+                  <div className="text-sm font-bold text-white truncate mt-0.5" title="Kralj kraljev (10x)">
+                    {(() => {
+                      const top = [...songs].sort((a, b) => (Number(b.timesSung) || 0) - (Number(a.timesSung) || 0))[0];
+                      return top ? `${top.titleSl} (${top.timesSung}×)` : '-';
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Search Input Bar */}
           <div className="bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
             <div className="relative">
               <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1690,40 +2523,222 @@ export default function WorshipTeamView({
                 type="text"
                 value={archiveSearch}
                 onChange={(e) => setArchiveSearch(e.target.value)}
-                placeholder={currentLanguage === 'sl' ? 'Išči po arhiviranih pesmih...' : 'Search archived songs...'}
+                placeholder={
+                  archiveTabMode === 'historical_times'
+                    ? (currentLanguage === 'sl' ? 'Išči pesem v arhivu 2025/26 (npr. Kralj kraljev, Dober si Oče...)' : 'Search songs in 2025/26 archive...')
+                    : (currentLanguage === 'sl' ? 'Išči po upokojenih pesmih...' : 'Search retired songs...')
+                }
                 className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-2xs">
-            <div className="p-3 bg-slate-50 border-b border-gray-200 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-800 font-mono">
-                🚫 {currentLanguage === 'sl' ? 'Pesmi, ki jih trenutno ne pojemo' : 'Archived / Retired Songs List'}
-              </span>
-              <span className="text-[10px] font-mono text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-200">
-                {filteredArchived.length} {currentLanguage === 'sl' ? 'pesmi' : 'songs'}
-              </span>
-            </div>
-
-            <div className="divide-y divide-gray-150 text-xs">
-              {filteredArchived.map((song, i) => (
-                <div key={song.id} className="p-3 flex items-center justify-between hover:bg-slate-50/70 transition">
-                  <div className="space-y-0.5">
-                    <span className="font-semibold text-slate-900 block">{song.titleSl}</span>
-                    {song.titleEn && (
-                      <span className="text-[11px] text-gray-500 italic block">{song.titleEn}</span>
-                    )}
-                  </div>
-                  {song.note && (
-                    <span className="text-[10px] text-gray-400 font-mono bg-gray-100 px-2 py-0.5 rounded">
-                      {song.note}
-                    </span>
-                  )}
+          {/* View Mode 1: 2025/2026 Historical Performance Table */}
+          {archiveTabMode === 'historical_times' && (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-2xs">
+              <div className="p-3 bg-slate-50 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
+                <span className="text-xs font-bold text-slate-800 font-mono flex items-center gap-1.5">
+                  <History className="w-4 h-4 text-indigo-600" />
+                  <span>{currentLanguage === 'sl' ? 'Arhiv izvedb pesmi za šolsko leto 2025/26' : '2025/26 School Year Performance Archive'}</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-200">
+                    {filteredArchivedHistorical.length} {currentLanguage === 'sl' ? 'pesmi' : 'songs'}
+                  </span>
                 </div>
-              ))}
+              </div>
+
+              <div className="overflow-x-auto custom-scrollbar">
+                <table className="w-full text-left text-xs border-collapse min-w-[720px]">
+                  <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs select-none">
+                    <tr className="bg-slate-100 text-gray-600 font-mono text-[10px] uppercase tracking-wider border-b border-gray-200">
+                      <th 
+                        onClick={() => handleArchiveSortToggle('number')}
+                        className="py-2.5 px-3 w-14 text-center shrink-0 cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za razvrščanje po številki pesmi' : 'Click to sort by song number'}
+                      >
+                        <div className="flex items-center justify-center gap-1">
+                          <span>#</span>
+                          {archiveSortField === 'number' ? (
+                            <span className="text-indigo-600 font-bold">{archiveSortDirection === 'asc' ? '▲' : '▼'}</span>
+                          ) : (
+                            <span className="text-gray-400 opacity-40">↕</span>
+                          )}
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleArchiveSortToggle('titleSl')}
+                        className="py-2.5 px-3 min-w-[220px] cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za abecedno razvrščanje (slovenski naslov)' : 'Click to sort alphabetically (Slovenian title)'}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>{currentLanguage === 'sl' ? 'Naslov pesmi' : 'Song Title'}</span>
+                          <span className={`text-[10px] font-bold ${archiveSortField === 'titleSl' ? 'text-indigo-600' : 'text-gray-400 opacity-40'}`}>
+                            {archiveSortField === 'titleSl' ? (archiveSortDirection === 'asc' ? '▲ A-Z' : '▼ Z-A') : '⇅'}
+                          </span>
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleArchiveSortToggle('titleEn')}
+                        className="py-2.5 px-3 min-w-[180px] cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za abecedno razvrščanje (originalni naslov)' : 'Click to sort alphabetically (Original title)'}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>{currentLanguage === 'sl' ? 'Originalni naslov' : 'Original Title'}</span>
+                          <span className={`text-[10px] font-bold ${archiveSortField === 'titleEn' ? 'text-indigo-600' : 'text-gray-400 opacity-40'}`}>
+                            {archiveSortField === 'titleEn' ? (archiveSortDirection === 'asc' ? '▲ A-Z' : '▼ Z-A') : '⇅'}
+                          </span>
+                        </div>
+                      </th>
+                      <th 
+                        onClick={() => handleArchiveSortToggle('timesSung')}
+                        className="py-2.5 px-3 text-center min-w-[120px] cursor-pointer hover:bg-slate-200/80 transition"
+                        title={currentLanguage === 'sl' ? 'Klikni za razvrščanje po številu izvedb v 2025/26' : 'Click to sort by times sung in 2025/26'}
+                      >
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>{currentLanguage === 'sl' ? 'Izvedbe 2025/26' : '2025/26 Plays'}</span>
+                          <span className={`text-[10px] font-bold ${archiveSortField === 'timesSung' ? 'text-indigo-600' : 'text-gray-400 opacity-40'}`}>
+                            {archiveSortField === 'timesSung' ? (archiveSortDirection === 'desc' ? '▼ Največ' : '▲ Najmanj') : '⇅'}
+                          </span>
+                        </div>
+                      </th>
+                      <th className="py-2.5 px-3 text-right min-w-[200px]">{currentLanguage === 'sl' ? 'Povezave' : 'Links'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200/70 text-gray-800">
+                    {filteredArchivedHistorical.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-8 text-xs text-gray-400 font-mono">
+                          {currentLanguage === 'sl' ? 'Ni najdenih pesmi v arhivu.' : 'No archived songs found.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredArchivedHistorical.map((song, i) => {
+                        const badge = getCategoryBadge(song.category);
+                        const count2526 = Number(song.timesSung) || 0;
+                        return (
+                          <tr key={song.id} className={`${badge.rowClass} transition border-b border-gray-200/50`}>
+                            <td className="py-2.5 px-3 text-center font-mono text-gray-500 font-semibold text-[11px]">
+                              {song.number || i + 1}
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-slate-900">{song.titleSl}</span>
+                                {song.category && song.category !== 'standard' && (
+                                  <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-mono ${badge.badgeClass}`}>
+                                    {badge.shortLabel}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-gray-600 italic">
+                              {song.titleEn || '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {(() => {
+                                const sungBadge = getTimesSungBadge(count2526, currentLanguage);
+                                return (
+                                  <span 
+                                    className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono transition ${sungBadge.className}`}
+                                    title={`2025/26: ${sungBadge.tierName}`}
+                                  >
+                                    {sungBadge.label}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                {song.sasuNumber && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSasuSearch(song.titleSl || song.titleEn);
+                                      setActiveSubTab('sasu');
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[11px] text-amber-800 hover:text-amber-900 font-bold bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-md border border-amber-200 shadow-2xs transition cursor-pointer"
+                                  >
+                                    <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>SASU #{song.sasuNumber}</span>
+                                  </button>
+                                )}
+                                {(() => {
+                                  const docUrl = getSongDocUrl(song);
+                                  if (docUrl) {
+                                    return (
+                                      <a
+                                        href={docUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:text-blue-800 font-medium hover:underline bg-white px-2 py-1 rounded-md border border-blue-200 shadow-2xs"
+                                      >
+                                        <FileText className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                                        <span>Google Doc</span>
+                                      </a>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                                {song.youtubeUrl && (
+                                  <a
+                                    href={song.youtubeUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-medium hover:underline bg-white px-2 py-1 rounded-md border border-red-200 shadow-2xs"
+                                  >
+                                    <Youtube className="w-3.5 h-3.5 shrink-0" />
+                                    <span>YouTube</span>
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* View Mode 2: Retired / Inactive Songs List */}
+          {archiveTabMode === 'retired_songs' && (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-2xs">
+              <div className="p-3 bg-slate-50 border-b border-gray-200 flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 font-mono">
+                  🚫 {currentLanguage === 'sl' ? 'Pesmi, ki jih trenutno ne pojemo' : 'Archived / Retired Songs List'}
+                </span>
+                <span className="text-[10px] font-mono text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-200">
+                  {filteredArchived.length} {currentLanguage === 'sl' ? 'pesmi' : 'songs'}
+                </span>
+              </div>
+
+              <div className="divide-y divide-gray-150 text-xs">
+                {filteredArchived.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-gray-400 font-mono">
+                    {currentLanguage === 'sl' ? 'Ni najdenih upokojenih pesmi.' : 'No retired songs found.'}
+                  </div>
+                ) : (
+                  filteredArchived.map((song, i) => (
+                    <div key={song.id} className="p-3 flex items-center justify-between hover:bg-slate-50/70 transition">
+                      <div className="space-y-0.5">
+                        <span className="font-semibold text-slate-900 block">{song.titleSl}</span>
+                        {song.titleEn && (
+                          <span className="text-[11px] text-gray-500 italic block">{song.titleEn}</span>
+                        )}
+                      </div>
+                      {song.note && (
+                        <span className="text-[10px] text-gray-400 font-mono bg-gray-100 px-2 py-0.5 rounded">
+                          {song.note}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1895,6 +2910,172 @@ export default function WorshipTeamView({
                 {currentLanguage === 'sl' ? 'Shrani spremembe' : 'Save Changes'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Song Modal */}
+      {editingSong && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white border border-gray-200 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                  <Music className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 font-display">
+                    {currentLanguage === 'sl' ? 'Uredi pesem v pesmarici' : 'Edit Worship Song'}
+                  </h3>
+                  <p className="text-xs text-gray-500 font-mono">
+                    #{editingSong.number} • {editingSong.titleSl}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSong(null)}
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditSong} className="space-y-3.5 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                    {currentLanguage === 'sl' ? 'Koda / Številka *' : 'Code / Song # *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSong.number || ''}
+                    onChange={(e) => setEditingSong({ ...editingSong, number: e.target.value })}
+                    placeholder="e.g. W-42, K-05"
+                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                    {currentLanguage === 'sl' ? 'Slovenski naslov *' : 'Slovenian Title *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingSong.titleSl}
+                    onChange={(e) => setEditingSong({ ...editingSong, titleSl: e.target.value })}
+                    placeholder="Npr. ČUDOVITO IME"
+                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                  {currentLanguage === 'sl' ? 'Originalni angleški naslov' : 'Original English Title'}
+                </label>
+                <input
+                  type="text"
+                  value={editingSong.titleEn || ''}
+                  onChange={(e) => setEditingSong({ ...editingSong, titleEn: e.target.value })}
+                  placeholder="e.g. What a Beautiful Name"
+                  className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Category Selector with Color Previews */}
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-700 font-mono">
+                  🏷️ {currentLanguage === 'sl' ? 'Kategorija in barvna oznaka pesmi:' : 'Song Category & Color Tag:'}
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {[
+                    { id: 'favorite', label: currentLanguage === 'sl' ? '⭐ Glavni repertoar' : '⭐ Core Repertoire', desc: currentLanguage === 'sl' ? 'W- koda • Rumena' : 'W- prefix • Core Worship', bg: 'bg-amber-200 text-amber-950 border-amber-300' },
+                    { id: 'great', label: currentLanguage === 'sl' ? '👍 Standardno slavljenje' : '👍 Standard Worship', desc: currentLanguage === 'sl' ? 'W- koda • Svetlo rumena' : 'W- prefix • Standard Worship', bg: 'bg-yellow-100 text-yellow-900 border-yellow-300' },
+                    { id: 'kids', label: currentLanguage === 'sl' ? '👶 Otroška pesem' : '👶 Kids Song', desc: currentLanguage === 'sl' ? 'K- koda • Zelena' : 'K- prefix • Kids & Family', bg: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
+                    { id: 'christmas', label: currentLanguage === 'sl' ? '🎄 Božična / Praznična' : '🎄 Christmas / Seasonal', desc: currentLanguage === 'sl' ? 'B- koda • Modra' : 'B- prefix • Holiday', bg: 'bg-sky-100 text-sky-900 border-sky-300' },
+                    { id: 'standard', label: currentLanguage === 'sl' ? '✨ Nove pesmi' : '✨ New Songs', desc: currentLanguage === 'sl' ? 'W- koda • Vijolična' : 'W- prefix • Purple', bg: 'bg-purple-100 text-purple-900 border-purple-300' },
+                  ].map((cat) => {
+                    const isSelected = (editingSong.category || 'standard') === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setEditingSong({ ...editingSong, category: cat.id as any })}
+                        className={`p-2 rounded-xl border text-left flex items-center justify-between gap-2 transition cursor-pointer ${
+                          isSelected 
+                            ? `${cat.bg} border-2 font-bold ring-2 ring-indigo-400 shadow-2xs` 
+                            : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
+                        }`}
+                      >
+                        <div>
+                          <div className="text-xs font-semibold">{cat.label}</div>
+                          <div className="text-[10px] opacity-75 font-mono">{cat.desc}</div>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-indigo-700 shrink-0 stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                    {currentLanguage === 'sl' ? 'SASU Št. pesmi' : 'SASU Song #'}
+                  </label>
+                  <input
+                    type="text"
+                    value={editingSong.sasuNumber || ''}
+                    onChange={(e) => setEditingSong({ ...editingSong, sasuNumber: e.target.value })}
+                    placeholder="Npr. 123"
+                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                    {currentLanguage === 'sl' ? 'YouTube posnetek URL' : 'YouTube Link URL'}
+                  </label>
+                  <input
+                    type="url"
+                    value={editingSong.youtubeUrl || ''}
+                    onChange={(e) => setEditingSong({ ...editingSong, youtubeUrl: e.target.value })}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 font-mono mb-1">
+                  {currentLanguage === 'sl' ? 'Povezava do Google Doc akordov' : 'Google Doc Chords Link'}
+                </label>
+                <input
+                  type="url"
+                  value={editingSong.docLink || ''}
+                  onChange={(e) => setEditingSong({ ...editingSong, docLink: e.target.value })}
+                  placeholder="https://docs.google.com/document/d/..."
+                  className="w-full text-xs px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-150">
+                <button
+                  type="button"
+                  onClick={() => setEditingSong(null)}
+                  className="px-3.5 py-1.5 text-xs text-gray-600 font-semibold cursor-pointer"
+                >
+                  {currentLanguage === 'sl' ? 'Prekliči' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
+                >
+                  {currentLanguage === 'sl' ? 'Shrani spremembe' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

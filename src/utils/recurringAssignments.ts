@@ -1,6 +1,30 @@
 import { ServiceSunday, MinistryAssignment } from '../types';
 
 /**
+ * Helper to reliably parse date string (e.g. "6. 9. 26", "06. 09. 2026", "2026-09-06") into timestamp
+ */
+export function parseSundayDateTimestamp(dStr: string): number {
+  if (!dStr) return 0;
+  const parts = dStr.split('.').map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 3) {
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    let year = parseInt(parts[2], 10);
+    if (year < 100) year += 2000;
+    if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+      return new Date(year, month, day, 0, 0, 0, 0).getTime();
+    }
+  }
+  if (dStr.includes('-')) {
+    const parts = dStr.split('-').map(p => parseInt(p.trim(), 10));
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      return new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0).getTime();
+    }
+  }
+  return 0;
+}
+
+/**
  * Returns array of date strings for N consecutive Sundays starting from startSundayId
  */
 export function getConsecutiveSundayDates(
@@ -10,24 +34,34 @@ export function getConsecutiveSundayDates(
 ): { id: string; date: string }[] {
   if (!startSundayId || weekCount < 1) return [];
 
-  // Parse date string (e.g. "6. 9. 2026" or "6.9.2026") into timestamp
-  const parseDate = (dStr: string) => {
-    const parts = dStr.split('.').map(p => p.trim()).filter(Boolean);
-    if (parts.length >= 3) {
-      const day = parts[0].padStart(2, '0');
-      const month = parts[1].padStart(2, '0');
-      const year = parts[2];
-      return new Date(`${year}-${month}-${day}`).getTime();
+  // Deduplicate and sort sundays by timestamp
+  const seenDates = new Set<string>();
+  const uniqueSundays: ServiceSunday[] = [];
+  
+  const sortedSundays = [...allSundays].sort((a, b) => parseSundayDateTimestamp(a.date) - parseSundayDateTimestamp(b.date));
+  
+  for (const s of sortedSundays) {
+    const normDate = s.date.trim();
+    if (!seenDates.has(normDate)) {
+      seenDates.add(normDate);
+      uniqueSundays.push(s);
     }
-    return 0;
-  };
+  }
 
-  const sortedSundays = [...allSundays].sort((a, b) => parseDate(a.date) - parseDate(b.date));
-  const startIndex = sortedSundays.findIndex(s => s.id === startSundayId);
+  const startIndex = uniqueSundays.findIndex(s => s.id === startSundayId);
+  if (startIndex === -1) {
+    // If not found by id, try matching by date
+    const startObj = allSundays.find(s => s.id === startSundayId);
+    if (!startObj) return [];
+    const dateIdx = uniqueSundays.findIndex(s => s.date.trim() === startObj.date.trim());
+    if (dateIdx === -1) return [];
+    return uniqueSundays.slice(dateIdx, dateIdx + weekCount).map(s => ({
+      id: s.id,
+      date: s.date
+    }));
+  }
 
-  if (startIndex === -1) return [];
-
-  return sortedSundays.slice(startIndex, startIndex + weekCount).map(s => ({
+  return uniqueSundays.slice(startIndex, startIndex + weekCount).map(s => ({
     id: s.id,
     date: s.date
   }));
@@ -57,27 +91,39 @@ export function batchAssignPersonToConsecutiveSundays({
 }): { sundayDate: string; token: string }[] {
   if (!startSundayId || !ministryId || !personName || weekCount < 1) return [];
 
-  const parseDate = (dStr: string) => {
-    const parts = dStr.split('.').map(p => p.trim()).filter(Boolean);
-    if (parts.length >= 3) {
-      const day = parts[0].padStart(2, '0');
-      const month = parts[1].padStart(2, '0');
-      const year = parts[2];
-      return new Date(`${year}-${month}-${day}`).getTime();
+  // Deduplicate and sort sundays
+  const seenDates = new Set<string>();
+  const uniqueSundays: ServiceSunday[] = [];
+  
+  const sortedSundays = [...allSundays].sort((a, b) => parseSundayDateTimestamp(a.date) - parseSundayDateTimestamp(b.date));
+  
+  for (const s of sortedSundays) {
+    const normDate = s.date.trim();
+    if (!seenDates.has(normDate)) {
+      seenDates.add(normDate);
+      uniqueSundays.push(s);
     }
-    return 0;
-  };
+  }
 
-  const sortedSundays = [...allSundays].sort((a, b) => parseDate(a.date) - parseDate(b.date));
-  const startIndex = sortedSundays.findIndex(s => s.id === startSundayId);
+  let startIndex = uniqueSundays.findIndex(s => s.id === startSundayId);
+  if (startIndex === -1) {
+    const startObj = allSundays.find(s => s.id === startSundayId);
+    if (startObj) {
+      startIndex = uniqueSundays.findIndex(s => s.date.trim() === startObj.date.trim());
+    }
+  }
 
   if (startIndex === -1) return [];
 
-  const targetSundays = sortedSundays.slice(startIndex, startIndex + weekCount);
+  const targetSundays = uniqueSundays.slice(startIndex, startIndex + weekCount);
   const trimmed = personName.trim();
   const assignedItems: { sundayDate: string; token: string }[] = [];
+  const assignedDates = new Set<string>();
 
   targetSundays.forEach((targetSunday) => {
+    const normDate = targetSunday.date.trim();
+    if (assignedDates.has(normDate)) return; // Prevent any duplicate dates in the same batch
+
     const existingAssignments = targetSunday.assignments[ministryId] || [];
     
     // Check if already assigned ignoring casing
@@ -86,6 +132,7 @@ export function batchAssignPersonToConsecutiveSundays({
     }
 
     const token = Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+    assignedDates.add(normDate);
     assignedItems.push({ sundayDate: targetSunday.date, token });
 
     const updatedAssignments = [...existingAssignments, trimmed];

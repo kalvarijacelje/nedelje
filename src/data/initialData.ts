@@ -8,34 +8,37 @@ import { Ministry, ServiceSunday, Person, Translation } from '../types';
 export const INITIAL_MINISTRIES: Ministry[] = [
   { id: 'cistoca', nameSl: 'Čistoča pred nedeljo', nameEn: 'Pre-service Cleaning', category: 'cleaning', color: 'amber', icon: 'Sparkles' },
   { id: 'zgornja_dvorana', nameSl: 'Zgornja dvorana & Kavarna (priprava)', nameEn: 'Upper Hall & Coffee Shop Setup', category: 'cleaning', color: 'amber', icon: 'Home' },
-  { id: 'odklepanje', nameSl: 'Odklepanje stavbe', nameEn: 'Building Unlock', category: 'cleaning', color: 'amber', icon: 'Unlock' },
+  { id: 'odklepanje', nameSl: 'Odklepanje stavbe', nameEn: 'Building Unlock', category: 'cleaning', color: 'amber', icon: 'Key' },
   { id: 'zaklepanje', nameSl: 'Zaklepanje stavbe', nameEn: 'Building Lock', category: 'cleaning', color: 'amber', icon: 'Lock' },
   { id: 'koncni_pregled', nameSl: 'Končni pregled', nameEn: 'Final Inspection', category: 'cleaning', color: 'amber', icon: 'ClipboardCheck' },
 
   { id: 'gostoljubje', nameSl: 'Gostoljubje (bar)', nameEn: 'Hospitality Bar', category: 'hospitality', color: 'rose', icon: 'CupSoda' },
   { id: 'kava', nameSl: 'Kava (filter)', nameEn: 'Filter Coffee', category: 'hospitality', color: 'rose', icon: 'Coffee' },
   { id: 'hrana', nameSl: 'Hrana (prigrizki)', nameEn: 'Food / Snacks', category: 'hospitality', color: 'rose', icon: 'Utensils' },
-  { id: 'barista', nameSl: 'Barista (espresso)', nameEn: 'Barista Espresso', category: 'hospitality', color: 'rose', icon: 'Coffee' },
+  { id: 'barista', nameSl: 'Barista (espresso)', nameEn: 'Barista Espresso', category: 'hospitality', color: 'rose', icon: 'Flame' },
   { id: 'sprejem_reditelji', nameSl: 'Sprejem & Rediteljska služba (Ushers)', nameEn: 'Welcome & Ushering Team', category: 'hospitality', color: 'rose', icon: 'HeartHandshake' },
 
+  { id: 'uvodna_molitev_darovi', nameSl: 'Uvodna molitev in darovi', nameEn: 'Beginning Prayer and Offering', category: 'sermon_prayer', color: 'sky', icon: 'HandHelping' },
   { id: 'ucenje', nameSl: 'Učenje/pridiga', nameEn: 'Sermon / Teaching', category: 'sermon_prayer', color: 'sky', icon: 'BookOpen' },
   { id: 'obvestila', nameSl: 'Obvestila & končna molitev', nameEn: 'Announcements & Prayer', category: 'sermon_prayer', color: 'sky', icon: 'Megaphone' },
   { id: 'pricevanja', nameSl: 'Pričevanja članov', nameEn: 'Member Testimonies', category: 'sermon_prayer', color: 'sky', icon: 'MessageSquare' },
-  { id: 'molitev_po', nameSl: 'Molitev po bogoslužju', nameEn: 'Post-service Prayer', category: 'sermon_prayer', color: 'sky', icon: 'Heart' },
+  { id: 'prevajanje', nameSl: 'Prevajanje', nameEn: 'Translation', category: 'sermon_prayer', color: 'sky', icon: 'Globe' },
+  { id: 'gospodova_vecerja', nameSl: 'Gospodova večerja', nameEn: "Lord's Supper", category: 'sermon_prayer', color: 'sky', icon: 'Wine' },
 
-  { id: 'slavilna_ekipa', nameSl: 'Slavilna ekipa', nameEn: 'Worship Team', category: 'av_tech', color: 'purple', icon: 'Music' },
-  { id: 'uvod_slavljenje', nameSl: 'Uvod v slavljenje', nameEn: 'Worship Intro', category: 'av_tech', color: 'purple', icon: 'Music' },
-  { id: 'postavitev_av', nameSl: 'Postavitev A/V in kamere', nameEn: 'A/V & Camera Setup', category: 'av_tech', color: 'purple', icon: 'Camera' },
-  { id: 'zvok', nameSl: 'Zvok (mikser)', nameEn: 'Sound Engineering', category: 'av_tech', color: 'purple', icon: 'Sliders' },
-  { id: 'besedila', nameSl: 'Besedila (projekcija)', nameEn: 'Lyrics Slide Projection', category: 'av_tech', color: 'purple', icon: 'Monitor' },
-  { id: 'editiranje', nameSl: 'Editiranje učenj', nameEn: 'Video/Audio Editing', category: 'av_tech', color: 'purple', icon: 'Film' },
+  { id: 'slavilna_ekipa', nameSl: 'Slavilna ekipa', nameEn: 'Worship Team', category: 'worship', color: 'purple', icon: 'Music' },
+  { id: 'uvod_slavljenje', nameSl: 'Uvod v slavljenje', nameEn: 'Worship Intro', category: 'worship', color: 'purple', icon: 'Mic' },
+  { id: 'zvok', nameSl: 'Zvok (mikser)', nameEn: 'Sound Engineering', category: 'worship', color: 'purple', icon: 'Sliders' },
+
+  { id: 'postavitev_av', nameSl: 'Postavitev A/V in kamere', nameEn: 'A/V & Camera Setup', category: 'audio_video', color: 'cyan', icon: 'Camera' },
+  { id: 'besedila', nameSl: 'Besedila (projekcija)', nameEn: 'Lyrics Slide Projection', category: 'audio_video', color: 'cyan', icon: 'Monitor' },
+  { id: 'youtube_prenos', nameSl: 'YouTube prenos v živo', nameEn: 'YouTube Livestream', category: 'audio_video', color: 'cyan', icon: 'Video' },
+  { id: 'editiranje', nameSl: 'Editiranje učenj', nameEn: 'Video/Audio Editing', category: 'audio_video', color: 'cyan', icon: 'Film' },
 
   { id: 'nedeljska_sola_mlajsa', nameSl: 'Nedeljska šola - Mlajša skupina (3–9 let)', nameEn: 'Sunday School - Younger Group (3–9 yrs)', category: 'kids', color: 'emerald', icon: 'Smile' },
   { id: 'nedeljska_sola_starejsa', nameSl: 'Nedeljska šola - Starejša skupina (10–15+ let)', nameEn: 'Sunday School - Older Group (10–15+ yrs)', category: 'kids', color: 'emerald', icon: 'GraduationCap' },
 
-  { id: 'prevajanje', nameSl: 'Prevajanje', nameEn: 'Translation', category: 'other', color: 'indigo', icon: 'Globe' },
-  { id: 'finance', nameSl: 'Finance (štetje)', nameEn: 'Finance / Counting', category: 'other', color: 'emerald', icon: 'Coins' },
-  { id: 'gospodova_vecerja', nameSl: 'Gospodova večerja', nameEn: "Lord's Supper", category: 'other', color: 'rose', icon: 'Wine' }
+  { id: 'molitev_po', nameSl: 'Molitev po bogoslužju', nameEn: 'Post-service Prayer', category: 'post_service', color: 'indigo', icon: 'HeartHandshake' },
+  { id: 'finance', nameSl: 'Finance (štetje)', nameEn: 'Finance / Counting', category: 'post_service', color: 'indigo', icon: 'Coins' }
 ];
 
 export const INITIAL_PEOPLE: Person[] = [
@@ -46,6 +49,7 @@ export const INITIAL_PEOPLE: Person[] = [
     phone: "041 850 651",
     role: "Admin",
     preferredMinistries: [
+      "uvodna_molitev_darovi",
       "ucenje",
       "obvestila",
       "prevajanje",
@@ -61,10 +65,12 @@ export const INITIAL_PEOPLE: Person[] = [
       "molitev_po",
       "postavitev_av",
       "besedila",
+      "youtube_prenos",
       "editiranje",
       "finance"
     ],
     ledMinistries: [
+      "uvodna_molitev_darovi",
       "ucenje",
       "obvestila",
       "odklepanje",
@@ -76,6 +82,7 @@ export const INITIAL_PEOPLE: Person[] = [
       "zgornja_dvorana",
       "postavitev_av",
       "besedila",
+      "youtube_prenos",
       "editiranje",
       "finance"
     ],
