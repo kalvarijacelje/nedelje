@@ -312,17 +312,6 @@ export async function confirmAssignmentByToken(
 // 2. PEOPLE & PROFILES SERVICE (public.profiles)
 // ==============================================================================
 
-const OBSOLETE_DUMMY_IDS = new Set([
-  'p-erik', 'p-daniel', 'p-lajlar', 'p-ravnak', 'p-matej', 'p-pratneker', 
-  'p-cizic', 'p-vuleta', 'p-sanja_m', 'p-sarkan', 'p-georgiev', 'p-tonja', 
-  'p-barbara', 'p-kreiner', 'p-breznikar', 'p-music', 'p-stefancic',
-  'p-ales', 'p-stella', 'p-damijan', 'p-dejan', 'p-urh', 'p-whitney',
-  'p-andrea', 'p-doroteja', 'p-ninac', 'p-franci', 'p-nastja', 'p-katja',
-  'p-bojan', 'p-kenzley', 'p-vesna', 'p-pia', 'p-denis', 'p-huntley',
-  'p-jure', 'p-darko', 'p-janez', 'p-zoja', 'p-lorens', 'p-mateja',
-  'p-tina', 'p-karla', 'p-barbi', 'p-luka'
-]);
-
 export async function fetchPeopleFromSupabase(): Promise<Person[]> {
   if (!IS_SUPABASE_CONFIGURED) return [];
   try {
@@ -337,104 +326,26 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
     }
 
     const rows = data || [];
-    const canonicalMap = new Map<string, any>();
-    const orphanRows: any[] = [];
-    const obsoleteIdsToDelete: string[] = [];
-
-    // Filter out obsolete dummy profiles and separate canonical cards from UUID rows
-    rows.forEach((row: any) => {
-      const rowId = (row.id || '').trim();
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rowId);
-      
-      // Check if this row is an obsolete dummy/mock profile
-      const isObsoleteMock = OBSOLETE_DUMMY_IDS.has(rowId) && !row.household_id && !row.first_name;
-      const isSurnameDummy = !row.household_id && !row.first_name && (
-        ['Čižič', 'Lajlar', 'Pratneker', 'Ravnak', 'Vuleta', 'Šarkan', 'Georgiev', 'Kreiner', 'Breznikar', 'Mušič', 'Štefančič'].includes((row.name || '').trim())
-      );
-
-      if (isObsoleteMock || isSurnameDummy) {
-        obsoleteIdsToDelete.push(rowId);
-        return;
-      }
-
-      if (!isUUID) {
-        canonicalMap.set(rowId, row);
-      } else {
-        orphanRows.push(row);
-      }
-    });
-
-    // Delete identified obsolete dummy profiles from database asynchronously
-    if (obsoleteIdsToDelete.length > 0) {
-      supabase.from('profiles').delete().in('id', obsoleteIdsToDelete).then(() => {
-        console.log(`[Supabase] Cleaned up ${obsoleteIdsToDelete.length} obsolete dummy profiles from database:`, obsoleteIdsToDelete);
-      }).catch(console.warn);
-    }
-
-    // Merge orphan UUID rows into canonical cards by email or name
-    orphanRows.forEach((orphan: any) => {
-      const orphanEmail = (orphan.email || '').toLowerCase().trim();
-      const orphanName = (orphan.full_name || orphan.name || '').toLowerCase().trim();
-
-      let matchedCanonicalId: string | null = null;
-      for (const [id, canonical] of canonicalMap.entries()) {
-        const canEmail = (canonical.email || '').toLowerCase().trim();
-        const canName = (canonical.full_name || canonical.name || '').toLowerCase().trim();
-        if ((orphanEmail && canEmail === orphanEmail) || (orphanName && (canName === orphanName || canName.includes(orphanName) || orphanName.includes(canName)))) {
-          matchedCanonicalId = id;
-          break;
-        }
-      }
-
-      if (matchedCanonicalId) {
-        const target = canonicalMap.get(matchedCanonicalId);
-        target.auth_user_id = orphan.auth_user_id || orphan.id;
-        if (!target.email && orphan.email) target.email = orphan.email;
-        if (!target.avatar_url && orphan.avatar_url) target.avatar_url = orphan.avatar_url;
-        canonicalMap.set(matchedCanonicalId, target);
-
-        // Async cleanup orphan row in database and link canonical
-        supabase.from('profiles').update({
-          auth_user_id: target.auth_user_id,
-          email: target.email,
-          avatar_url: target.avatar_url
-        }).eq('id', matchedCanonicalId).then(() => {
-          supabase.from('profiles').delete().eq('id', orphan.id).catch(console.warn);
-        }).catch(console.warn);
-      } else {
-        // If not matched to any existing card, keep it
-        canonicalMap.set(orphan.id, orphan);
-      }
-    });
-
-    return Array.from(canonicalMap.values()).map((row: any) => ({
-      id: row.id,
-      name: row.full_name || row.name || '',
-      email: row.email || undefined,
-      phone: row.phone || undefined,
-      avatarUrl: row.avatar_url || undefined,
-      role: (row.role === 'superadmin' || row.role === 'admin' || row.role === 'Admin') 
-        ? 'Admin' 
-        : (row.role === 'leader' || row.role === 'Leader') 
-        ? 'Leader' 
-        : (row.role === 'servant' || row.role === 'Servant' || row.role === 'volunteer' || row.role === 'Volunteer') 
-        ? 'Servant' 
-        : (row.role === 'visitor' || row.role === 'Visitor')
-        ? 'Visitor'
-        : (row.role === 'minor' || row.role === 'Minor')
-        ? 'Minor'
-        : 'Viewer',
-      memberType: row.member_type || (row.role === 'Minor' ? 'minor' : (row.role === 'Visitor' ? 'visitor' : (row.role === 'Viewer' || row.role === 'member' ? 'member' : 'adult'))),
-      birthDate: row.birth_date || undefined,
-      isVisitor: row.role === 'Visitor' || row.member_type === 'visitor',
-      preferredMinistries: row.preferred_ministries || [],
-      ledMinistries: row.led_ministries || row.ledMinistries || [],
-      familyMembers: row.family_members || [],
-      isExemptFromBurnout: Boolean(row.is_exempt_from_burnout),
-      isPastorOrStaff: Boolean(row.is_exempt_from_burnout),
-      isArchived: Boolean(row.is_archived || row.active === false),
-      auth_user_id: row.auth_user_id || undefined
-    }));
+    return rows
+      .filter((row: any) => row && (row.full_name || row.name))
+      .map((row: any) => ({
+        id: row.id,
+        name: (row.full_name || row.name || '').trim(),
+        email: row.email ? row.email.trim() : undefined,
+        phone: row.phone ? row.phone.trim() : undefined,
+        avatarUrl: row.avatar_url || undefined,
+        role: normalizeUserRole(row.role),
+        memberType: row.member_type || (row.role === 'minor' ? 'minor' : (row.role === 'visitor' ? 'visitor' : (row.role === 'member' || row.role === 'viewer' ? 'member' : 'adult'))),
+        birthDate: row.birth_date || undefined,
+        isVisitor: row.role === 'visitor' || row.member_type === 'visitor',
+        preferredMinistries: Array.isArray(row.preferred_ministries) ? row.preferred_ministries : [],
+        ledMinistries: Array.isArray(row.led_ministries) ? row.led_ministries : (Array.isArray(row.ledMinistries) ? row.ledMinistries : []),
+        familyMembers: Array.isArray(row.family_members) ? row.family_members : [],
+        isExemptFromBurnout: Boolean(row.is_exempt_from_burnout),
+        isPastorOrStaff: Boolean(row.is_exempt_from_burnout),
+        isArchived: Boolean(row.is_archived || row.active === false),
+        auth_user_id: row.auth_user_id || undefined
+      }));
   } catch (err) {
     console.warn('[Supabase] Error in fetchPeopleFromSupabase:', err);
     return [];

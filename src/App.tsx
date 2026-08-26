@@ -147,17 +147,16 @@ const ensurePersonId = (p: Person): Person => {
 };
 
 const safeParsePeople = (raw: string | null): Person[] => {
-  if (!raw) return INITIAL_PEOPLE.map(ensurePersonId);
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      const valid = parsed
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed
         .filter(p => p && typeof p === 'object' && typeof p.name === 'string')
         .map(ensurePersonId);
-      return valid.length > 0 ? valid : INITIAL_PEOPLE.map(ensurePersonId);
     }
   } catch (e) { /* ignore */ }
-  return INITIAL_PEOPLE.map(ensurePersonId);
+  return [];
 };
 
 const safeParseSundays = (raw: string | null): ServiceSunday[] => {
@@ -294,62 +293,22 @@ const OBSOLETE_DUMMY_PEOPLE_IDS = new Set([
 ]);
 
 const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] => {
-  const deletedKeys = new Set(getDeletedPeopleKeys().map(k => k.toLowerCase().trim()));
+  // If remote records from Supabase are provided, they are the EXCLUSIVE source of truth
+  if (fetched && fetched.length > 0) {
+    return deduplicatePeopleList(fetched.map(ensurePersonId));
+  }
 
-  const isInvalidOrDeleted = (p: Person): boolean => {
-    if (!p || !p.id) return true;
-    const idKey = p.id.toLowerCase().trim();
-    if (OBSOLETE_DUMMY_PEOPLE_IDS.has(idKey)) return true;
-    if (['Čižič', 'Lajlar', 'Pratneker', 'Ravnak', 'Vuleta', 'Šarkan', 'Georgiev', 'Kreiner', 'Breznikar', 'Mušič', 'Štefančič'].includes((p.name || '').trim())) return true;
-    return deletedKeys.has(idKey) || (p.email ? deletedKeys.has('email:' + p.email.toLowerCase().trim()) : false);
-  };
+  // Fallback to local storage base if present
+  if (base && base.length > 0) {
+    return deduplicatePeopleList(base.map(ensurePersonId));
+  }
 
-  const map = new Map<string, Person>();
+  // Offline / initial fallback only when database is completely disconnected
+  if (!IS_SUPABASE_CONFIGURED) {
+    return INITIAL_PEOPLE.map(ensurePersonId);
+  }
 
-  // 1. Initial baseline from INITIAL_PEOPLE
-  INITIAL_PEOPLE.forEach(p => {
-    if (p && p.id && !isInvalidOrDeleted(p)) {
-      map.set(p.id, { ...ensurePersonId(p), role: normalizeUserRole(p.role) });
-    }
-  });
-
-  // 2. Overlay local cache base records
-  (base || []).forEach(p => {
-    if (p && p.id && !isInvalidOrDeleted(p)) {
-      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase().trim() === p.name.toLowerCase().trim()) : null);
-      const targetId = existing?.id || p.id;
-      map.set(targetId, {
-        ...(existing || {}),
-        ...ensurePersonId(p),
-        id: targetId,
-        role: normalizeUserRole(p.role || existing?.role)
-      });
-    }
-  });
-
-  // 3. Overlay fetched remote database records (Overriding Source of Truth)
-  (fetched || []).forEach(p => {
-    if (p && p.id && !isInvalidOrDeleted(p)) {
-      const existing = map.get(p.id) || (p.name ? Array.from(map.values()).find(x => x.name.toLowerCase().trim() === p.name.toLowerCase().trim()) : null);
-      const targetId = existing?.id || p.id;
-      
-      const mergedPrefs = (p.preferredMinistries && p.preferredMinistries.length > 0) ? p.preferredMinistries : (existing?.preferredMinistries || []);
-      const mergedLeds = (p.ledMinistries && p.ledMinistries.length > 0) ? p.ledMinistries : (existing?.ledMinistries || []);
-      const mergedFamily = (p.familyMembers && p.familyMembers.length > 0) ? p.familyMembers : (existing?.familyMembers || []);
-
-      map.set(targetId, {
-        ...(existing || {}),
-        ...ensurePersonId(p),
-        id: targetId,
-        role: normalizeUserRole(p.role || existing?.role),
-        preferredMinistries: mergedPrefs,
-        ledMinistries: mergedLeds,
-        familyMembers: mergedFamily
-      });
-    }
-  });
-
-  return deduplicatePeopleList(Array.from(map.values()));
+  return [];
 };
 
 const mergeSundaysWithDefaults = (fetched: ServiceSunday[], base: ServiceSunday[]): ServiceSunday[] => {
@@ -389,7 +348,7 @@ export default function App() {
         }
       } catch (e) { /* ignore */ }
     }
-    return INITIAL_PEOPLE;
+    return IS_SUPABASE_CONFIGURED ? [] : INITIAL_PEOPLE;
   });
   const [users, setUsers] = useState<User[]>([]); // Dynamic registered app users (admin only)
   const [currentLanguage, setCurrentLanguage] = useState<Language>(() => {
@@ -790,7 +749,7 @@ export default function App() {
   const isAlesLoggedIn = (authUser?.email || '').toLowerCase().trim() === 'ales.lajlar@gmail.com';
   const activeRole: UserRole = isAlesLoggedIn
     ? 'Admin'
-    : (userDbProfile?.role || (IS_SUPABASE_CONFIGURED || IS_FIREBASE_ENABLED ? (authUser ? 'Servant' : 'Viewer') : (activePerson?.role || legacyRole)));
+    : (userDbProfile?.role || activePerson?.role || (authUser ? 'Servant' : 'Viewer'));
 
   // Save changes to localStorage in legacy offline fallback mode
   useEffect(() => {
@@ -829,16 +788,15 @@ export default function App() {
       setAuthUser(sessionUser);
       const userEmail = (sessionUser.email || '').toLowerCase().trim();
       const isAles = userEmail === 'ales.lajlar@gmail.com';
-      const isWhitney = userEmail === 'whitney.lajlar@gmail.com';
       const userFullName = sessionUser.user_metadata?.full_name || sessionUser.user_metadata?.name || '';
-      const currentPeople = (peopleRef.current && peopleRef.current.length > 0) ? peopleRef.current : (people && people.length > 0 ? people : INITIAL_PEOPLE);
+      const currentPeople = (peopleRef.current && peopleRef.current.length > 0) ? peopleRef.current : (people && people.length > 0 ? people : []);
 
-      // 1. Direct superadmin override for Ales & Whitney
-      if (isAles || isWhitney) {
-        const adminName = isAles ? 'Aleš Lajlar' : 'Whitney Lajlar';
+      // 1. Direct superadmin override for Ales
+      if (isAles) {
+        const adminName = 'Aleš Lajlar';
         const adminPerson = currentPeople.find(p => p && (
           (p.email && p.email.toLowerCase() === userEmail) ||
-          (p.name && p.name.toLowerCase().includes(isAles ? 'aleš' : 'whitney'))
+          (p.name && p.name.toLowerCase().includes('aleš'))
         ));
         const matchedName = adminPerson?.name || adminName;
         setActivePersonName(matchedName);
@@ -890,13 +848,17 @@ export default function App() {
 
       if (dbProfile) {
         resolvedRole = normalizeUserRole(dbProfile.role);
+        const dbPreferred = Array.isArray(dbProfile.preferred_ministries) ? dbProfile.preferred_ministries : [];
+        const dbLed = Array.isArray(dbProfile.led_ministries) ? dbProfile.led_ministries : [];
+        const dbFamily = Array.isArray(dbProfile.family_members) ? dbProfile.family_members : [];
+
         if (matchedPerson) {
           matchedPerson = {
             ...matchedPerson,
             role: resolvedRole,
-            preferredMinistries: (dbProfile.preferred_ministries && dbProfile.preferred_ministries.length > 0) ? dbProfile.preferred_ministries : matchedPerson.preferredMinistries,
-            ledMinistries: (dbProfile.led_ministries && dbProfile.led_ministries.length > 0) ? dbProfile.led_ministries : matchedPerson.ledMinistries,
-            familyMembers: (dbProfile.family_members && dbProfile.family_members.length > 0) ? dbProfile.family_members : matchedPerson.familyMembers
+            preferredMinistries: dbPreferred,
+            ledMinistries: dbLed,
+            familyMembers: dbFamily
           };
         } else {
           matchedPerson = {
@@ -905,9 +867,9 @@ export default function App() {
             email: dbProfile.email || userEmail,
             phone: dbProfile.phone,
             role: resolvedRole,
-            preferredMinistries: dbProfile.preferred_ministries || [],
-            ledMinistries: dbProfile.led_ministries || [],
-            familyMembers: dbProfile.family_members || []
+            preferredMinistries: dbPreferred,
+            ledMinistries: dbLed,
+            familyMembers: dbFamily
           };
         }
       } else if (matchedPerson) {
@@ -917,6 +879,19 @@ export default function App() {
       if (matchedPerson) {
         setActivePersonName(matchedPerson.name);
         
+        const userObj: User = {
+          uid: sessionUser.id,
+          email: userEmail,
+          displayName: matchedPerson.name || userFullName || userEmail.split('@')[0],
+          role: resolvedRole,
+          personName: matchedPerson.name
+        };
+        setUserDbProfile(userObj);
+        setUsers(prev => {
+          const filtered = prev.filter(u => u.uid !== sessionUser.id && u.email !== sessionUser.email);
+          return [userObj, ...filtered];
+        });
+
         // Update in-memory people list so this user's live role and profile are immediately active in state
         setPeople(prev => {
           const list = prev || [];
@@ -2016,7 +1991,7 @@ export default function App() {
       <EcosystemNavbar
         currentApp="nedelje"
         user={authUser ? {
-          name: isAlesLoggedIn ? 'Aleš Lajlar' : (userDbProfile?.displayName || userDbProfile?.personName || authUser.email?.split('@')[0] || 'Uporabnik'),
+          name: isAlesLoggedIn ? 'Aleš Lajlar' : (activePerson?.name || userDbProfile?.personName || userDbProfile?.displayName || authUser.user_metadata?.full_name || authUser.user_metadata?.name || (authUser.email ? authUser.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'Uporabnik')),
           email: authUser.email || '',
           role: isAlesLoggedIn ? 'Superadmin' : activeRole,
         } : null}

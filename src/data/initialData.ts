@@ -105,17 +105,9 @@ export const INITIAL_PEOPLE: Person[] = [
     name: "Whitney Lajlar",
     email: "whitney.lajlar@gmail.com",
     phone: "031 322 728",
-    role: "Leader",
-    preferredMinistries: [
-      "gostoljubje",
-      "kava",
-      "prevajanje",
-      "molitev_po",
-      "gospodova_vecerja",
-      "koncni_pregled",
-      "uvod_slavljenje"
-    ],
-    ledMinistries: ["gostoljubje", "kava", "prevajanje"],
+    role: "Servant",
+    preferredMinistries: [],
+    ledMinistries: [],
     familyMembers: [
       "Aleš Lajlar",
       "Lanea Nelle Lajlar",

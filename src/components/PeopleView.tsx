@@ -13,7 +13,6 @@ import PhotoCropperModal from './PhotoCropperModal';
 import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import { supabase } from '../supabaseClient';
-import { INITIAL_PEOPLE } from '../data/initialData';
 
 interface PeopleViewProps {
   sundays: ServiceSunday[];
@@ -481,6 +480,29 @@ export default function PeopleView({
   const isLeader = userRole === 'Leader';
   const canEdit = isAdmin || isLeader;
 
+  const canEditPerson = (target: Person | null | undefined): boolean => {
+    if (!target) return false;
+    if (isAdmin) return true;
+
+    // ANY logged-in user (Leader, Servant, Member) can ALWAYS edit their OWN profile card!
+    const isTargetMe = 
+      (myPersonCard && (target.name === myPersonCard.name || (target.id && target.id === myPersonCard.id))) ||
+      (activePerson && (target.name === activePerson.name || (target.id && target.id === activePerson.id))) ||
+      (authUser?.email && target.email && target.email.toLowerCase().trim() === authUser.email.toLowerCase().trim());
+
+    if (isTargetMe) return true;
+
+    if (isLeader) {
+      // 1. Leaders can NEVER edit an Admin account
+      if (target.role === 'Admin' || target.name === 'Aleš Lajlar') return false;
+      // 2. Leaders can NEVER edit OTHER leaders' profile cards
+      if (target.role === 'Leader') return false;
+      // 3. Leaders can edit team volunteers, servants, and members
+      return true;
+    }
+    return false;
+  };
+
   // Count active future assignment loads for each person to spot overwork
   const calculateServingCount = (personName: string) => {
     let count = 0;
@@ -651,6 +673,16 @@ export default function PeopleView({
       return;
     }
 
+    if (!isAdmin && editingPerson.role === 'Admin') {
+      setEditError(currentLanguage === 'sl' ? 'Nimate pooblastil za spreminjanje Admin računa.' : 'You do not have permission to edit an Admin account.');
+      return;
+    }
+
+    if (!isAdmin && editRole === 'Admin') {
+      setEditError(currentLanguage === 'sl' ? 'Le administrator lahko dodeli Admin vlogo.' : 'Only an administrator can grant the Admin role.');
+      return;
+    }
+
     const cleanMemberType = editRole === 'Minor' ? 'minor' : (editRole === 'Visitor' ? 'visitor' : (editRole === 'Viewer' ? 'member' : 'adult'));
 
     onUpdatePerson(editingPerson.id, {
@@ -759,7 +791,7 @@ export default function PeopleView({
     if (p.memberType === 'minor' || p.memberType === 'youth' || p.role === 'Minor' || (p.id && KNOWN_MINOR_IDS.has(p.id))) {
       return 'youth';
     }
-    if (p.role === 'Viewer' && (!p.preferredMinistries || p.preferredMinistries.length === 0) && (!p.ledMinistries || p.ledMinistries.length === 0)) {
+    if (p.memberType === 'member' || p.role === 'Viewer') {
       return 'members';
     }
     const isServing =
@@ -1548,7 +1580,7 @@ export default function PeopleView({
                   </div>
                 </div>
 
-                {canEdit && (
+                {canEditPerson(person) && (
                   <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-0.5">
                     {onUpdatePerson && (
                       <button
@@ -1578,7 +1610,7 @@ export default function PeopleView({
                         </button>
                       )
                     )}
-                    {onDeletePerson && (
+                    {isAdmin && onDeletePerson && person.role !== 'Admin' && person.name !== 'Aleš Lajlar' && (
                       <button
                         onClick={() => setPersonToDelete(person)}
                         className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition active:scale-95 focus:outline-none cursor-pointer"
@@ -1910,13 +1942,14 @@ export default function PeopleView({
                       </div>
                     </div>
 
-                    {canEdit && onUpdatePerson && (
+                    {onUpdatePerson && (
                       <button
                         onClick={() => startEditPerson(person)}
-                        className="p-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100/80 rounded-xl border border-indigo-200 transition active:scale-95 cursor-pointer shrink-0"
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-900 border border-indigo-200 rounded-xl transition active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5 font-bold text-xs shadow-2xs"
                         title={currentLanguage === 'sl' ? 'Uredi moj profil' : 'Edit my profile'}
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>{currentLanguage === 'sl' ? 'Uredi profil' : 'Edit profile'}</span>
                       </button>
                     )}
                   </div>
@@ -2673,39 +2706,54 @@ export default function PeopleView({
                 </div>
               )}
 
-              {/* Role Assignment */}
+              {/* Role Assignment (Admin Only) */}
               <div className="space-y-1">
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-500 font-mono">
-                  🔑 {currentLanguage === 'sl' ? 'Vloga in dovoljenja v aplikaciji' : 'System Access Role'}
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-500 font-mono">
+                    🔑 {currentLanguage === 'sl' ? 'Vloga in dovoljenja v aplikaciji' : 'System Access Role'}
+                  </label>
+                  {!isAdmin && (
+                    <span className="text-[9px] font-mono text-slate-400 font-semibold flex items-center gap-0.5">
+                      <Lock className="w-2.5 h-2.5" />
+                      {currentLanguage === 'sl' ? 'Le Admin' : 'Admin only'}
+                    </span>
+                  )}
+                </div>
                 <select
                   value={editRole}
+                  disabled={!isAdmin}
                   onChange={(e) => {
                     const r = e.target.value as UserRole;
                     setEditRole(r);
                     setEditMemberType(r === 'Minor' ? 'minor' : (r === 'Visitor' ? 'visitor' : (r === 'Viewer' ? 'member' : 'adult')));
                   }}
-                  className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer font-semibold"
+                  className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <option value="Admin">🛠️ Admin (Poln nadzor)</option>
+                  {isAdmin && <option value="Admin">🛠️ Admin (Poln nadzor)</option>}
                   <option value="Leader">📋 Leader / Vodja službe (Urejanje svojih služb)</option>
                   <option value="Servant">🤝 Servant / Služabnik (Služenje v ekipi)</option>
                   <option value="Viewer">👤 Member / Član (Član cerkve)</option>
                   <option value="Visitor">👋 Visitor / Obiskovalec (Občasen obisk / Gost)</option>
                   <option value="Minor">👶 Minor / Mladoletni član</option>
                 </select>
+                {!isAdmin && (
+                  <p className="text-[10px] text-slate-400 font-mono">
+                    🔒 {currentLanguage === 'sl' ? 'Sprememba sistemske vloge je mogoča le s strani administratorja.' : 'System role can only be changed by an Administrator.'}
+                  </p>
+                )}
               </div>
 
-              {/* Pastor Exemption Toggle */}
+              {/* Pastor Exemption Toggle (Admin Only) */}
               <div className="flex items-center gap-2 p-2.5 bg-purple-50 border border-purple-200 rounded-xl">
                 <input
                   type="checkbox"
                   id="editPastorOrStaff"
+                  disabled={!isAdmin}
                   checked={editPastorOrStaff}
                   onChange={(e) => setEditPastorOrStaff(e.target.checked)}
-                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer"
+                  className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 />
-                <label htmlFor="editPastorOrStaff" className="text-xs font-semibold text-purple-900 cursor-pointer flex items-center gap-1.5">
+                <label htmlFor="editPastorOrStaff" className={`text-xs font-semibold text-purple-900 flex items-center gap-1.5 ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                   <Crown className="w-3 h-3 text-purple-600 shrink-0" />
                   <span>{currentLanguage === 'sl' ? 'Izvzemi iz opozoril preobremenjenosti (Vodstvo / Leader)' : 'Exempt from fatigue alerts (Leadership / Leader)'}</span>
                 </label>
@@ -2885,23 +2933,33 @@ export default function PeopleView({
                                   </span>
                                 </label>
 
-                                <button
-                                  type="button"
-                                  onClick={toggleLeading}
-                                  title={
-                                    isLed
-                                      ? (currentLanguage === 'sl' ? 'Oseba je vodja te službe (kliknite za preklic)' : 'Leader of this ministry (click to revoke)')
-                                      : (currentLanguage === 'sl' ? 'Označi osebo kot vodjo te službe' : 'Mark as leader of this ministry')
-                                  }
-                                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0 ml-1.5 ${
-                                    isLed
-                                      ? 'bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs'
-                                      : 'bg-slate-100 hover:bg-amber-100 text-slate-400 hover:text-amber-900 border border-slate-200'
-                                  }`}
-                                >
-                                  <Crown className={`w-3 h-3 ${isLed ? 'text-slate-950 fill-slate-950' : 'text-slate-400'}`} />
-                                  <span>{isLed ? (currentLanguage === 'sl' ? 'Vodja' : 'Leader') : (currentLanguage === 'sl' ? 'Vodja' : 'Lead')}</span>
-                                </button>
+                                {isAdmin ? (
+                                  <button
+                                    type="button"
+                                    onClick={toggleLeading}
+                                    title={
+                                      isLed
+                                        ? (currentLanguage === 'sl' ? 'Oseba je vodja te službe (kliknite za preklic)' : 'Leader of this ministry (click to revoke)')
+                                        : (currentLanguage === 'sl' ? 'Označi osebo kot vodjo te službe' : 'Mark as leader of this ministry')
+                                    }
+                                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition cursor-pointer shrink-0 ml-1.5 ${
+                                      isLed
+                                        ? 'bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs'
+                                        : 'bg-slate-100 hover:bg-amber-100 text-slate-400 hover:text-amber-900 border border-slate-200'
+                                    }`}
+                                  >
+                                    <Crown className={`w-3 h-3 ${isLed ? 'text-slate-950 fill-slate-950' : 'text-slate-400'}`} />
+                                    <span>{isLed ? (currentLanguage === 'sl' ? 'Vodja' : 'Leader') : (currentLanguage === 'sl' ? 'Vodja' : 'Lead')}</span>
+                                  </button>
+                                ) : isLed ? (
+                                  <span 
+                                    className="px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 bg-amber-100 text-amber-900 border border-amber-300 shrink-0 ml-1.5 font-mono shadow-2xs" 
+                                    title={currentLanguage === 'sl' ? 'Vodja službe (le administrator lahko spreminja vodje služb)' : 'Ministry Leader (only Administrator can change leadership)'}
+                                  >
+                                    <Crown className="w-3 h-3 text-amber-700 fill-amber-700" />
+                                    <span>{currentLanguage === 'sl' ? 'Vodja' : 'Leader'}</span>
+                                  </span>
+                                ) : null}
                               </div>
                             );
                           })}
