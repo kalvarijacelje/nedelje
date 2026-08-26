@@ -13,6 +13,7 @@ import PhotoCropperModal from './PhotoCropperModal';
 import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import { supabase } from '../supabaseClient';
+import { toCanonicalPersonId } from '../services/supabaseDataService';
 
 interface PeopleViewProps {
   sundays: ServiceSunday[];
@@ -127,7 +128,7 @@ function PendingUserItemCard({
     }
 
     const createdPerson: Person = {
-      id: 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6),
+      id: toCanonicalPersonId(trimmedName),
       name: trimmedName,
       email: user.email,
       phone: newPersonPhone.trim() || undefined,
@@ -560,7 +561,7 @@ export default function PeopleView({
     }
 
     const createdPerson: Person = {
-      id: 'p-' + trimmedName.toLowerCase().replace(/[^a-z0-9]/g, '_') + '-' + Date.now().toString(36),
+      id: toCanonicalPersonId(trimmedName),
       name: trimmedName,
       avatarUrl: newAvatarUrl || undefined,
       phone: newPersonPhone.trim() || undefined,

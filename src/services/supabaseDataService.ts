@@ -398,27 +398,38 @@ export async function fetchRegisteredUsersFromSupabase(): Promise<User[]> {
   }
 }
 
-export function toCanonicalPersonId(idOrName: string): string {
-  if (!idOrName) return 'p-unknown';
+export function toCanonicalPersonId(idOrName?: string | null): string {
+  if (!idOrName || typeof idOrName !== 'string') return 'p-unknown';
   let str = idOrName.trim();
   if (str.startsWith('p-')) {
     str = str.substring(2);
   }
-  // Transliterate Slovenian characters to standard latin
+  // Strip trailing random hash / timestamp suffixes
+  str = str.replace(/[-_][a-z0-9]{7,15}$/i, '');
+
+  // Transliterate Slovenian & Balkan diacritics
   str = str
     .replace(/[čČ]/g, 'c')
     .replace(/[šŠ]/g, 's')
     .replace(/[žŽ]/g, 'z')
     .replace(/[ćĆ]/g, 'c')
     .replace(/[đĐ]/g, 'd');
-  const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
-  return `p-${clean}`;
+
+  const clean = str
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+  return `p-${clean || 'user'}`;
 }
 
 export async function upsertPersonToSupabase(person: Person): Promise<boolean> {
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
-    const canonicalId = toCanonicalPersonId(person.id || person.name);
+    const canonicalId = (person.name && (!person.id || person.id.startsWith('p-') || person.id.includes('_mu_i_') || /[-_][a-z0-9]{7,15}$/i.test(person.id)))
+      ? toCanonicalPersonId(person.name)
+      : toCanonicalPersonId(person.id || person.name);
     const emailToMatch = (person.email || '').trim().toLowerCase();
     const nameToMatch = person.name.trim();
 

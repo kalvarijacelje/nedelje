@@ -106,6 +106,7 @@ import {
   upsertShiftSwapToSupabase, 
   upsertWorshipScheduleToSupabase,
   subscribeToSupabaseRealtime, 
+  toCanonicalPersonId,
   IS_SUPABASE_CONFIGURED 
 } from './services/supabaseDataService';
 import { seedSupabaseDatabase } from './utils/supabaseSeeder';
@@ -144,7 +145,9 @@ function getTabFromPath(pathname: string): TabType {
 
 const ensurePersonId = (p: Person): Person => {
   if (!p || typeof p !== 'object') return p;
-  const cleanId = p.id || ('p-' + (p.name || 'user').toLowerCase().trim().replace(/[^a-z0-9]/g, '_'));
+  const cleanId = (p.id && !p.id.includes('_mu_i_') && !/[-_][a-z0-9]{7,15}$/i.test(p.id)) 
+    ? toCanonicalPersonId(p.id) 
+    : toCanonicalPersonId(p.name);
   return { ...p, id: cleanId };
 };
 
