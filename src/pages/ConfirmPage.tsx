@@ -78,15 +78,14 @@ export default function ConfirmPage({
       return;
     }
 
-    // 1. Check if token already exists in in-memory sundays list
+    // 1. Check if token already exists in in-memory sundays list (optimistic immediate display)
     const memoryMatch = findAssignmentByToken(sundays, tok);
     if (memoryMatch) {
       setAsyncMatch(memoryMatch);
       setIsLoading(false);
-      return;
     }
 
-    // 2. Fetch directly from Supabase by token if not found locally
+    // 2. Fetch directly from Supabase by token for authoritative DB state
     let isCancelled = false;
     fetchAssignmentByToken(tok).then(remoteMatch => {
       if (isCancelled) return;

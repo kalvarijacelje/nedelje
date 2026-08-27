@@ -406,7 +406,7 @@ export default function HomeDashboard({
     const currentList = nextSunday.assignments[selectedVacantId] || [];
     if (currentList.includes(selectedPersonName)) return;
 
-    const token = generateConfirmationToken();
+    const token = generateConfirmationToken(nextSunday.id, selectedVacantId, selectedPersonName);
     const isSelfAssign = activePerson && (selectedPersonName.toLowerCase().trim() === activePerson.name.toLowerCase().trim());
     const currentDetails = nextSunday.assignmentDetails?.[selectedVacantId] || [];
 

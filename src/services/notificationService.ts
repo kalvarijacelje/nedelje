@@ -23,10 +23,19 @@ export function generateConfirmationToken(sundayId?: string, ministryId?: string
  * Returns the public root URL of the application (window.location.origin or production domain)
  */
 export function getPublicAppBaseUrl(): string {
-  if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin;
+  const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PUBLIC_APP_URL);
+  if (envUrl) {
+    return envUrl.replace(/\/$/, '');
   }
-  return 'https://kck-nedelje.web.app';
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    const origin = window.location.origin;
+    // If running on local dev server, use the live public domain so external recipients receive working links
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return 'https://nedelje.kalvarija.si';
+    }
+    return origin;
+  }
+  return 'https://nedelje.kalvarija.si';
 }
 
 /**

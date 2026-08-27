@@ -902,15 +902,68 @@ export default function SundayDetail({
     setTimeout(() => setSuccessToast(null), 3000);
   };
 
-  const getAssignmentDetails = (ministryId: string): MinistryAssignment[] => {
-    let names = resolveMinistryAssignments(sunday, ministryId, worshipRoster);
+  // Auto-hydrate & persist missing confirmation tokens so WhatsApp/Messenger/Chat share links are ALWAYS in DB
+  React.useEffect(() => {
+    if (!sunday || !ministries || ministries.length === 0) return;
+    let needsUpdate = false;
+    const currentDetailsMap = { ...(sunday.assignmentDetails || {}) };
 
+    ministries.forEach(m => {
+      const names = resolveMinistryAssignments(sunday, m.id, worshipRoster);
+      if (names.length === 0) return;
+
+      const currentList = currentDetailsMap[m.id] || [];
+      const updatedList: MinistryAssignment[] = [];
+      let ministryChanged = false;
+
+      names.forEach(name => {
+        const existing = currentList.find(d => d.personName.toLowerCase().trim() === name.toLowerCase().trim());
+        if (existing) {
+          if (!existing.confirmationToken) {
+            ministryChanged = true;
+            updatedList.push({
+              ...existing,
+              confirmationToken: generateConfirmationToken(sunday.id, m.id, name),
+            });
+          } else {
+            updatedList.push(existing);
+          }
+        } else {
+          ministryChanged = true;
+          updatedList.push({
+            personName: name,
+            status: 'confirmed',
+            notes: '',
+            assignedByLeaderId: activePerson?.id || '',
+            assignedByLeaderName: activePerson?.name || 'Vodja službe',
+            assignedAt: new Date().toISOString(),
+            confirmationToken: generateConfirmationToken(sunday.id, m.id, name),
+          });
+        }
+      });
+
+      if (ministryChanged || updatedList.length !== currentList.length) {
+        currentDetailsMap[m.id] = updatedList;
+        needsUpdate = true;
+      }
+    });
+
+    if (needsUpdate) {
+      onUpdateSunday({
+        ...sunday,
+        assignmentDetails: currentDetailsMap,
+      });
+    }
+  }, [sunday.id, sunday.assignments, worshipRoster, ministries]);
+
+  const getAssignmentDetails = (ministryId: string): MinistryAssignment[] => {
+    const names = resolveMinistryAssignments(sunday, ministryId, worshipRoster);
     const details = sunday.assignmentDetails?.[ministryId] || [];
     return names.map(name => {
-      const existing = details.find(d => d.personName === name);
+      const existing = details.find(d => d.personName.toLowerCase().trim() === name.toLowerCase().trim());
       if (existing) {
         if (!existing.confirmationToken) {
-          return { ...existing, confirmationToken: generateConfirmationToken() };
+          return { ...existing, confirmationToken: generateConfirmationToken(sunday.id, ministryId, name) };
         }
         return existing;
       }
@@ -918,7 +971,7 @@ export default function SundayDetail({
         personName: name, 
         status: 'confirmed', 
         notes: '',
-        confirmationToken: generateConfirmationToken()
+        confirmationToken: generateConfirmationToken(sunday.id, ministryId, name)
       };
     });
   };
@@ -1006,7 +1059,7 @@ export default function SundayDetail({
       if (currentDetails.some(d => d.personName.toLowerCase() === resolvedName.toLowerCase())) return;
 
       const isSelfAssign = activePerson && (resolvedName.toLowerCase() === activePerson.name.toLowerCase());
-      const token = generateConfirmationToken();
+      const token = generateConfirmationToken(sunday.id, ministryId, resolvedName);
 
       const newDetail: MinistryAssignment = {
         personName: resolvedName,

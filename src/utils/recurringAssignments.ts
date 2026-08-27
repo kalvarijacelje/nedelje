@@ -1,4 +1,5 @@
 import { ServiceSunday, MinistryAssignment } from '../types';
+import { generateConfirmationToken } from '../services/notificationService';
 
 /**
  * Helper to reliably parse date string (e.g. "6. 9. 26", "06. 09. 2026", "2026-09-06") into timestamp
@@ -131,7 +132,7 @@ export function batchAssignPersonToConsecutiveSundays({
       return;
     }
 
-    const token = Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+    const token = generateConfirmationToken(targetSunday.id, ministryId, trimmed);
     assignedDates.add(normDate);
     assignedItems.push({ sundayDate: targetSunday.date, token });
 

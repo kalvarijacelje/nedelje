@@ -134,13 +134,34 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
       return false;
     }
 
-    // Synchronize assignment details
-    if (sunday.assignmentDetails) {
-      const assignmentRows: any[] = [];
+    // Synchronize assignment details reliably (reconcile assignmentDetails + assignments)
+    const assignmentRows: any[] = [];
+    const processedPersonMinistryKeys = new Set<string>();
 
+    const ensureToken = (existingToken?: string | null, sundayId?: string, ministryId?: string, personName?: string): string => {
+      if (existingToken && existingToken.trim()) return existingToken.trim();
+      if (sundayId && ministryId && personName) {
+        const slug = `${sundayId}_${ministryId}_${personName}`.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        return `tok_${slug}_${Math.random().toString(36).substring(2, 8)}`;
+      }
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID().replace(/-/g, '') + Math.random().toString(36).substring(2, 10);
+      }
+      return 'tok_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 12);
+    };
+
+    // 1. Reconcile from assignmentDetails if present
+    if (sunday.assignmentDetails) {
       Object.entries(sunday.assignmentDetails).forEach(([ministryId, details]) => {
         if (Array.isArray(details)) {
           details.forEach((d) => {
+            if (!d.personName) return;
+            const key = `${ministryId}_${d.personName.toLowerCase().trim()}`;
+            processedPersonMinistryKeys.add(key);
+
+            const token = ensureToken(d.confirmationToken, sunday.id, ministryId, d.personName);
+            d.confirmationToken = token;
+
             assignmentRows.push({
               sunday_id: sunday.id,
               ministry_id: ministryId,
@@ -150,18 +171,51 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
               decline_reason: d.declineReason || null,
               assigned_by_id: d.assignedByLeaderId || null,
               assigned_by_name: d.assignedByLeaderName || null,
-              confirmation_token: d.confirmationToken || null,
+              confirmation_token: token,
               assigned_at: d.assignedAt || new Date().toISOString(),
               response_at: d.responseAt || null
             });
           });
         }
       });
+    }
 
-      // Clear existing assignments for this sunday and re-insert
-      await supabase.from('nedelje_assignments').delete().eq('sunday_id', sunday.id);
-      if (assignmentRows.length > 0) {
-        await supabase.from('nedelje_assignments').insert(assignmentRows);
+    // 2. Also ensure any person in sunday.assignments has an assignment row
+    if (sunday.assignments) {
+      Object.entries(sunday.assignments).forEach(([ministryId, names]) => {
+        if (Array.isArray(names)) {
+          names.forEach(name => {
+            if (!name || typeof name !== 'string') return;
+            const key = `${ministryId}_${name.toLowerCase().trim()}`;
+            if (!processedPersonMinistryKeys.has(key)) {
+              processedPersonMinistryKeys.add(key);
+              const token = ensureToken(undefined, sunday.id, ministryId, name);
+
+              assignmentRows.push({
+                sunday_id: sunday.id,
+                ministry_id: ministryId,
+                person_name: name.trim(),
+                status: 'confirmed',
+                notes: null,
+                decline_reason: null,
+                assigned_by_id: null,
+                assigned_by_name: 'Vodja službe',
+                confirmation_token: token,
+                assigned_at: new Date().toISOString(),
+                response_at: null
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // Clear existing assignments for this sunday and re-insert complete list
+    await supabase.from('nedelje_assignments').delete().eq('sunday_id', sunday.id);
+    if (assignmentRows.length > 0) {
+      const { error: insertErr } = await supabase.from('nedelje_assignments').insert(assignmentRows);
+      if (insertErr) {
+        console.warn('[Supabase] insert assignments notice:', insertErr.message);
       }
     }
 
@@ -277,35 +331,43 @@ export async function confirmAssignmentByToken(
     return { success: false, error: 'Supabase client not configured or token missing' };
   }
 
+  const cleanToken = token.trim();
+
   try {
     const { data: matched, error: findErr } = await supabase
       .from('nedelje_assignments')
       .select('*')
-      .eq('confirmation_token', token.trim())
+      .eq('confirmation_token', cleanToken)
       .maybeSingle();
 
-    if (findErr || !matched) {
-      return { success: false, error: 'Invalid or expired confirmation token' };
+    if (findErr) {
+      console.warn('[Supabase] confirmAssignmentByToken findErr:', findErr);
     }
 
-    const { data: updated, error: updateErr } = await supabase
-      .from('nedelje_assignments')
-      .update({
-        status: newStatus,
-        decline_reason: declineReason || null,
-        notes: notes || matched.notes,
-        response_at: new Date().toISOString()
-      })
-      .eq('confirmation_token', token.trim())
-      .select()
-      .single();
+    if (matched) {
+      const { data: updated, error: updateErr } = await supabase
+        .from('nedelje_assignments')
+        .update({
+          status: newStatus,
+          decline_reason: newStatus === 'declined' ? (declineReason || null) : null,
+          notes: notes || matched.notes,
+          response_at: new Date().toISOString()
+        })
+        .eq('id', matched.id)
+        .select()
+        .single();
 
-    if (updateErr) {
-      return { success: false, error: updateErr.message };
+      if (updateErr) {
+        console.warn('[Supabase] confirmAssignmentByToken updateErr:', updateErr);
+        return { success: false, error: updateErr.message };
+      }
+
+      return { success: true, assignment: updated };
     }
 
-    return { success: true, assignment: updated };
+    return { success: false, error: 'Invalid or expired confirmation token' };
   } catch (e: any) {
+    console.warn('[Supabase] confirmAssignmentByToken caught exception:', e);
     return { success: false, error: e.message || String(e) };
   }
 }
