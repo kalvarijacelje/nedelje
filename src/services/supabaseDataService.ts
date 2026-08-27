@@ -545,6 +545,7 @@ export async function fetchBlackoutsFromSupabase(): Promise<BlackoutDate[]> {
       id: row.id,
       personName: row.person_name,
       personId: row.person_id || undefined,
+      familyMemberNames: row.family_member_names || (row.family_members ? (Array.isArray(row.family_members) ? row.family_members : undefined) : undefined),
       startDate: row.start_date,
       endDate: row.end_date,
       reason: row.reason || undefined,
@@ -558,15 +559,19 @@ export async function fetchBlackoutsFromSupabase(): Promise<BlackoutDate[]> {
 export async function insertBlackoutToSupabase(b: Omit<BlackoutDate, 'id' | 'createdAt'>): Promise<boolean> {
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
+    const payload: any = {
+      person_name: b.personName,
+      person_id: b.personId || null,
+      start_date: b.startDate,
+      end_date: b.endDate || b.startDate,
+      reason: b.reason || null
+    };
+    if (b.familyMemberNames && b.familyMemberNames.length > 0) {
+      payload.family_member_names = b.familyMemberNames;
+    }
     const { error } = await supabase
       .from('nedelje_blackout_dates')
-      .insert({
-        person_name: b.personName,
-        person_id: b.personId || null,
-        start_date: b.startDate,
-        end_date: b.endDate || b.startDate,
-        reason: b.reason || null
-      });
+      .insert(payload);
     return !error;
   } catch {
     return false;

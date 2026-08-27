@@ -33,6 +33,7 @@ import { checkPersonAbsenceOnSunday } from './SundayDetail';
 import UnifiedPersonAssigner from './UnifiedPersonAssigner';
 import { getConsecutiveSundayDates } from '../utils/recurringAssignments';
 import { getSundayOfMonthIndex } from '../lib/sundaySpecialFocus';
+import { parseEuropeanDate, formatToEuropeanDate } from '../utils/dateUtils';
 
 interface SundaySchoolViewProps {
   sundays: ServiceSunday[];
@@ -403,25 +404,22 @@ export default function SundaySchoolView({
   const getSortedCandidateList = (targetSunday: ServiceSunday | undefined, groupKey?: SundaySchoolGroupKey) => {
     const list = (people || []).map(p => {
       // 1. Check if person prefers or leads kids ministry (Starred ⭐)
-      const isPref = (Array.isArray(p.preferredMinistries) && (
-        p.preferredMinistries.includes('nedeljska_sola') ||
-        p.preferredMinistries.includes('nedeljska_sola_mlajsa') ||
-        p.preferredMinistries.includes('nedeljska_sola_starejsa') ||
-        p.preferredMinistries.includes('OTROŠKO SLUŽENJE - MLAJŠA') ||
-        p.preferredMinistries.includes('OTROŠKO SLUŽENJE - STAREJŠA') ||
-        p.preferredMinistries.includes('OTROŠKO SLUŽENJE') ||
-        p.preferredMinistries.includes('kids')
-      )) || (
-        Array.isArray(p.ledMinistries) && (
-          p.ledMinistries.includes('nedeljska_sola') ||
-          p.ledMinistries.includes('nedeljska_sola_mlajsa') ||
-          p.ledMinistries.includes('nedeljska_sola_starejsa') ||
-          p.ledMinistries.includes('OTROŠKO SLUŽENJE - MLAJŠA') ||
-          p.ledMinistries.includes('OTROŠKO SLUŽENJE - STAREJŠA') ||
-          p.ledMinistries.includes('OTROŠKO SLUŽENJE') ||
-          p.ledMinistries.includes('kids')
-        )
-      );
+      const prefs = (p.preferredMinistries || []).map(m => m.toLowerCase());
+      const leds = (p.ledMinistries || []).map(m => m.toLowerCase());
+
+      let isPref = false;
+      if (groupKey === 'mlajsa') {
+        isPref = prefs.includes('nedeljska_sola_mlajsa') || prefs.includes('otroško služenje - mlajša') ||
+                 leds.includes('nedeljska_sola_mlajsa') || leds.includes('otroško služenje - mlajša');
+      } else if (groupKey === 'starejsa') {
+        isPref = prefs.includes('nedeljska_sola_starejsa') || prefs.includes('otroško služenje - starejša') ||
+                 leds.includes('nedeljska_sola_starejsa') || leds.includes('otroško služenje - starejša');
+      } else {
+        isPref = prefs.includes('nedeljska_sola') || prefs.includes('nedeljska_sola_mlajsa') || prefs.includes('nedeljska_sola_starejsa') ||
+                 prefs.includes('otroško služenje - mlajša') || prefs.includes('otroško služenje - starejša') || prefs.includes('kids') ||
+                 leds.includes('nedeljska_sola') || leds.includes('nedeljska_sola_mlajsa') || leds.includes('nedeljska_sola_starejsa') ||
+                 leds.includes('otroško služenje - mlajša') || leds.includes('otroško služenje - starejša') || leds.includes('kids');
+      }
 
       // 2. Check conflicts (absent on vacation, or already serving elsewhere)
       const conflict = getPersonConflictInfo(p.name, targetSunday);
@@ -977,7 +975,7 @@ export default function SundaySchoolView({
                           </span>
                           <span className="text-xs font-bold text-gray-700 font-mono flex items-center gap-1">
                             <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{lesson.sundayDate}</span>
+                            <span>{formatToEuropeanDate(lesson.sundayDate)}</span>
                           </span>
                         </div>
 
@@ -1262,26 +1260,11 @@ export default function SundaySchoolView({
 
       {/* --- TAB 3: ROSTER VIEW --- */}
       {activeTab === 'roster' && (() => {
-        const parseSheetDate = (dateStr: string): Date => {
-          if (!dateStr) return new Date(0);
-          const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-          if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
-            return new Date(0);
-          }
-          const day = parts[0];
-          const month = parts[1] - 1;
-          let year = parts[2];
-          if (year < 100) {
-            year = 2000 + year;
-          }
-          return new Date(year, month, day);
-        };
-
         const academicYear2627Start = new Date(2026, 8, 1);  // Sep 1, 2026 (first Sunday: Sep 6, 2026)
         const academicYear2627End = new Date(2027, 7, 31);   // Aug 31, 2027
 
         const rosterFilteredSundays = sundays.filter((s) => {
-          const d = parseSheetDate(s.date);
+          const d = parseEuropeanDate(s.date);
           if (rosterYearView === '2026_2027') {
             return d >= academicYear2627Start && d <= academicYear2627End;
           } else {
@@ -1290,7 +1273,7 @@ export default function SundaySchoolView({
         });
 
         const rosterSortedSundays = [...rosterFilteredSundays].sort((a, b) => {
-          return parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime();
+          return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
         });
 
         const getTeachersForGroup = (
@@ -1418,7 +1401,7 @@ export default function SundaySchoolView({
                       <div key={sun.id} className="p-4 sm:p-5 bg-white rounded-2xl border border-gray-200 shadow-2xs space-y-3.5">
                         <div className="flex items-center justify-between border-b border-gray-150 pb-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-xs sm:text-sm text-gray-900 font-mono">📅 {sun.date}</span>
+                            <span className="font-bold text-xs sm:text-sm text-gray-900 font-mono">📅 {formatToEuropeanDate(sun.date)}</span>
                             {isLordSupper ? (
                               <span className="text-[9px] font-mono bg-rose-50 text-rose-700 px-1.5 py-0.5 rounded font-bold border border-rose-200/80 flex items-center gap-1">
                                 🍷 {currentLanguage === 'sl' ? 'Gospodova večerja' : "Lord's Supper"}
@@ -1500,7 +1483,7 @@ export default function SundaySchoolView({
                                   mode="single"
                                   label={currentLanguage === 'sl' ? 'Pomočnik' : 'Assistant / Helper'}
                                   icon="🤝"
-                                  roleKey="assistant"
+                                  roleKey="nedeljska_sola_mlajsa"
                                   value={youngerCoverage.helper}
                                   onChange={(val) => handleUpdateGroupPerson(sun, 'mlajsa', 'helper', typeof val === 'string' ? val : '')}
                                   targetSunday={sun}
@@ -1601,7 +1584,7 @@ export default function SundaySchoolView({
                                   mode="single"
                                   label={currentLanguage === 'sl' ? 'Pomočnik' : 'Assistant / Helper'}
                                   icon="🤝"
-                                  roleKey="assistant"
+                                  roleKey="nedeljska_sola_starejsa"
                                   value={olderCoverage.helper}
                                   onChange={(val) => handleUpdateGroupPerson(sun, 'starejsa', 'helper', typeof val === 'string' ? val : '')}
                                   targetSunday={sun}

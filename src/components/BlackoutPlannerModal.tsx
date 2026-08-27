@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BlackoutDate, Person, Language } from '../types';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
+import { formatEuropeanDateRange } from '../utils/dateUtils';
 import {
   Palmtree,
   X,
@@ -35,7 +36,20 @@ export default function BlackoutPlannerModal({
   onAddBlackoutDate,
   onDeleteBlackoutDate
 }: BlackoutPlannerModalProps) {
-  const [personName, setPersonName] = useState<string>(activePerson?.name || ((people || []).find(p => p && p.name)?.name || ''));
+  // Sort people alphabetically by first name / full name as displayed
+  const sortedPeople = React.useMemo(() => {
+    return [...(people || [])]
+      .filter(p => p && p.name)
+      .sort((a, b) => a.name.localeCompare(b.name, 'sl', { sensitivity: 'base' }));
+  }, [people]);
+
+  const [personName, setPersonName] = useState<string>(() => {
+    if (activePerson?.name) return activePerson.name;
+    const sorted = [...(people || [])]
+      .filter(p => p && p.name)
+      .sort((a, b) => a.name.localeCompare(b.name, 'sl', { sensitivity: 'base' }));
+    return sorted[0]?.name || '';
+  });
   const [selectedFamilyNames, setSelectedFamilyNames] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -45,26 +59,34 @@ export default function BlackoutPlannerModal({
 
   useBackdropHistory(isOpen, onClose, 'blackout-planner-modal');
 
-  if (!isOpen) return null;
-
   // Resolve linked family members for the currently selected person
   const selectedPersonObj = (people || []).find(p => p && p.name === personName);
-  const familyMembers = (people || []).filter(p => {
-    if (!p || !p.name || p.name === personName) return false;
-    if (!selectedPersonObj) return false;
+  const familyMembers = React.useMemo(() => {
+    return (people || []).filter(p => {
+      if (!p || !p.name || p.name === personName) return false;
+      if (!selectedPersonObj) return false;
 
-    const inSelectedFamily = Array.isArray(selectedPersonObj.familyMembers) && (
-      selectedPersonObj.familyMembers.includes(p.name) ||
-      selectedPersonObj.familyMembers.includes(p.id)
-    );
+      const inSelectedFamily = Array.isArray(selectedPersonObj.familyMembers) && (
+        selectedPersonObj.familyMembers.includes(p.name) ||
+        selectedPersonObj.familyMembers.includes(p.id)
+      );
 
-    const inMemberFamily = Array.isArray(p.familyMembers) && (
-      p.familyMembers.includes(selectedPersonObj.name) ||
-      p.familyMembers.includes(selectedPersonObj.id)
-    );
+      const inMemberFamily = Array.isArray(p.familyMembers) && (
+        p.familyMembers.includes(selectedPersonObj.name) ||
+        p.familyMembers.includes(selectedPersonObj.id)
+      );
 
-    return inSelectedFamily || inMemberFamily;
-  });
+      return inSelectedFamily || inMemberFamily;
+    }).sort((a, b) => a.name.localeCompare(b.name, 'sl', { sensitivity: 'base' }));
+  }, [people, personName, selectedPersonObj]);
+
+  const sortedBlackoutDates = React.useMemo(() => {
+    return [...blackoutDates].sort((a, b) => {
+      return a.startDate.localeCompare(b.startDate) || a.personName.localeCompare(b.personName, 'sl');
+    });
+  }, [blackoutDates]);
+
+  if (!isOpen) return null;
 
   const toggleFamilyMember = (name: string) => {
     setSelectedFamilyNames(prev =>
@@ -88,16 +110,17 @@ export default function BlackoutPlannerModal({
       return;
     }
 
-    const allPeopleToLog = [personName, ...selectedFamilyNames.filter(n => n !== personName)];
+    const familyMemberNames = selectedFamilyNames.filter(n => n !== personName);
 
-    allPeopleToLog.forEach(targetName => {
-      onAddBlackoutDate({
-        personName: targetName,
-        startDate,
-        endDate: endDate || startDate,
-        reason: reason.trim() || undefined
-      });
+    onAddBlackoutDate({
+      personName,
+      familyMemberNames: familyMemberNames.length > 0 ? familyMemberNames : undefined,
+      startDate,
+      endDate: endDate || startDate,
+      reason: reason.trim() || undefined
     });
+
+    const allPeopleToLog = [personName, ...familyMemberNames];
 
     setStartDate('');
     setEndDate('');
@@ -215,8 +238,8 @@ export default function BlackoutPlannerModal({
                     }}
                     className="w-full text-xs p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white font-medium"
                   >
-                    {(people || []).filter(p => p && p.name).map((p) => (
-                      <option key={p.name} value={p.name}>
+                    {sortedPeople.map((p) => (
+                      <option key={p.id || p.name} value={p.name}>
                         {p.name}
                       </option>
                     ))}
@@ -325,7 +348,7 @@ export default function BlackoutPlannerModal({
               </div>
             ) : (
               <div className="space-y-2.5">
-                {blackoutDates.map((b) => (
+                {sortedBlackoutDates.map((b) => (
                   <div
                     key={b.id}
                     className="bg-white border border-gray-200 rounded-xl p-3.5 shadow-2xs flex items-center justify-between gap-3 hover:border-teal-200 transition"
@@ -336,12 +359,25 @@ export default function BlackoutPlannerModal({
                       </div>
 
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-gray-900 text-xs">
                             {b.personName}
                           </span>
+                          {Array.isArray(b.familyMemberNames) && b.familyMemberNames.length > 0 && (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {b.familyMemberNames.map((fam) => (
+                                <span
+                                  key={fam}
+                                  className="text-[10px] px-1.5 py-0.5 bg-teal-50 text-teal-800 border border-teal-200/80 rounded-md font-sans font-medium flex items-center gap-0.5"
+                                >
+                                  <span>+</span>
+                                  <span>{fam}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {b.reason && (
-                            <span className="text-[10px] px-2 py-0.2 bg-slate-100 text-slate-700 rounded-md font-sans">
+                            <span className="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md font-sans">
                               {b.reason}
                             </span>
                           )}
@@ -350,7 +386,7 @@ export default function BlackoutPlannerModal({
                         <div className="text-[11px] text-teal-800 font-mono font-medium mt-0.5 flex items-center gap-1.5">
                           <Calendar className="w-3 h-3 text-teal-600" />
                           <span>
-                            {b.startDate} {b.endDate && b.endDate !== b.startDate ? `➔ ${b.endDate}` : ''}
+                            {formatEuropeanDateRange(b.startDate, b.endDate)}
                           </span>
                         </div>
                       </div>

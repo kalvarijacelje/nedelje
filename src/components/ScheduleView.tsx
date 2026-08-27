@@ -9,6 +9,7 @@ import { Calendar, Trash2, Edit3, ChevronRight, Filter, AlertCircle, Check, Fold
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { getEffectiveSundayFocus, getSundayCoverageStats } from '../lib/sundaySpecialFocus';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
+import { parseEuropeanDate, formatToEuropeanDate } from '../utils/dateUtils';
 
 interface ScheduleViewProps {
   sundays: ServiceSunday[];
@@ -44,26 +45,16 @@ export default function ScheduleView({
 
   const canEdit = userRole === 'Admin' || userRole === 'Leader';
 
-  // Parse Slovenian style date "DD. MM. YY" into a comparable Date object
-  const parseSheetDate = (dateStr: string): Date => {
-    const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-    if (parts.length < 3) return new Date();
-    const day = parts[0];
-    const month = parts[1] - 1;
-    const year = 2000 + parts[2];
-    return new Date(year, month, day);
-  };
-
   // Threshold date for Academic Year 2026/2027: September 1, 2026 (first Sunday: Sep 6, 2026)
   const academicYearStartDate = new Date(2026, 8, 1);
 
   const isAcademicYear2627 = (dateStr: string) => {
-    return parseSheetDate(dateStr).getTime() >= academicYearStartDate.getTime();
+    return parseEuropeanDate(dateStr).getTime() >= academicYearStartDate.getTime();
   };
 
   const getEffectiveSundayStatus = (s: ServiceSunday): 'draft' | 'ready' | 'completed' => {
     if (s.status === 'completed') return 'completed';
-    const sDate = parseSheetDate(s.date);
+    const sDate = parseEuropeanDate(s.date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     // If the Sunday is in the past, automatically categorize as completed/archived
@@ -87,10 +78,10 @@ export default function ScheduleView({
   const sortedSundays = [...yearFilteredSundays].sort((a, b) => {
     if (yearView === '2026_2027') {
       // Ascending for upcoming academic year (from Aug/Sep 2026 onwards)
-      return parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime();
+      return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
     }
     // Descending for history / all
-    return parseSheetDate(b.date).getTime() - parseSheetDate(a.date).getTime();
+    return parseEuropeanDate(b.date).getTime() - parseEuropeanDate(a.date).getTime();
   });
 
   // Filter by status tab
@@ -310,7 +301,7 @@ export default function ScheduleView({
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-display font-semibold text-gray-900 group-hover:text-[#4338CA] transition text-sm sm:text-base">
-                      {sunday.date}
+                      {formatToEuropeanDate(sunday.date)}
                     </span>
                     <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${statusTagClass}`}>
                       {statusLabel}

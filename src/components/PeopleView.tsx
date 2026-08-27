@@ -789,22 +789,22 @@ export default function PeopleView({
     if (p.isArchived || p.role === 'Visitor' || p.memberType === 'visitor' || p.isVisitor) {
       return 'visitors';
     }
-    if (p.memberType === 'minor' || p.memberType === 'youth' || p.role === 'Minor' || (p.id && KNOWN_MINOR_IDS.has(p.id))) {
-      return 'youth';
-    }
-    if (p.memberType === 'member' || p.role === 'Viewer') {
-      return 'members';
-    }
+
     const isServing =
       p.role === 'Admin' ||
       p.role === 'Leader' ||
       p.role === 'Servant' ||
       (p.preferredMinistries && p.preferredMinistries.length > 0) ||
       (p.ledMinistries && p.ledMinistries.length > 0);
-    
+
     if (isServing) {
       return 'active';
     }
+
+    if (p.memberType === 'minor' || p.memberType === 'youth' || p.role === 'Minor' || (p.id && KNOWN_MINOR_IDS.has(p.id))) {
+      return 'youth';
+    }
+
     return 'members';
   };
 

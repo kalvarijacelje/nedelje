@@ -19,7 +19,8 @@ export function formatToISODate(dateStr: string): string | null {
   if (parts.length === 3) {
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10);
-    const year = parseInt(parts[2], 10);
+    let year = parseInt(parts[2], 10);
+    if (year < 100) year += 2000;
     if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
       const dd = day < 10 ? `0${day}` : `${day}`;
       const mm = month < 10 ? `0${month}` : `${month}`;

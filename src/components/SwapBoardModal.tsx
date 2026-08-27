@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShiftSwapRequest, ServiceSunday, Ministry, Person, Language, UserRole, canAccessPersonalData, getPrivacyDisplayName } from '../types';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
+import { formatToEuropeanDate, formatEuropeanDateTime } from '../utils/dateUtils';
 import {
   ArrowRightLeft,
   X,
@@ -310,7 +311,7 @@ export default function SwapBoardModal({
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-2">
                             <span className="font-display font-semibold text-sm text-gray-900">
-                              {req.sundayDate}
+                              {formatToEuropeanDate(req.sundayDate)}
                             </span>
                             <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-900 rounded-full font-mono border border-amber-200">
                               {req.ministryName}
@@ -324,7 +325,7 @@ export default function SwapBoardModal({
 
                         <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
                           <Clock className="w-3 h-3" />
-                          <span>{req.createdAt}</span>
+                          <span>{formatEuropeanDateTime(req.createdAt)}</span>
                         </div>
                       </div>
 
@@ -394,7 +395,7 @@ export default function SwapBoardModal({
                     className="p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs flex items-center justify-between text-gray-600"
                   >
                     <div>
-                      <span className="font-semibold text-gray-900">{req.sundayDate}</span> ({req.ministryName}):{' '}
+                      <span className="font-semibold text-gray-900">{formatToEuropeanDate(req.sundayDate)}</span> ({req.ministryName}):{' '}
                       <span>{req.requesterName}</span> ➔{' '}
                       <strong className="text-emerald-700">{req.acceptedByName || 'Zamenjano'}</strong>
                     </div>

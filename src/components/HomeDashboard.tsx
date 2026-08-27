@@ -4,9 +4,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { ServiceSunday, Ministry, UserRole, Translation, Person, VisitorConnection, canAccessPersonalData } from '../types';
+import { ServiceSunday, Ministry, UserRole, Translation, Person, VisitorConnection, BlackoutDate, canAccessPersonalData } from '../types';
 import { 
-  Calendar, Users, ArrowRightLeft, AlertTriangle, ShieldCheck, Heart, Sparkles, ChevronRight, CheckCircle2, AlertCircle, Plus, Eye, BookOpen, Layers, Check, Clock, HelpCircle, X, ExternalLink, ShieldAlert, Award, Star, MessageSquare, Phone, Info, Music, Home, Wine, HeartHandshake, PlusCircle, Coffee, Edit, UserPlus, Copy, CheckCircle, Palmtree, ClipboardCheck, Bell, UserCheck, User
+  Calendar, Users, ArrowRightLeft, AlertTriangle, ShieldCheck, Heart, Sparkles, ChevronRight, CheckCircle2, AlertCircle, Plus, Eye, BookOpen, Layers, Check, Clock, HelpCircle, X, ExternalLink, ShieldAlert, Award, Star, MessageSquare, Phone, Info, Music, Home, Wine, HeartHandshake, PlusCircle, Coffee, Edit, UserPlus, Copy, CheckCircle, Palmtree, ClipboardCheck, Bell, UserCheck, User, Crown
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import KcKalvarijaLogoComponent from './KcKalvarijaLogo';
@@ -15,6 +15,8 @@ import { getEffectiveSundayFocus, getSundayCoverageStats, getApplicableMinistrie
 import { resolveMinistryAssignments } from '../utils/worshipSync';
 import { generateConfirmationToken } from '../services/notificationService';
 import { useNotificationQueue } from '../hooks/useNotificationQueue';
+import { parseEuropeanDate, formatToEuropeanDate } from '../utils/dateUtils';
+import { getMinistryIconEmoji, checkPersonAbsenceOnSunday } from './SundayDetail';
 
 const KcKalvarijaLogo = () => (
   <KcKalvarijaLogoComponent className="w-14 h-14" />
@@ -39,6 +41,7 @@ interface HomeDashboardProps {
   onOpenNotificationModal?: () => void;
   onOpenRundownModal?: (sundayId?: string) => void;
   visitors?: VisitorConnection[];
+  blackoutDates?: BlackoutDate[];
 }
 
 export default function HomeDashboard({
@@ -60,6 +63,7 @@ export default function HomeDashboard({
   onOpenNotificationModal,
   onOpenRundownModal,
   visitors = [],
+  blackoutDates = [],
 }: HomeDashboardProps) {
 
   // Toast notification state
@@ -72,26 +76,36 @@ export default function HomeDashboard({
   const [selectedPersonName, setSelectedPersonName] = useState('');
   const [rosterSearchQuery, setRosterSearchQuery] = useState('');
 
-  // Parse Slovenian style date "DD. MM. YY" or "DD. MM. YYYY" into a comparable Date object
-  const parseSheetDate = (dateStr: string): Date => {
-    if (!dateStr) return new Date(0);
-    const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-    if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return new Date(0);
-    const day = parts[0];
-    const month = parts[1] - 1; // 0-indexed
-    let year = parts[2];
-    if (year < 100) year = 2000 + year;
-    return new Date(year, month, day);
-  };
-
   // Today at midnight for calculating upcoming dates
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   // Sort sundays chronologically
   const sortedSundays = [...sundays].sort((a, b) => {
-    return parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime();
+    return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
   });
+
+  // School Year 2026/2027 sundays calculation & countdown
+  const academicYear2627Start = new Date(2026, 7, 20); // late August 2026
+  const academicYear2627End = new Date(2027, 7, 31);    // August 2027
+  const schoolYearSundays = sortedSundays.filter(s => {
+    const d = parseEuropeanDate(s.date);
+    return d >= academicYear2627Start && d <= academicYear2627End;
+  });
+  const activeSchoolSundays = schoolYearSundays.length > 0 ? schoolYearSundays : sortedSundays;
+  const upcomingSchoolSundays = activeSchoolSundays.filter(s => parseEuropeanDate(s.date).getTime() >= today.getTime());
+  const completedSchoolSundaysCount = activeSchoolSundays.length - upcomingSchoolSundays.length;
+
+  // Active Servants count (strictly active volunteers in ministries, matching PeopleView)
+  const activeServantsCount = (people || []).filter(p => {
+    if (!p || !p.name || p.isArchived || p.isVisitor || p.role === 'Visitor' || p.memberType === 'visitor') return false;
+    return p.role === 'Admin' || p.role === 'Leader' || p.role === 'Servant' ||
+      (p.preferredMinistries && p.preferredMinistries.length > 0) ||
+      (p.ledMinistries && p.ledMinistries.length > 0);
+  }).length;
+
+  // Total visitor headcount (summing party/group sizes)
+  const totalVisitorHeadcount = (visitors || []).reduce((acc, v) => acc + (Math.max(1, Number(v.attendeeCount) || 1)), 0);
 
   // Find all pending invitations strictly for activePerson only (no family members)
   const pendingInvitations: {
@@ -220,7 +234,7 @@ export default function HomeDashboard({
   }, [toast]);
 
   // Find the next upcoming Sunday (today or in the future), or fallback to the latest Sunday
-  const nextSunday = sortedSundays.find(s => parseSheetDate(s.date).getTime() >= today.getTime()) || sortedSundays[sortedSundays.length - 1];
+  const nextSunday = sortedSundays.find(s => parseEuropeanDate(s.date).getTime() >= today.getTime()) || sortedSundays[sortedSundays.length - 1];
 
   // If there's no sunday computed, return safe state
   if (!nextSunday) {
@@ -261,6 +275,41 @@ export default function HomeDashboard({
     m => resolveMinistryAssignments(nextSunday, m.id).length === 0
   );
 
+  // Find fulfilled slots among applicable non-optional ministries
+  const fulfilledMinistries = nextSundayCoverage.requiredMinistries.filter(
+    m => resolveMinistryAssignments(nextSunday, m.id).length > 0
+  );
+
+  const getCategoryBorderClass = (category?: string) => {
+    switch (category) {
+      case 'cleaning': return 'border-l-4 border-l-amber-400 hover:border-amber-400';
+      case 'hospitality': return 'border-l-4 border-l-rose-400 hover:border-rose-400';
+      case 'sermon_prayer': return 'border-l-4 border-l-sky-400 hover:border-sky-400';
+      case 'worship':
+      case 'av_tech': return 'border-l-4 border-l-purple-400 hover:border-purple-400';
+      case 'audio_video': return 'border-l-4 border-l-cyan-500 hover:border-cyan-400';
+      case 'kids': return 'border-l-4 border-l-emerald-400 hover:border-emerald-400';
+      case 'post_service':
+      case 'other':
+      default: return 'border-l-4 border-l-indigo-400 hover:border-indigo-400';
+    }
+  };
+
+  const getCategoryIconBgClass = (category?: string) => {
+    switch (category) {
+      case 'cleaning': return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'hospitality': return 'bg-rose-100 text-rose-800 border-rose-200';
+      case 'sermon_prayer': return 'bg-sky-100 text-sky-800 border-sky-200';
+      case 'worship':
+      case 'av_tech': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'audio_video': return 'bg-cyan-100 text-cyan-800 border-cyan-200';
+      case 'kids': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'post_service':
+      case 'other':
+      default: return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+    }
+  };
+
   // Helper to check if a specific person is assigned to a ministry on a given Sunday
   const isPersonAssignedOnSunday = (sunday: ServiceSunday, person: Person, ministryId: string): boolean => {
     const pName = person.name.toLowerCase().trim();
@@ -297,7 +346,7 @@ export default function HomeDashboard({
 
     // 2. Scan all sortedSundays
     sortedSundays.forEach(s => {
-      const sDate = parseSheetDate(s.date);
+      const sDate = parseEuropeanDate(s.date);
       let assignedInSunday = false;
       const assignedMinNames: string[] = [];
 
@@ -571,8 +620,8 @@ export default function HomeDashboard({
                     <Calendar className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                     <span>
                       {currentLanguage === 'sl' 
-                        ? `Naslednje služenje: ${(nextServingSunday as ServiceSunday).date} (${nextServingMinistries.join(', ')})` 
-                        : `Next duty: ${(nextServingSunday as ServiceSunday).date} (${nextServingMinistries.join(', ')})`}
+                        ? `Naslednje služenje: ${formatToEuropeanDate((nextServingSunday as ServiceSunday).date)} (${nextServingMinistries.join(', ')})` 
+                        : `Next duty: ${formatToEuropeanDate((nextServingSunday as ServiceSunday).date)} (${nextServingMinistries.join(', ')})`}
                     </span>
                   </span>
                 ) : (
@@ -605,7 +654,7 @@ export default function HomeDashboard({
                   <span>{currentLanguage === 'sl' ? 'Naslednje bogoslužje:' : 'Next Service:'}</span>
                 </span>
                 <span className="font-bold text-white bg-white/15 px-2 py-0.5 rounded-md border border-white/20 text-[11px] font-mono">
-                  {nextSunday.date}
+                  {formatToEuropeanDate(nextSunday.date)}
                 </span>
                 <span className="text-[11px] bg-white/10 px-2 py-0.5 rounded-md border border-white/15 text-indigo-100 font-medium">
                   {nextSundayFocusLabel}
@@ -615,25 +664,38 @@ export default function HomeDashboard({
           </div>
 
           {/* Right Side: Community & Ecosystem Live Metrics */}
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-white/85">
-            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10 flex items-center gap-1" title={currentLanguage === 'sl' ? 'Vsa načrtovana nedeljska bogoslužja' : 'Total scheduled Sunday services'}>
-              📅 <strong className="text-white font-bold">{sundays.length}</strong> {currentLanguage === 'sl' ? 'nedelj' : 'Sundays'}
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-white/90">
+            <span 
+              className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
+              title={currentLanguage === 'sl' 
+                ? `Šolsko leto 2026/2027: ${completedSchoolSundaysCount} zaključenih nedelj, še ${upcomingSchoolSundays.length} pred nami (skupaj ${activeSchoolSundays.length})` 
+                : `School Year 2026/2027: ${completedSchoolSundaysCount} completed, ${upcomingSchoolSundays.length} upcoming (${activeSchoolSundays.length} total)`}
+            >
+              📅 <strong className="text-white font-bold">{upcomingSchoolSundays.length}/{activeSchoolSundays.length}</strong> {currentLanguage === 'sl' ? 'nedelj' : 'Sundays'}
             </span>
-            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10 flex items-center gap-1" title={currentLanguage === 'sl' ? 'Aktivne službe v cerkvi' : 'Active church ministries'}>
-              📋 <strong className="text-white font-bold">{ministries.length}</strong> {currentLanguage === 'sl' ? 'služb' : 'teams'}
+            <span 
+              className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
+              title={currentLanguage === 'sl' ? 'Aktivne službe v cerkvi' : 'Active church ministries'}
+            >
+              📋 <strong className="text-white font-bold">{ministries.length}</strong> {currentLanguage === 'sl' ? 'služb' : 'ministries'}
             </span>
-            <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10 flex items-center gap-1" title={currentLanguage === 'sl' ? 'Skupno število sodelavcev in prostovoljcev' : 'Total active volunteers'}>
-              👥 <strong className="text-white font-bold">{people.length}</strong> {currentLanguage === 'sl' ? 'sodelavcev' : 'volunteers'}
+            <span 
+              className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
+              title={currentLanguage === 'sl' ? `Aktivni sodelavci z dodeljenimi ali prednostnimi službami (${activeServantsCount} od skupaj ${people.length} v bazi)` : `Active servants with ministry duties (${activeServantsCount} of ${people.length} total)`}
+            >
+              👥 <strong className="text-white font-bold">{activeServantsCount}</strong> {currentLanguage === 'sl' ? 'aktivnih' : 'active'}
             </span>
-            {visitors.length > 0 && onOpenVisitorModal && (
+            {onOpenVisitorModal && (
               <button
                 type="button"
                 onClick={onOpenVisitorModal}
-                className="px-2 py-0.5 bg-amber-400/25 hover:bg-amber-400/40 text-amber-200 rounded-lg border border-amber-300/35 cursor-pointer transition flex items-center gap-1 active:scale-95"
-                title={currentLanguage === 'sl' ? 'Odpri evidenco obiskovalcev' : 'Open visitor connections tracker'}
+                className="px-2 py-0.5 bg-amber-400/25 hover:bg-amber-400/40 text-amber-200 rounded-lg border border-amber-300/35 cursor-pointer transition flex items-center gap-1 active:scale-95 shadow-2xs"
+                title={currentLanguage === 'sl' 
+                  ? `Evidenca obiskovalcev: ${totalVisitorHeadcount} oseb (${visitors.length} vnosov / skupin)` 
+                  : `Visitor tracker: ${totalVisitorHeadcount} visitors (${visitors.length} entries / groups)`}
               >
                 <Coffee className="w-3 h-3 text-amber-300" />
-                <span><strong className="text-white font-bold">{visitors.length}</strong> {currentLanguage === 'sl' ? 'obiskovalcev' : 'visitors'}</span>
+                <span><strong className="text-white font-bold">{totalVisitorHeadcount}</strong> {currentLanguage === 'sl' ? (totalVisitorHeadcount === 1 ? 'obiskovalec' : totalVisitorHeadcount === 2 ? 'obiskovalca' : 'obiskovalcev') : (totalVisitorHeadcount === 1 ? 'visitor' : 'visitors')}</span>
               </button>
             )}
           </div>
@@ -647,165 +709,161 @@ export default function HomeDashboard({
         {/* Main Column on Desktop (Next Sunday overview + Vacant Roles) */}
         <div className="lg:col-span-2 space-y-5">
           
-          {/* Primary: Quick Roster Summary of Next Sunday */}
-          <div id="next-service-overview" className="bg-white rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)] border border-gray-200 p-5 space-y-4">
-            <div className="flex items-center justify-between gap-2">
+          {/* Primary: Executive Summary of Next Sunday */}
+          <div id="next-service-overview" className="bg-white rounded-2xl shadow-2xs border border-gray-200/90 p-5 space-y-4">
+            {/* Header: Date, Focus & Direct Link */}
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-gray-100">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="p-2 bg-[#EEF2FF] text-[#4338CA] rounded-lg shrink-0">
+                <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl shrink-0 border border-indigo-100 shadow-2xs">
                   <Calendar className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] text-gray-400 uppercase font-bold font-mono tracking-wider block">
-                    {translations.nextSunday}
+                  <span className="text-[10px] text-indigo-600 uppercase font-bold font-mono tracking-wider block">
+                    📅 {translations.nextSunday}
                   </span>
-                  <span className="text-base font-bold text-gray-900 font-display truncate block">
-                    {nextSunday.date}
-                  </span>
+                  <h3 className="text-base font-bold text-slate-900 font-display truncate">
+                    {formatToEuropeanDate(nextSunday.date)}
+                  </h3>
                 </div>
               </div>
               
               <button
                 onClick={() => onSelectSunday(nextSunday.id)}
                 id="btn-next-sunday-details"
-                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 py-1.5 px-3 rounded-lg flex items-center gap-1 transition active:scale-95 font-medium cursor-pointer shrink-0"
+                className="text-xs bg-slate-50 hover:bg-indigo-50 hover:text-indigo-900 text-slate-700 py-1.5 px-3 rounded-xl border border-slate-200 flex items-center gap-1.5 transition font-semibold cursor-pointer shrink-0 shadow-2xs active:scale-95"
               >
-                <span>{translations.viewDetails}</span>
-                <ChevronRight className="w-3.5 h-3.5" />
+                <span>{currentLanguage === 'sl' ? 'Odpri razpored' : 'Open Schedule'}</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
               </button>
             </div>
 
-            {/* Info badges */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200/60 min-w-0">
-                <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider font-mono mb-1">{translations.themeLabel}</span>
-                <span className="font-semibold text-gray-800 block truncate" title={currentLanguage === 'sl' ? nextSunday.themeSl : nextSunday.themeEn}>
-                  {currentLanguage === 'sl' ? nextSunday.themeSl : nextSunday.themeEn || '/'}
-                </span>
-              </div>
-
-              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200/60 font-sans min-w-0">
-                <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider font-mono mb-1">{currentLanguage === 'sl' ? 'Odsotni' : 'Absent'}</span>
-                <span className="font-semibold text-gray-800 block truncate" title={nextSunday.guest || nextSunday.absentOrNotes}>
-                  {nextSunday.guest || nextSunday.absentOrNotes || '/'}
-                </span>
-              </div>
-            </div>
-
-            {/* Special Sunday Focus Callout Banner */}
+            {/* Theme & Special Sunday Focus Banner */}
             {(() => {
               const effFocus = getEffectiveSundayFocus(nextSunday);
-              if (effFocus.type === 'communion') {
-                return (
-                  <div 
-                    onClick={() => onSelectSunday(nextSunday.id)}
-                    className="p-3 sm:p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 cursor-pointer hover:bg-rose-100/80 transition"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 bg-rose-100 text-rose-800 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold shadow-2xs">
-                        🍷🍞
-                      </div>
-                      <div className="min-w-0 text-xs">
-                        <span className="font-bold text-rose-950 block">🍷🍞 {currentLanguage === 'sl' ? 'Ta nedelja: Gospodova Večerja' : 'This Sunday: Lord\'s Supper / Communion'}</span>
-                        <p className="text-[11px] text-rose-800/80 truncate">
-                          {currentLanguage === 'sl' ? 'Odgovorni za Gospodovo Večerjo:' : 'Assigned for Communion:'} <strong>{(effFocus.communion?.inChargeNames || []).join(', ') || 'Aleš & Whitney'}</strong>
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-800 bg-rose-100/80 px-2.5 py-1 rounded-lg shrink-0 whitespace-nowrap self-start sm:self-auto shadow-2xs">
-                      {currentLanguage === 'sl' ? 'Pripravi Večerjo →' : 'Communion Details →'}
+              const sundayTheme = (currentLanguage === 'sl' ? nextSunday.themeSl : nextSunday.themeEn) || (currentLanguage === 'sl' ? 'Nedeljsko bogoslužje' : 'Sunday Service');
+
+              return (
+                <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider font-mono">
+                      {translations.themeLabel}
+                    </span>
+                    <span className="font-bold text-slate-900 text-sm block truncate" title={sundayTheme}>
+                      📖 {sundayTheme}
                     </span>
                   </div>
-                );
-              }
-              if (effFocus.type === 'prayer_focus') {
-                return (
-                  <div 
-                    onClick={() => onSelectSunday(nextSunday.id)}
-                    className="p-3 sm:p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 cursor-pointer hover:bg-indigo-100/80 transition"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 bg-indigo-100 text-indigo-800 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold shadow-2xs">
-                        🙏
-                      </div>
-                      <div className="min-w-0 text-xs">
-                        <span className="font-bold text-indigo-950 block">🙏 {currentLanguage === 'sl' ? 'Ta nedelja: Molitev za Družino & Sfero Vpliva' : 'This Sunday: Family & Sphere Prayer Focus'}</span>
-                        <p className="text-[11px] text-indigo-800/80 truncate">
-                          {currentLanguage === 'sl' ? 'Molitveni poudarek:' : 'Prayer focus:'} <strong>{effFocus.prayerFocus?.familyNameOrPerson || (currentLanguage === 'sl' ? 'Določi družino za molitev' : 'Set Prayer Family')}</strong> {effFocus.prayerFocus?.sphereOfInfluence ? `(${effFocus.prayerFocus.sphereOfInfluence})` : ''}
-                        </p>
-                      </div>
+
+                  {effFocus.type === 'communion' ? (
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-lg text-xs font-semibold shrink-0 shadow-2xs">
+                      <span>🍷🍞</span>
+                      <span>{currentLanguage === 'sl' ? 'Gospodova večerja' : "Lord's Supper"}</span>
                     </div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 bg-indigo-100/80 px-2.5 py-1 rounded-lg shrink-0 whitespace-nowrap self-start sm:self-auto shadow-2xs">
-                      {currentLanguage === 'sl' ? 'Poglej Potrebe →' : 'View Prayer Needs →'}
-                    </span>
-                  </div>
-                );
-              }
-              return null;
+                  ) : effFocus.type === 'prayer_focus' ? (
+                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-xs font-semibold shrink-0 shadow-2xs">
+                      <span>🙏</span>
+                      <span>{currentLanguage === 'sl' ? 'Molitev za družino:' : 'Prayer for Family:'} <strong className="text-indigo-950 font-bold">{effFocus.prayerFocus?.familyNameOrPerson || '—'}</strong></span>
+                    </div>
+                  ) : null}
+                </div>
+              );
             })()}
 
-            {/* Worship Setlist & Service Rundown Quick Bar */}
-            <div 
-              onClick={() => onOpenRundownModal ? onOpenRundownModal(nextSunday.id) : onSelectSunday(nextSunday.id)}
-              className="bg-slate-900 text-white p-3 sm:p-3.5 rounded-xl border border-violet-800/80 hover:border-violet-600 transition cursor-pointer flex items-center justify-between gap-2.5 group shadow-sm"
-            >
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                <div className="p-2 bg-violet-600/40 text-violet-300 rounded-lg shrink-0">
-                  <Music className="w-4 h-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-bold text-white group-hover:text-violet-200 transition">
-                      {currentLanguage === 'sl' ? 'Slavilne pesmi & Urnik' : 'Worship Songs & Rundown'}
-                    </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-violet-500/20 text-violet-300 rounded-full border border-violet-500/30 whitespace-nowrap shrink-0">
-                      {nextSunday.worshipSetlist ? `${nextSunday.worshipSetlist.length} ${currentLanguage === 'sl' ? 'pesmi' : 'songs'}` : (currentLanguage === 'sl' ? '2 pesmi' : '2 songs')}
+            {/* 5 Key Responsibility Leaders for this Sunday */}
+            {(() => {
+              const preacher = (nextSunday.assignments?.['ucenje'] || [])[0] || (nextSunday.assignments?.['sermon_prayer'] || [])[0] || nextSunday.guest || '';
+              const worshipLeader = (nextSunday.assignments?.['uvod_slavljenje'] || [])[0] || (nextSunday.assignments?.['slavilna_ekipa'] || [])[0] || '';
+              const youngerTeacher = (nextSunday.assignments?.['nedeljska_sola_mlajsa'] || [])[0] || '';
+              const olderTeacher = (nextSunday.assignments?.['nedeljska_sola_starejsa'] || [])[0] || '';
+              const hospitalityLead = (nextSunday.assignments?.['gostoljubje'] || [])[0] || (nextSunday.assignments?.['kava'] || [])[0] || '';
+
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                      <Crown className="w-3.5 h-3.5 text-amber-500" />
+                      <span>{currentLanguage === 'sl' ? 'Glavni nosilci služb te nedelje:' : 'Key Service Leaders This Sunday:'}</span>
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 truncate">
-                    {nextSunday.worshipSetlist && nextSunday.worshipSetlist.length > 0
-                      ? nextSunday.worshipSetlist.map(s => `${s.titleSl} [${s.key || 'C'}]`).join(' • ')
-                      : (currentLanguage === 'sl' ? 'Klikni za izbiro pesmi iz pesmarice appa ali pregled urikarja' : 'Click to select songs from app songbook or view rundown')}
-                  </p>
-                </div>
-              </div>
 
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-white transition shrink-0" />
-            </div>
-
-            {/* Living Faith Coffee Shop & Visitors Quick Banner */}
-            {canAccessPersonalData(userRole) && (
-              <div 
-                onClick={onOpenVisitorModal}
-                className="bg-amber-50/90 hover:bg-amber-100/90 text-amber-950 p-3 sm:p-3.5 rounded-xl border border-amber-300/80 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 group shadow-2xs"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-2 bg-amber-900 text-amber-100 rounded-lg shrink-0 shadow-2xs">
-                    <Coffee className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-bold text-amber-950 group-hover:text-amber-900 transition">
-                        {currentLanguage === 'sl' ? '☕ Kavarna Živa Vera & Obiskovalci' : '☕ Living Faith Coffee Shop & Visitors'}
-                      </span>
-                      {visitors.filter(v => v.followUpStatus === 'new').length > 0 && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-600 text-white rounded-full whitespace-nowrap shrink-0">
-                          {visitors.filter(v => v.followUpStatus === 'new').length} {currentLanguage === 'sl' ? 'za kontakt' : 'to contact'}
-                        </span>
-                      )}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                    {/* 1. Preacher */}
+                    <div 
+                      onClick={() => onSelectSunday(nextSunday.id)}
+                      className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-sky-500 bg-gradient-to-r from-sky-50/40 via-white to-white hover:border-sky-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
+                      title={preacher || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
+                    >
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-sky-800 uppercase tracking-wider mb-1">
+                        <span>📖</span>
+                        <span className="truncate">{currentLanguage === 'sl' ? 'Pridiga' : 'Preaching'}</span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-900 truncate">
+                        {preacher || <span className="text-slate-400 font-normal italic text-[11px]">— Ni določeno —</span>}
+                      </div>
                     </div>
-                    <p className="text-[11px] text-amber-800/90 truncate font-sans">
-                      {currentLanguage === 'sl' 
-                        ? 'Druženje po bogoslužju spodaj v kavarni • Zabeleži nove obiskovalce in dodeli kontakt'
-                        : 'Post-service coffee fellowship • Log new visitors and assign follow-up'}
-                    </p>
+
+                    {/* 2. Worship Leader */}
+                    <div 
+                      onClick={() => onSelectSunday(nextSunday.id)}
+                      className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50/40 via-white to-white hover:border-purple-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
+                      title={worshipLeader || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
+                    >
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-purple-800 uppercase tracking-wider mb-1">
+                        <span>🎵</span>
+                        <span className="truncate">{currentLanguage === 'sl' ? 'Slavljenje' : 'Worship'}</span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-900 truncate">
+                        {worshipLeader || <span className="text-slate-400 font-normal italic text-[11px]">— Ni določeno —</span>}
+                      </div>
+                    </div>
+
+                    {/* 3. Younger Kids School */}
+                    <div 
+                      onClick={() => onSelectSunday(nextSunday.id)}
+                      className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-50/40 via-white to-white hover:border-emerald-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
+                      title={youngerTeacher || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
+                    >
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-emerald-800 uppercase tracking-wider mb-1">
+                        <span>👶</span>
+                        <span className="truncate">{currentLanguage === 'sl' ? 'Šola (3–9 let)' : 'Kids (3–9)'}</span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-900 truncate">
+                        {youngerTeacher || <span className="text-slate-400 font-normal italic text-[11px]">— Ni določeno —</span>}
+                      </div>
+                    </div>
+
+                    {/* 4. Older Kids School */}
+                    <div 
+                      onClick={() => onSelectSunday(nextSunday.id)}
+                      className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-teal-500 bg-gradient-to-r from-teal-50/40 via-white to-white hover:border-teal-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
+                      title={olderTeacher || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
+                    >
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-teal-800 uppercase tracking-wider mb-1">
+                        <span>🎓</span>
+                        <span className="truncate">{currentLanguage === 'sl' ? 'Šola (10–15+)' : 'Kids (10–15+)'}</span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-900 truncate">
+                        {olderTeacher || <span className="text-slate-400 font-normal italic text-[11px]">— Ni določeno —</span>}
+                      </div>
+                    </div>
+
+                    {/* 5. Hospitality & Coffee */}
+                    <div 
+                      onClick={() => onSelectSunday(nextSunday.id)}
+                      className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-rose-400 bg-gradient-to-r from-rose-50/40 via-white to-white hover:border-rose-300 hover:shadow-xs transition cursor-pointer flex flex-col justify-between col-span-2 sm:col-span-1"
+                      title={hospitalityLead || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
+                    >
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-rose-800 uppercase tracking-wider mb-1">
+                        <span>☕</span>
+                        <span className="truncate">{currentLanguage === 'sl' ? 'Gostoljubje' : 'Hospitality'}</span>
+                      </div>
+                      <div className="font-bold text-xs text-slate-900 truncate">
+                        {hospitalityLead || <span className="text-slate-400 font-normal italic text-[11px]">— Ni določeno —</span>}
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 bg-amber-200/80 hover:bg-amber-300 px-2.5 py-1 rounded-lg shrink-0 transition whitespace-nowrap self-start sm:self-auto shadow-2xs">
-                  {currentLanguage === 'sl' ? 'Odpri Karton →' : 'Open Tracker →'}
-                </span>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Coverage Progress Bar */}
             <div className="space-y-1.5 pt-1">
@@ -824,42 +882,36 @@ export default function HomeDashboard({
             </div>
 
             {/* Quick Actions Panel directly on sunday card */}
-            <div className="pt-4 border-t border-gray-150 grid grid-cols-3 phone-grid-3 gap-2">
-              <button
-                onClick={() => onSelectSunday(nextSunday.id)}
-                id="action-edit-sunday"
-                className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 transition cursor-pointer border border-gray-200/60 font-sans"
-              >
-                <Edit className="w-4 h-4 text-slate-600 mb-1" />
-                <span className="text-[10px] font-bold text-center leading-tight">
-                  {currentLanguage === 'sl' ? 'Uredi nedeljo' : 'Edit Sunday'}
-                </span>
-              </button>
-
+            <div className="pt-3 border-t border-gray-150 grid grid-cols-3 gap-2">
               <button
                 onClick={() => setShowQuickAssign(!showQuickAssign)}
                 id="action-assign-person"
-                className={`flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl transition cursor-pointer border font-sans ${
+                className={`flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl transition cursor-pointer font-sans text-xs font-bold border shadow-2xs active:scale-95 ${
                   showQuickAssign 
-                    ? 'bg-indigo-50 border-indigo-300 text-[#4338CA]' 
-                    : 'bg-gray-50 hover:bg-indigo-50/50 border-gray-200/60 text-[#4338CA]'
+                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs' 
+                    : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-900 border-indigo-200/80'
                 }`}
               >
-                <UserPlus className="w-4 h-4 text-indigo-600 mb-1" />
-                <span className="text-[10px] font-bold text-center leading-tight">
-                  {currentLanguage === 'sl' ? 'Dodeli osebo' : 'Assign Person'}
-                </span>
+                <UserPlus className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="truncate">{currentLanguage === 'sl' ? 'Dodeli sodelavca' : 'Assign Person'}</span>
+              </button>
+
+              <button
+                onClick={() => onSelectSunday(nextSunday.id)}
+                id="action-edit-sunday"
+                className="flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 transition cursor-pointer border border-slate-200/80 font-sans text-xs font-bold shadow-2xs active:scale-95"
+              >
+                <Edit className="w-4 h-4 text-slate-600 shrink-0" />
+                <span className="truncate">{currentLanguage === 'sl' ? 'Uredi nedeljo' : 'Edit Sunday'}</span>
               </button>
 
               <button
                 onClick={handleDuplicateWeek}
                 id="action-duplicate-week"
-                className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 transition cursor-pointer border border-gray-200/60 font-sans"
+                className="flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 transition cursor-pointer border border-slate-200/80 font-sans text-xs font-bold shadow-2xs active:scale-95"
               >
-                <Copy className="w-4 h-4 text-slate-600 mb-1" />
-                <span className="text-[10px] font-bold text-center leading-tight">
-                  {currentLanguage === 'sl' ? 'Kopiraj teden' : 'Duplicate Week'}
-                </span>
+                <Copy className="w-4 h-4 text-slate-600 shrink-0" />
+                <span className="truncate">{currentLanguage === 'sl' ? 'Kopiraj teden' : 'Duplicate Week'}</span>
               </button>
             </div>
 
@@ -882,15 +934,48 @@ export default function HomeDashboard({
                     </label>
                     <select
                       value={selectedVacantId}
-                      onChange={(e) => setSelectedVacantId(e.target.value)}
-                      className="w-full text-xs px-2.5 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      onChange={(e) => {
+                        setSelectedVacantId(e.target.value);
+                        setSelectedPersonName('');
+                      }}
+                      className="w-full text-xs px-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:border-indigo-500 font-semibold cursor-pointer shadow-2xs text-slate-900"
                     >
                       <option value="">-- {currentLanguage === 'sl' ? 'Izberi prazno službo' : 'Select vacant title'} --</option>
-                      {vacantMinistries.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {currentLanguage === 'sl' ? m.nameSl : m.nameEn}
-                        </option>
-                      ))}
+                      {(() => {
+                        const categoryOrder: Array<{ id: string; labelSl: string; labelEn: string }> = [
+                          { id: 'cleaning', labelSl: '🧹 PRIPRAVA & ČIŠČENJE', labelEn: '🧹 SETUP & CLEANING' },
+                          { id: 'hospitality', labelSl: '☕ GOSTOLJUBJE & KAVA', labelEn: '☕ HOSPITALITY & SNACKS' },
+                          { id: 'sermon_prayer', labelSl: '📖 BOGOSLUŽJE & MOLITEV', labelEn: '📖 MAIN SERVICE & PRAYER' },
+                          { id: 'worship', labelSl: '🎵 SLAVLJENJE', labelEn: '🎵 WORSHIP TEAM' },
+                          { id: 'audio_video', labelSl: '🎥 AVDIO & VIDEO', labelEn: '🎥 AUDIO & VIDEO' },
+                          { id: 'kids', labelSl: '👶 NEDELJSKA ŠOLA', labelEn: '👶 SUNDAY KIDS SCHOOL' },
+                          { id: 'post_service', labelSl: '🤝 PO BOGOSLUŽJU & FINANCE', labelEn: '🤝 POST-SERVICE & FINANCE' },
+                          { id: 'other', labelSl: '📌 OSTALO', labelEn: '📌 OTHER' },
+                        ];
+
+                        const groups = categoryOrder.map(cat => {
+                          const items = vacantMinistries.filter(m => {
+                            if (cat.id === 'audio_video') return m.category === 'audio_video' || m.category === 'av_tech';
+                            if (cat.id === 'other') return !['cleaning', 'hospitality', 'sermon_prayer', 'worship', 'audio_video', 'av_tech', 'kids', 'post_service'].includes(m.category);
+                            return m.category === cat.id;
+                          });
+                          return { ...cat, items };
+                        }).filter(g => g.items.length > 0);
+
+                        return groups.map(group => (
+                          <optgroup key={group.id} label={currentLanguage === 'sl' ? group.labelSl : group.labelEn}>
+                            {group.items.map(m => {
+                              const emoji = getMinistryIconEmoji(m.id);
+                              const name = currentLanguage === 'sl' ? m.nameSl : m.nameEn;
+                              return (
+                                <option key={m.id} value={m.id}>
+                                  {emoji} {name}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        ));
+                      })()}
                     </select>
                   </div>
 
@@ -912,12 +997,10 @@ export default function HomeDashboard({
                     {/* Filtered Available Volunteer Selection Pills */}
                     {(() => {
                       const query = rosterSearchQuery.toLowerCase().trim();
-                      const filteredPeople = (people || [])
-                        .filter(p => p && p.name && !p.isArchived)
-                        .filter(p => !query || p.name.toLowerCase().includes(query))
-                        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                      const rawPeople = (people || []).filter(p => p && p.name && !p.isArchived && !p.isVisitor);
+                      const matchingPeople = rawPeople.filter(p => !query || p.name.toLowerCase().includes(query));
 
-                      if (filteredPeople.length === 0) {
+                      if (matchingPeople.length === 0) {
                         return (
                           <p className="text-[11px] text-rose-500 italic mt-1.5 font-mono">
                             {currentLanguage === 'sl' ? 'Oseba ni bila najdena v bazi ekipe.' : 'No matching volunteer found in roster.'}
@@ -925,15 +1008,67 @@ export default function HomeDashboard({
                         );
                       }
 
+                      const effectiveBlackouts = blackoutDates || [];
+                      const nextSundayDate = nextSunday?.date || '';
+
+                      const decoratedPeople = matchingPeople.map(p => {
+                        const prefList = (p.preferredMinistries || []).map(m => m.toLowerCase());
+                        const ledList = (p.ledMinistries || []).map(m => m.toLowerCase());
+                        const vId = (selectedVacantId || '').toLowerCase();
+
+                        const isPreferred = vId ? (
+                          prefList.includes(vId) ||
+                          ledList.includes(vId) ||
+                          (vId === 'nedeljska_sola_mlajsa' && (prefList.includes('nedeljska_sola_mlajsa') || prefList.includes('otroško služenje - mlajša'))) ||
+                          (vId === 'nedeljska_sola_starejsa' && (prefList.includes('nedeljska_sola_starejsa') || prefList.includes('otroško služenje - starejša'))) ||
+                          (vId === 'slavilna_ekipa' && (prefList.includes('slavilna_ekipa') || prefList.includes('uvod_slavljenje')))
+                        ) : false;
+
+                        const { isAbsent, reason: absenceReason } = checkPersonAbsenceOnSunday(
+                          p.name,
+                          nextSundayDate,
+                          effectiveBlackouts
+                        );
+
+                        return {
+                          person: p,
+                          isPreferred,
+                          isAbsent,
+                          absenceReason
+                        };
+                      });
+
+                      // Sort: Starred / Preferred volunteers FIRST, then non-absent, then absent at bottom, alphabetically within each group
+                      decoratedPeople.sort((a, b) => {
+                        // 1. Absent to the bottom
+                        if (a.isAbsent && !b.isAbsent) return 1;
+                        if (!a.isAbsent && b.isAbsent) return -1;
+
+                        // 2. Starred / Preferred to the top
+                        if (a.isPreferred && !b.isPreferred) return -1;
+                        if (!a.isPreferred && b.isPreferred) return 1;
+
+                        // 3. Alphabetical
+                        return a.person.name.localeCompare(b.person.name, 'sl', { sensitivity: 'base' });
+                      });
+
+                      const preferredCount = decoratedPeople.filter(d => d.isPreferred && !d.isAbsent).length;
+
                       return (
                         <div className="mt-2 space-y-1">
-                          <label className="block text-[9px] font-bold text-gray-500 font-mono uppercase tracking-wider">
-                            {currentLanguage === 'sl' ? 'Izberite sodelavca s seznama:' : 'Choose volunteer from roster:'}
-                          </label>
-                          <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2 bg-white border border-indigo-150 rounded-lg shadow-2xs">
-                            {filteredPeople.map((p) => {
-                              const preferences = p.preferredMinistries || [];
-                              const isPreferred = selectedVacantId && preferences.includes(selectedVacantId);
+                          <div className="flex items-center justify-between">
+                            <label className="block text-[9px] font-bold text-gray-500 font-mono uppercase tracking-wider">
+                              {currentLanguage === 'sl' ? 'Izberite sodelavca s seznama:' : 'Choose volunteer from roster:'}
+                            </label>
+                            {selectedVacantId && preferredCount > 0 && (
+                              <span className="text-[9px] font-mono font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-md border border-amber-300">
+                                ⭐ {preferredCount} {currentLanguage === 'sl' ? 'predlaganih za to službo' : 'recommended for this role'}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-2 bg-white border border-indigo-150 rounded-xl shadow-2xs">
+                            {decoratedPeople.map(({ person: p, isPreferred, isAbsent, absenceReason }) => {
                               const isSelected = selectedPersonName === p.name;
 
                               return (
@@ -941,17 +1076,27 @@ export default function HomeDashboard({
                                   type="button"
                                   key={p.id || p.name}
                                   onClick={() => setSelectedPersonName(p.name)}
-                                  className={`text-xs px-2.5 py-1 rounded-md transition font-medium border cursor-pointer flex items-center gap-1 active:scale-95 ${
+                                  className={`text-xs px-2.5 py-1.5 rounded-lg transition font-medium border cursor-pointer flex items-center gap-1.5 active:scale-95 ${
                                     isSelected
                                       ? 'bg-indigo-600 text-white border-indigo-700 font-bold shadow-2xs'
+                                      : isAbsent
+                                      ? 'bg-rose-50 text-rose-800 border-rose-200 opacity-60 hover:opacity-100'
                                       : isPreferred
-                                      ? 'bg-amber-50 text-amber-900 border-amber-300 font-semibold hover:bg-amber-100'
+                                      ? 'bg-amber-50 text-amber-950 border-amber-300 font-semibold shadow-2xs hover:bg-amber-100 ring-1 ring-amber-300/60'
                                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-900'
                                   }`}
+                                  title={
+                                    isAbsent
+                                      ? `${p.name} (Odsoten/Dopust: ${absenceReason || 'Dopust'})`
+                                      : isPreferred
+                                      ? `${p.name} (Prednostna / dodeljena služba ⭐)`
+                                      : p.name
+                                  }
                                 >
                                   <span>{p.name}</span>
-                                  {isPreferred && <span className="text-[10px] text-amber-500" title={currentLanguage === 'sl' ? 'Prednostna služba' : 'Preferred ministry'}>★</span>}
-                                  {isSelected && <span className="text-[10px]">✓</span>}
+                                  {isPreferred && <span className="text-[11px] text-amber-500 font-bold">⭐</span>}
+                                  {isAbsent && <span className="text-[10px] text-rose-500 font-bold" title="Odsoten / dopust">🌴</span>}
+                                  {isSelected && <span className="text-[10px] font-bold">✓</span>}
                                 </button>
                               );
                             })}
@@ -990,44 +1135,133 @@ export default function HomeDashboard({
             )}
           </div>
 
-          {/* Missing Assignments Section */}
-          <div id="missing-assignments-overview" className="bg-white rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)] border border-gray-200 p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                <span>{translations.missingAssignments}</span>
-              </h3>
-              <span className="text-xs bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full font-bold font-mono border border-rose-200">
-                {vacantMinistries.length}
-              </span>
+          {/* Missing & Fulfilled Assignments Section */}
+          <div id="missing-assignments-overview" className="bg-white rounded-2xl shadow-2xs border border-gray-200/90 p-5 space-y-4">
+            {/* Header with Title & Percentage / Slots count */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider font-mono">
+                  {translations.missingAssignments}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs bg-indigo-50 text-indigo-900 px-2.5 py-1 rounded-lg font-bold font-mono border border-indigo-200 shadow-2xs flex items-center gap-1.5">
+                  <span>📊 {currentLanguage === 'sl' ? 'Pokritost:' : 'Coverage:'}</span>
+                  <span className="text-indigo-700">{assignedSlots}/{totalSlots}</span>
+                  <span className="bg-indigo-600 text-white px-1.5 py-0.2 rounded text-[10px] font-bold">
+                    {coveragePercent}%
+                  </span>
+                </span>
+
+                {vacantMinistries.length > 0 && (
+                  <span className="text-xs bg-rose-100 text-rose-800 px-2.5 py-1 rounded-lg font-bold font-mono border border-rose-300 shadow-2xs">
+                    {currentLanguage === 'sl' ? `Prosto: ${vacantMinistries.length}` : `Vacant: ${vacantMinistries.length}`}
+                  </span>
+                )}
+              </div>
             </div>
 
+            {/* 1. Vacant / Missing Roles */}
             {vacantMinistries.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
-                {vacantMinistries.map((ministry) => (
-                  <button
-                    key={ministry.id}
-                    onClick={() => onSelectSunday(nextSunday.id)}
-                    className="text-left px-3.5 py-2.5 bg-[#FFF1F2] hover:bg-[#FFE4E6] border border-[#FECDD3] rounded-xl transition flex justify-between items-center group cursor-pointer"
-                  >
-                    <div className="space-y-0.5 min-w-0 pr-2">
-                      <span className="text-xs font-semibold text-gray-900 group-hover:text-[#4338CA] transition block truncate">
-                        {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
-                      </span>
-                      <span className="text-[9px] text-[#9F1239] font-mono font-bold uppercase tracking-wider block">
-                        {currentLanguage === 'sl' ? 'ZAPOLNITI' : 'VACANT'}
-                      </span>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-rose-400 group-hover:translate-x-1 transition shrink-0" />
-                  </button>
-                ))}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-rose-700 flex items-center gap-1">
+                    <span>⚠️ {currentLanguage === 'sl' ? 'Potrebno zapolniti' : 'Roles to be filled'} ({vacantMinistries.length}):</span>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
+                  {vacantMinistries.map((ministry) => {
+                    const emoji = getMinistryIconEmoji(ministry.id);
+                    const borderClass = getCategoryBorderClass(ministry.category);
+                    const iconBg = getCategoryIconBgClass(ministry.category);
+
+                    return (
+                      <button
+                        key={ministry.id}
+                        onClick={() => onSelectSunday(nextSunday.id)}
+                        className={`text-left px-3 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition flex justify-between items-center group cursor-pointer shadow-2xs ${borderClass}`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 border ${iconBg} shadow-2xs group-hover:scale-105 transition`}>
+                            {emoji}
+                          </div>
+                          <div className="space-y-0.5 min-w-0">
+                            <span className="text-xs font-bold text-slate-900 group-hover:text-indigo-600 transition block truncate">
+                              {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono block truncate capitalize">
+                              {ministry.category.replace('_', ' ')}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="px-2 py-1 bg-rose-100 text-rose-800 border border-rose-300 font-mono font-bold text-[10px] uppercase rounded-md tracking-wider shadow-2xs">
+                            ⚠️ {currentLanguage === 'sl' ? 'PROSTO' : 'VACANT'}
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition shrink-0" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
-              <div className="p-4 bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0] rounded-xl flex items-center gap-3 text-xs">
+              <div className="p-4 bg-emerald-50 text-emerald-950 border border-emerald-200 rounded-xl flex items-center gap-3 text-xs shadow-2xs">
                 <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
                 <div>
                   <span className="font-bold block text-emerald-950">{currentLanguage === 'sl' ? 'Čudovito! Vse službe so pokrite!' : 'Excellent! All roles are filled!'}</span>
-                  <span className="text-emerald-800/85 text-[11px] block mt-0.5">{currentLanguage === 'sl' ? 'Sodelavci so uspešno razporejeni.' : 'Roster checklist is fully completed.'}</span>
+                  <span className="text-emerald-800/85 text-[11px] block mt-0.5">{currentLanguage === 'sl' ? 'Sodelavci so uspešno razporejeni za vse službe.' : 'Roster checklist is fully completed.'}</span>
+                </div>
+              </div>
+            )}
+
+            {/* 2. Fulfilled / Filled Roles (at the bottom of the stack) */}
+            {fulfilledMinistries.length > 0 && (
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{currentLanguage === 'sl' ? 'Zapolnjeno / Pokrito' : 'Filled & Fulfilled'} ({fulfilledMinistries.length}/{totalSlots}):</span>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                  {fulfilledMinistries.map((ministry) => {
+                    const assignedPeople = resolveMinistryAssignments(nextSunday, ministry.id);
+                    const emoji = getMinistryIconEmoji(ministry.id);
+                    const borderClass = getCategoryBorderClass(ministry.category);
+                    const iconBg = getCategoryIconBgClass(ministry.category);
+
+                    return (
+                      <button
+                        key={ministry.id}
+                        onClick={() => onSelectSunday(nextSunday.id)}
+                        className={`text-left px-3 py-2 bg-slate-50/70 hover:bg-slate-100/80 border border-slate-200 rounded-xl transition flex justify-between items-center group cursor-pointer shadow-2xs ${borderClass}`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs shrink-0 border ${iconBg}`}>
+                            {emoji}
+                          </div>
+                          <div className="space-y-0.5 min-w-0">
+                            <span className="text-xs font-semibold text-slate-800 group-hover:text-indigo-600 transition block truncate">
+                              {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
+                            </span>
+                            <span className="text-[10px] text-emerald-800 font-mono font-medium block truncate flex items-center gap-1">
+                              <span>👤 {assignedPeople.join(', ')}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 font-mono font-bold text-[9px] uppercase rounded-md tracking-wider shrink-0 shadow-2xs">
+                          ✓ {currentLanguage === 'sl' ? 'ZASEDENO' : 'FILLED'}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

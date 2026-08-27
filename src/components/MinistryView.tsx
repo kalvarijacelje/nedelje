@@ -19,6 +19,7 @@ import HeroHeaderBanner from './HeroHeaderBanner';
 import { isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import { isMinistryApplicableOnSunday, getEffectiveSundayFocus } from '../lib/sundaySpecialFocus';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
+import { parseEuropeanDate, formatToEuropeanDate } from '../utils/dateUtils';
 
 interface MinistryViewProps {
   sundays: ServiceSunday[];
@@ -155,11 +156,13 @@ const getTeamTheme = (category: string) => {
   switch (category) {
     case 'cleaning':
       return {
-        cardBorder: 'border-l-4 border-l-amber-400 border-gray-200 bg-gradient-to-r from-amber-50/30 to-white hover:border-amber-300',
-        headerBg: 'bg-amber-50/60',
+        cardBorder: 'border-l-4 border-l-amber-400 border-gray-200/90 bg-gradient-to-r from-amber-50/30 via-white to-white hover:border-amber-400 hover:border-l-amber-500 hover:shadow-md',
+        headerBg: 'bg-amber-50/70',
+        headerBorder: 'border-l-4 border-l-amber-400 border-amber-200/80 hover:border-amber-300',
         badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
         iconBoxBg: 'bg-amber-100 text-amber-800 border-amber-300',
         assignedBg: 'bg-amber-100/90 text-amber-950 border-amber-300',
+        rowHover: 'hover:border-amber-300 hover:bg-amber-50/40',
         activeTab: 'bg-amber-600 text-white border-amber-600 shadow-xs font-semibold scale-[1.02]',
         inactiveTab: 'bg-amber-50/80 hover:bg-amber-100/90 text-amber-900 border-amber-200/90 shadow-2xs font-medium',
         dot: 'bg-amber-500',
@@ -168,11 +171,13 @@ const getTeamTheme = (category: string) => {
       };
     case 'hospitality':
       return {
-        cardBorder: 'border-l-4 border-l-rose-400 border-gray-200 bg-gradient-to-r from-rose-50/30 to-white hover:border-rose-300',
-        headerBg: 'bg-rose-50/60',
+        cardBorder: 'border-l-4 border-l-rose-400 border-gray-200/90 bg-gradient-to-r from-rose-50/30 via-white to-white hover:border-rose-400 hover:border-l-rose-500 hover:shadow-md',
+        headerBg: 'bg-rose-50/70',
+        headerBorder: 'border-l-4 border-l-rose-400 border-rose-200/80 hover:border-rose-300',
         badgeBg: 'bg-rose-100 text-rose-900 border-rose-300',
         iconBoxBg: 'bg-rose-100 text-rose-800 border-rose-300',
         assignedBg: 'bg-rose-100/90 text-rose-950 border-rose-300',
+        rowHover: 'hover:border-rose-300 hover:bg-rose-50/40',
         activeTab: 'bg-rose-600 text-white border-rose-600 shadow-xs font-semibold scale-[1.02]',
         inactiveTab: 'bg-rose-50/80 hover:bg-rose-100/90 text-rose-900 border-rose-200/90 shadow-2xs font-medium',
         dot: 'bg-rose-500',
@@ -181,11 +186,13 @@ const getTeamTheme = (category: string) => {
       };
     case 'sermon_prayer':
       return {
-        cardBorder: 'border-l-4 border-l-sky-400 border-gray-200 bg-gradient-to-r from-sky-50/30 to-white hover:border-sky-300',
-        headerBg: 'bg-sky-50/60',
+        cardBorder: 'border-l-4 border-l-sky-400 border-gray-200/90 bg-gradient-to-r from-sky-50/30 via-white to-white hover:border-sky-400 hover:border-l-sky-500 hover:shadow-md',
+        headerBg: 'bg-sky-50/70',
+        headerBorder: 'border-l-4 border-l-sky-400 border-sky-200/80 hover:border-sky-300',
         badgeBg: 'bg-sky-100 text-sky-900 border-sky-300',
         iconBoxBg: 'bg-sky-100 text-sky-800 border-sky-300',
         assignedBg: 'bg-sky-100/90 text-sky-950 border-sky-300',
+        rowHover: 'hover:border-sky-300 hover:bg-sky-50/40',
         activeTab: 'bg-sky-600 text-white border-sky-600 shadow-xs font-semibold scale-[1.02]',
         inactiveTab: 'bg-sky-50/80 hover:bg-sky-100/90 text-sky-900 border-sky-200/90 shadow-2xs font-medium',
         dot: 'bg-sky-500',
@@ -195,11 +202,13 @@ const getTeamTheme = (category: string) => {
     case 'worship':
     case 'av_tech':
       return {
-        cardBorder: 'border-l-4 border-l-purple-400 border-gray-200 bg-gradient-to-r from-purple-50/30 to-white hover:border-purple-300',
-        headerBg: 'bg-purple-50/60',
+        cardBorder: 'border-l-4 border-l-purple-400 border-gray-200/90 bg-gradient-to-r from-purple-50/30 via-white to-white hover:border-purple-400 hover:border-l-purple-500 hover:shadow-md',
+        headerBg: 'bg-purple-50/70',
+        headerBorder: 'border-l-4 border-l-purple-400 border-purple-200/80 hover:border-purple-300',
         badgeBg: 'bg-purple-100 text-purple-900 border-purple-300',
         iconBoxBg: 'bg-purple-100 text-purple-800 border-purple-300',
         assignedBg: 'bg-purple-100/90 text-purple-950 border-purple-300',
+        rowHover: 'hover:border-purple-300 hover:bg-purple-50/40',
         activeTab: 'bg-purple-600 text-white border-purple-600 shadow-xs font-semibold scale-[1.02]',
         inactiveTab: 'bg-purple-50/80 hover:bg-purple-100/90 text-purple-900 border-purple-200/90 shadow-2xs font-medium',
         dot: 'bg-purple-500',
@@ -208,11 +217,13 @@ const getTeamTheme = (category: string) => {
       };
     case 'audio_video':
       return {
-        cardBorder: 'border-l-4 border-l-cyan-500 border-gray-200 bg-gradient-to-r from-cyan-50/30 to-white hover:border-cyan-400',
-        headerBg: 'bg-cyan-50/60',
+        cardBorder: 'border-l-4 border-l-cyan-500 border-gray-200/90 bg-gradient-to-r from-cyan-50/30 via-white to-white hover:border-cyan-400 hover:border-l-cyan-600 hover:shadow-md',
+        headerBg: 'bg-cyan-50/70',
+        headerBorder: 'border-l-4 border-l-cyan-500 border-cyan-200/80 hover:border-cyan-400',
         badgeBg: 'bg-cyan-100 text-cyan-900 border-cyan-300',
         iconBoxBg: 'bg-cyan-100 text-cyan-800 border-cyan-300',
         assignedBg: 'bg-cyan-100/90 text-cyan-950 border-cyan-300',
+        rowHover: 'hover:border-cyan-300 hover:bg-cyan-50/40',
         activeTab: 'bg-cyan-600 text-white border-cyan-600 shadow-xs font-semibold scale-[1.02]',
         inactiveTab: 'bg-cyan-50/80 hover:bg-cyan-100/90 text-cyan-950 border-cyan-200/90 shadow-2xs font-medium',
         dot: 'bg-cyan-500',
@@ -221,11 +232,13 @@ const getTeamTheme = (category: string) => {
       };
     case 'kids':
       return {
-        cardBorder: 'border-l-4 border-l-emerald-400 border-gray-200 bg-gradient-to-r from-emerald-50/30 to-white hover:border-emerald-300',
-        headerBg: 'bg-emerald-50/60',
+        cardBorder: 'border-l-4 border-l-emerald-400 border-gray-200/90 bg-gradient-to-r from-emerald-50/30 via-white to-white hover:border-emerald-400 hover:border-l-emerald-500 hover:shadow-md',
+        headerBg: 'bg-emerald-50/70',
+        headerBorder: 'border-l-4 border-l-emerald-400 border-emerald-200/80 hover:border-emerald-300',
         badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
         iconBoxBg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
         assignedBg: 'bg-emerald-100/90 text-emerald-950 border-emerald-300',
+        rowHover: 'hover:border-emerald-300 hover:bg-emerald-50/40',
         activeTab: 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-semibold scale-[1.02]',
         inactiveTab: 'bg-emerald-50/80 hover:bg-emerald-100/90 text-emerald-900 border-emerald-200/90 shadow-2xs font-medium',
         dot: 'bg-emerald-500',
@@ -236,11 +249,13 @@ const getTeamTheme = (category: string) => {
     case 'other':
     default:
       return {
-        cardBorder: 'border-l-4 border-l-indigo-400 border-gray-200 bg-gradient-to-r from-indigo-50/30 to-white hover:border-indigo-300',
-        headerBg: 'bg-indigo-50/60',
+        cardBorder: 'border-l-4 border-l-indigo-400 border-gray-200/90 bg-gradient-to-r from-indigo-50/30 via-white to-white hover:border-indigo-400 hover:border-l-indigo-500 hover:shadow-md',
+        headerBg: 'bg-indigo-50/70',
+        headerBorder: 'border-l-4 border-l-indigo-400 border-indigo-200/80 hover:border-indigo-300',
         badgeBg: 'bg-indigo-100 text-indigo-900 border-indigo-300',
         iconBoxBg: 'bg-indigo-100 text-indigo-800 border-indigo-300',
         assignedBg: 'bg-indigo-100/90 text-indigo-950 border-indigo-300',
+        rowHover: 'hover:border-indigo-300 hover:bg-indigo-50/40',
         activeTab: 'bg-indigo-600 text-white border-indigo-600 shadow-xs font-semibold scale-[1.02]',
         inactiveTab: 'bg-indigo-50/80 hover:bg-indigo-100/90 text-indigo-900 border-indigo-200/90 shadow-2xs font-medium',
         dot: 'bg-indigo-500',
@@ -250,17 +265,7 @@ const getTeamTheme = (category: string) => {
   }
 };
 
-// Parse Slovenian style date "DD. MM. YY" or "DD. MM. YYYY" into a comparable Date object
-const parseSheetDate = (dateStr: string): Date => {
-  if (!dateStr) return new Date(0);
-  const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return new Date(0);
-  const day = parts[0];
-  const month = parts[1] - 1;
-  let year = parts[2];
-  if (year < 100) year = 2000 + year;
-  return new Date(year, month, day);
-};
+
 
 interface MinistryCardProps {
   key?: React.Key;
@@ -309,13 +314,11 @@ function MinistryCard({
   return (
     <div
       id={`matrix-card-${ministry.id}`}
-      className={`bg-white rounded-2xl p-4 shadow-2xs border transition-all duration-200 space-y-3.5 flex flex-col justify-between ${
-        isUnderstaffed ? 'border-rose-300 bg-rose-500/[0.01]' : theme.cardBorder
-      }`}
+      className={`bg-white rounded-2xl p-4 shadow-2xs border transition-all duration-200 space-y-3.5 flex flex-col justify-between ${theme.cardBorder}`}
     >
       <div className="space-y-3.5">
         {/* Header with icon, color theme badge & leader(s) */}
-        <div className={`p-3 rounded-xl border ${theme.headerBg} ${theme.cardBorder} space-y-2`}>
+        <div className={`p-3 rounded-xl border transition-all duration-200 ${theme.headerBg} ${theme.headerBorder} space-y-2`}>
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
             <div className="flex items-start gap-2.5 min-w-0 flex-1">
               <div className={`p-2 rounded-xl border shrink-0 mt-0.5 ${theme.iconBoxBg}`}>
@@ -451,7 +454,7 @@ function MinistryCard({
                   >
                     <span className="font-mono font-medium text-slate-400 flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                      <span>{sunday.date}</span>
+                      <span>{formatToEuropeanDate(sunday.date)}</span>
                     </span>
                     <span className="text-[10px] font-mono text-slate-400 italic">
                       {ministry.id === 'gospodova_vecerja' 
@@ -463,10 +466,10 @@ function MinistryCard({
               }
 
               const rowStyleClass = isCovered
-                ? 'bg-slate-50/80 hover:bg-slate-100/80 border-slate-200/80 text-slate-800'
+                ? `bg-slate-50/80 ${theme.rowHover} border-slate-200/80 text-slate-800`
                 : ministry.isOptional
-                  ? 'bg-slate-50/60 hover:bg-slate-100/80 border-slate-200/80 text-slate-600'
-                  : 'bg-rose-50/80 hover:bg-rose-100/80 border-rose-200 text-rose-900';
+                  ? `bg-slate-50/60 ${theme.rowHover} border-slate-200/80 text-slate-600`
+                  : `bg-rose-50/60 ${theme.rowHover} border-rose-200/80 text-rose-900`;
 
               return (
                 <div
@@ -477,7 +480,7 @@ function MinistryCard({
                   <span className="font-mono font-medium text-slate-500 flex flex-col justify-center shrink-0 min-w-0">
                     <span className="flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>{sunday.date}</span>
+                      <span>{formatToEuropeanDate(sunday.date)}</span>
                     </span>
                     {nslLesson?.topicSl && (
                       <span className="text-[10px] text-emerald-800 font-sans font-medium truncate max-w-[130px] sm:max-w-[200px]">
@@ -618,12 +621,12 @@ export default function MinistryView({
   today.setHours(0, 0, 0, 0);
 
   const sortedUpcomingSundays = [...sundays]
-    .filter(s => parseSheetDate(s.date).getTime() >= today.getTime())
-    .sort((a, b) => parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime());
+    .filter(s => parseEuropeanDate(s.date).getTime() >= today.getTime())
+    .sort((a, b) => parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime());
 
   const allUpcomingSundays = sortedUpcomingSundays.length > 0
     ? sortedUpcomingSundays
-    : [...sundays].sort((a, b) => parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime());
+    : [...sundays].sort((a, b) => parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime());
 
   const upcomingSundays = allUpcomingSundays.slice(0, 5);
 

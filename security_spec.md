@@ -1,6 +1,6 @@
 # Firestore Security Specification
 
-This specification governs the validation, structure, and access control policies for our Church Worship Hub Roster.
+This specification governs the validation, structure, and access control policies for our Church Worship Hub Schedule.
 
 ## 1. Security Invariants
 - **Authentication**: All writes (create, update, delete) must be performed by authenticated users whose emails have been verified.

@@ -1,11 +1,14 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { NotificationQueueProvider } from './context/NotificationQueueContext';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <NotificationQueueProvider>
+      <App />
+    </NotificationQueueProvider>
   </StrictMode>,
 );
 

@@ -14,6 +14,7 @@ import {
   logInAppNotification
 } from '../services/notificationService';
 import { confirmAssignmentByToken, fetchAssignmentByToken } from '../services/supabaseDataService';
+import { formatToEuropeanDate } from '../utils/dateUtils';
 import KcKalvarijaLogo from '../components/KcKalvarijaLogo';
 import { 
   CheckCircle2, 
@@ -344,7 +345,7 @@ export default function ConfirmPage({
         <div className="p-4 bg-gradient-to-r from-indigo-50/80 to-slate-50 rounded-2xl border border-indigo-100/80 space-y-1.5">
           <div className="flex items-center gap-2 text-indigo-950 font-bold text-base">
             <Calendar className="w-5 h-5 text-indigo-600 shrink-0" />
-            <span>{sunday.date}</span>
+            <span>{formatToEuropeanDate(sunday.date)}</span>
           </div>
           <div className="text-xs font-semibold text-gray-700 pl-7 flex items-center gap-1.5">
             <span>Služba:</span>

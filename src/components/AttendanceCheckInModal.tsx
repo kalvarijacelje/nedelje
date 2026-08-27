@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ServiceSunday, Ministry, Person, Language, ServiceAttendanceRecord, ServiceHeadcount } from '../types';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
+import { formatToEuropeanDate } from '../utils/dateUtils';
 import {
   UserCheck,
   X,
@@ -289,7 +290,7 @@ Tema: ${sunday.themeSl || 'Nedeljsko bogoslužje'}`;
                   >
                     {allSundays.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.date}
+                        {formatToEuropeanDate(s.date)}
                       </option>
                     ))}
                   </select>
@@ -297,8 +298,8 @@ Tema: ${sunday.themeSl || 'Nedeljsko bogoslužje'}`;
               </div>
               <p className="text-xs text-gray-500 font-sans mt-0.5">
                 {currentLanguage === 'sl'
-                  ? `Preverjanje prisotnosti sodelavcev in obiskovalcev za nedeljo ${sunday.date}`
-                  : `Real-time check-in and congregation counter for ${sunday.date}`}
+                  ? `Preverjanje prisotnosti sodelavcev in obiskovalcev za nedeljo ${formatToEuropeanDate(sunday.date)}`
+                  : `Real-time check-in and congregation counter for ${formatToEuropeanDate(sunday.date)}`}
               </p>
             </div>
           </div>

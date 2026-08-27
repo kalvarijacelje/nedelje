@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ServiceSunday, Ministry, Person, Language, NotificationSettings, ShiftSwapRequest, UserRole, canAccessPersonalData, canViewPersonContactInfo } from '../types';
 import { downloadICSFile, getGoogleCalendarUrl } from '../utils/calendarExport';
+import { formatToEuropeanDate, formatEuropeanDateTime } from '../utils/dateUtils';
 import {
   getStoredGoogleChatWebhook,
   setStoredGoogleChatWebhook,
@@ -616,7 +617,7 @@ export default function NotificationHubModal({
                                 {notif.volunteerName}
                               </span>
                               <span className="text-[11px] text-slate-500 font-sans">
-                                • {notif.ministryName} ({notif.sundayDate})
+                                • {notif.ministryName} ({formatToEuropeanDate(notif.sundayDate)})
                               </span>
                             </div>
 
@@ -627,7 +628,7 @@ export default function NotificationHubModal({
                             )}
 
                             <div className="text-[10px] text-slate-400 font-mono">
-                              {new Date(notif.timestamp).toLocaleDateString('sl-SI')} {new Date(notif.timestamp).toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' })}
+                              {formatEuropeanDateTime(notif.timestamp)}
                             </div>
                           </div>
 

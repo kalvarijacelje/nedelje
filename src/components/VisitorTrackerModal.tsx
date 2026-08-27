@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { VisitorConnection, FollowUpStatus, Person, ServiceSunday, UserRole, canAccessPersonalData } from '../types';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
+import { formatToEuropeanDate } from '../utils/dateUtils';
 import { 
   Coffee, 
   UserPlus, 
@@ -50,6 +51,43 @@ const INTEREST_OPTIONS = [
   'Osebni pogovor s pastorjem'
 ];
 
+const KNOWN_MINOR_IDS = new Set([
+  'p-tian_knap', 'p-hana_knap', 'p-natan_knap',
+  'p-iva_kolar', 'p-mila_kolar',
+  'p-jona_oreskovic', 'p-ronja_oreskovic',
+  'p-emanuel_pratneker', 'p-jakob_pratneker', 'p-luka_pratneker',
+  'p-lucija_srebot', 'p-leon_srebot',
+  'p-masa_stefancic', 'p-mia_stefancic',
+  'p-david_vuleta', 'p-izak_vuleta',
+  'p-arne_zunec', 'p-pia_princic',
+  'p-adonijah_lajlar', 'p-daniel_lajlar',
+  'p-huntley_james_hupp', 'p-kenzley_franceen_hupp'
+]);
+
+const isMinorPerson = (p: Person): boolean => {
+  if (!p) return false;
+  if (p.memberType === 'minor' || p.memberType === 'youth' || p.role === 'Minor') return true;
+  if (p.id && KNOWN_MINOR_IDS.has(p.id)) return true;
+  return false;
+};
+
+const isLeaderPerson = (p: Person): boolean => {
+  if (!p) return false;
+  const lowerName = (p.name || '').toLowerCase();
+  if (lowerName === 'pastor aleš' || lowerName === 'whitney' || lowerName === 'aleš lajlar' || lowerName === 'whitney lajlar') return true;
+  if (p.role === 'Admin' || p.role === 'Leader') return true;
+  if (p.isPastorOrStaff) return true;
+  if (Array.isArray(p.ledMinistries) && p.ledMinistries.length > 0) return true;
+  return false;
+};
+
+const isServantPerson = (p: Person): boolean => {
+  if (!p || isLeaderPerson(p) || isMinorPerson(p)) return false;
+  if (p.role === 'Servant') return true;
+  if (Array.isArray(p.preferredMinistries) && p.preferredMinistries.length > 0) return true;
+  return false;
+};
+
 export default function VisitorTrackerModal({
   isOpen,
   onClose,
@@ -65,33 +103,113 @@ export default function VisitorTrackerModal({
 }: VisitorTrackerModalProps) {
   useBackdropHistory(isOpen, onClose, 'visitor-tracker-modal');
 
-  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'completed'>('all');
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'new' | 'contacted' | 'completed' | 'just_visiting'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [editingVisitorId, setEditingVisitorId] = useState<string | null>(null);
 
+  // Grouped and filtered people lists (Leaders on top, Servants, then Members, excluding Minors/Kids)
+  const { leadersList, servantsList, membersList } = React.useMemo(() => {
+    const eligiblePeople = (people || []).filter(p => {
+      if (!p || !p.name || !p.name.trim()) return false;
+      if (p.isArchived) return false;
+      if (p.isVisitor || p.memberType === 'visitor' || p.role === 'Visitor') return false;
+      if (isMinorPerson(p)) return false;
+      return true;
+    });
+
+    const customEntries: Person[] = [];
+    if (!eligiblePeople.some(p => p.name === 'Pastor Aleš' || p.name === 'Aleš Lajlar')) {
+      customEntries.push({ id: 'p-pastor_ales', name: 'Pastor Aleš', role: 'Admin', isPastorOrStaff: true, preferredMinistries: [] });
+    }
+    if (!eligiblePeople.some(p => p.name === 'Whitney' || p.name === 'Whitney Lajlar')) {
+      customEntries.push({ id: 'p-whitney', name: 'Whitney', role: 'Leader', isPastorOrStaff: true, preferredMinistries: [] });
+    }
+
+    const allEligible = [...customEntries, ...eligiblePeople];
+    const seen = new Set<string>();
+    const uniqueEligible: Person[] = [];
+    for (const p of allEligible) {
+      const key = p.name.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueEligible.push(p);
+      }
+    }
+
+    const leaders: Person[] = [];
+    const servants: Person[] = [];
+    const members: Person[] = [];
+
+    for (const p of uniqueEligible) {
+      if (isLeaderPerson(p)) {
+        leaders.push(p);
+      } else if (isServantPerson(p)) {
+        servants.push(p);
+      } else {
+        members.push(p);
+      }
+    }
+
+    const sortSl = (a: Person, b: Person) => a.name.localeCompare(b.name, 'sl', { sensitivity: 'base' });
+
+    leaders.sort((a, b) => {
+      const aIsPastor = a.name.toLowerCase().includes('aleš') || a.name.toLowerCase().includes('pastor');
+      const bIsPastor = b.name.toLowerCase().includes('aleš') || b.name.toLowerCase().includes('pastor');
+      if (aIsPastor && !bIsPastor) return -1;
+      if (!aIsPastor && bIsPastor) return 1;
+      const aIsWhitney = a.name.toLowerCase().includes('whitney');
+      const bIsWhitney = b.name.toLowerCase().includes('whitney');
+      if (aIsWhitney && !bIsWhitney) return -1;
+      if (!aIsWhitney && bIsWhitney) return 1;
+      return sortSl(a, b);
+    });
+
+    servants.sort(sortSl);
+    members.sort(sortSl);
+
+    return {
+      leadersList: leaders,
+      servantsList: servants,
+      membersList: members
+    };
+  }, [people]);
+
   // Form states
   const [visitorName, setVisitorName] = useState('');
+  const [attendeeCount, setAttendeeCount] = useState<number>(1);
   const [contactInfo, setContactInfo] = useState('');
   const [invitedBy, setInvitedBy] = useState('');
   const [notes, setNotes] = useState('');
   const [coffeeShopNotes, setCoffeeShopNotes] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<string[]>(['Kava & Druženje v Kavarni Živa Vera']);
-  const [assignedPerson, setAssignedPerson] = useState('Pastor Aleš');
+  const [assignedPerson, setAssignedPerson] = useState('');
   const [status, setStatus] = useState<FollowUpStatus>('new');
   const [targetSundayId, setTargetSundayId] = useState<string>(selectedSundayId || sundays[0]?.id || '');
 
   const resetForm = () => {
     setVisitorName('');
+    setAttendeeCount(1);
     setContactInfo('');
     setInvitedBy('');
     setNotes('');
     setCoffeeShopNotes('');
     setSelectedInterests(['Kava & Druženje v Kavarni Živa Vera']);
-    setAssignedPerson('Pastor Aleš');
+    setAssignedPerson('');
     setStatus('new');
     setIsAddingNew(false);
     setEditingVisitorId(null);
+  };
+
+  const handleOpenAddNew = () => {
+    resetForm();
+    setIsAddingNew(true);
+    setTimeout(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 40);
   };
 
   const handleToggleInterest = (interest: string) => {
@@ -107,13 +225,14 @@ export default function VisitorTrackerModal({
     if (!visitorName.trim()) return;
 
     const matchedSunday = sundays.find(s => s.id === targetSundayId);
-    const dateStr = matchedSunday?.date || new Date().toLocaleDateString('sl-SI');
+    const dateStr = matchedSunday ? formatToEuropeanDate(matchedSunday.date) : formatToEuropeanDate(new Date());
 
     if (editingVisitorId) {
       // Update
       const updated = visitors.map(v => v.id === editingVisitorId ? {
         ...v,
         visitorName: visitorName.trim(),
+        attendeeCount: Math.max(1, Number(attendeeCount) || 1),
         contactInfo: contactInfo.trim(),
         invitedBy: invitedBy.trim(),
         notes: notes.trim(),
@@ -132,6 +251,7 @@ export default function VisitorTrackerModal({
         sundayId: targetSundayId,
         sundayDate: dateStr,
         visitorName: visitorName.trim(),
+        attendeeCount: Math.max(1, Number(attendeeCount) || 1),
         contactInfo: contactInfo.trim(),
         invitedBy: invitedBy.trim(),
         notes: notes.trim(),
@@ -139,7 +259,7 @@ export default function VisitorTrackerModal({
         interests: selectedInterests,
         assignedFollowUpPerson: assignedPerson,
         followUpStatus: status,
-        createdAt: new Date().toISOString().split('T')[0]
+        createdAt: formatToEuropeanDate(new Date())
       };
       onUpdateVisitors([newVisitor, ...visitors]);
     }
@@ -150,15 +270,21 @@ export default function VisitorTrackerModal({
   const handleStartEdit = (v: VisitorConnection) => {
     setEditingVisitorId(v.id);
     setVisitorName(v.visitorName);
+    setAttendeeCount(Math.max(1, Number(v.attendeeCount) || 1));
     setContactInfo(v.contactInfo || '');
     setInvitedBy(v.invitedBy || '');
     setNotes(v.notes || '');
     setCoffeeShopNotes(v.coffeeShopNotes || '');
     setSelectedInterests(v.interests || []);
-    setAssignedPerson(v.assignedFollowUpPerson || 'Pastor Aleš');
+    setAssignedPerson(v.assignedFollowUpPerson || '');
     setStatus(v.followUpStatus);
     setTargetSundayId(v.sundayId || sundays[0]?.id || '');
     setIsAddingNew(true);
+    setTimeout(() => {
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 40);
   };
 
   const handleDelete = (id: string) => {
@@ -176,6 +302,7 @@ export default function VisitorTrackerModal({
   const filteredVisitors = visitors.filter(v => {
     const matchesSearch = v.visitorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (v.notes && v.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                          (v.coffeeShopNotes && v.coffeeShopNotes.toLowerCase().includes(searchTerm.toLowerCase())) ||
                           (v.invitedBy && v.invitedBy.toLowerCase().includes(searchTerm.toLowerCase()));
     
     if (!matchesSearch) return false;
@@ -183,6 +310,7 @@ export default function VisitorTrackerModal({
     if (activeTab === 'new') return v.followUpStatus === 'new';
     if (activeTab === 'contacted') return v.followUpStatus === 'contacted';
     if (activeTab === 'completed') return v.followUpStatus === 'connected' || v.followUpStatus === 'completed';
+    if (activeTab === 'just_visiting') return v.followUpStatus === 'just_visiting';
 
     return true;
   });
@@ -228,15 +356,20 @@ export default function VisitorTrackerModal({
         {/* Action Bar & Stats */}
         <div className="p-4 bg-amber-50/60 border-b border-amber-200/60 flex flex-wrap items-center justify-between gap-3 shrink-0">
           {/* Tabs */}
-          <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-amber-200 shadow-2xs">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                activeTab === 'all' ? 'bg-amber-900 text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              {currentLanguage === 'sl' ? 'Vsi' : 'All'} ({visitors.length})
-            </button>
+          <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-amber-200 shadow-2xs flex-wrap">
+            {(() => {
+              const totalPeopleCount = visitors.reduce((sum, v) => sum + (Math.max(1, Number(v.attendeeCount) || 1)), 0);
+              return (
+                <button
+                  onClick={() => setActiveTab('all')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeTab === 'all' ? 'bg-amber-900 text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {currentLanguage === 'sl' ? 'Vsi' : 'All'} ({visitors.length} • {totalPeopleCount} {currentLanguage === 'sl' ? 'oseb' : 'people'})
+                </button>
+              );
+            })()}
             <button
               onClick={() => setActiveTab('new')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
@@ -262,12 +395,21 @@ export default function VisitorTrackerModal({
             >
               {currentLanguage === 'sl' ? 'Povezani' : 'Connected'} ({visitors.filter(v => v.followUpStatus === 'connected' || v.followUpStatus === 'completed').length})
             </button>
+            <button
+              onClick={() => setActiveTab('just_visiting')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'just_visiting' ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
+              }`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-white border border-slate-400 inline-block shrink-0 shadow-2xs" />
+              <span>{currentLanguage === 'sl' ? 'Samo obisk' : 'Just Visiting'} ({visitors.filter(v => v.followUpStatus === 'just_visiting').length})</span>
+            </button>
           </div>
 
           {/* Add New Visitor Button */}
           {canEdit && !isAddingNew && (
             <button
-              onClick={() => { resetForm(); setIsAddingNew(true); }}
+              onClick={handleOpenAddNew}
               className="px-4 py-2 bg-amber-900 hover:bg-amber-950 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer"
             >
               <UserPlus className="w-4 h-4 text-amber-300" />
@@ -277,7 +419,7 @@ export default function VisitorTrackerModal({
         </div>
 
         {/* Scrollable Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
+        <div ref={scrollContainerRef} className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
           
           {/* Form for adding / editing visitor */}
           {isAddingNew && (
@@ -306,9 +448,44 @@ export default function VisitorTrackerModal({
                     required
                     value={visitorName}
                     onChange={(e) => setVisitorName(e.target.value)}
-                    placeholder={currentLanguage === 'sl' ? 'npr. Luka & Maja Podgoršek' : 'e.g. John & Mary Smith'}
+                    placeholder={currentLanguage === 'sl' ? 'npr. 4 Punce iz Ljubljane / Luka & Maja' : 'e.g. John & Mary Smith'}
                     className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold text-gray-900 focus:outline-none focus:border-amber-600"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-mono font-bold uppercase text-amber-900 mb-1 flex items-center justify-between">
+                    <span>👥 {currentLanguage === 'sl' ? 'Število oseb (skupina / družina):' : 'Party Size / Number of People:'}</span>
+                    <span className="text-amber-900 font-bold text-xs">
+                      {attendeeCount} {attendeeCount === 1 ? (currentLanguage === 'sl' ? 'oseba' : 'person') : (currentLanguage === 'sl' ? 'osebe / oseb' : 'people')}
+                    </span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {[1, 2, 3, 4, 5, 6].map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => setAttendeeCount(num)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold font-mono transition cursor-pointer border ${
+                          attendeeCount === num
+                            ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
+                            : 'bg-white text-slate-700 border-amber-200 hover:bg-amber-100'
+                        }`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+                    <div className="relative flex-1 min-w-[65px]">
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={attendeeCount}
+                        onChange={(e) => setAttendeeCount(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-full bg-white border border-amber-200 rounded-xl px-2 py-2 text-xs font-bold text-center text-gray-900 focus:outline-none focus:border-amber-600 font-mono"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -407,13 +584,39 @@ export default function VisitorTrackerModal({
                   <select
                     value={assignedPerson}
                     onChange={(e) => setAssignedPerson(e.target.value)}
-                    className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold text-gray-900 focus:outline-none focus:border-amber-600"
+                    className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold text-gray-900 focus:outline-none focus:border-amber-600 cursor-pointer"
                   >
-                    <option value="Pastor Aleš">Pastor Aleš</option>
-                    <option value="Whitney">Whitney</option>
-                    {people.map(p => (
-                      <option key={p.name} value={p.name}>{p.name}</option>
-                    ))}
+                    <option value="">{currentLanguage === 'sl' ? '— Nihče (Brez dodeljene osebe) —' : '— None (No volunteer assigned) —'}</option>
+                    
+                    {leadersList.length > 0 && (
+                      <optgroup label={currentLanguage === 'sl' ? '👑 Voditelji & Pastorji' : '👑 Leaders & Pastors'}>
+                        {leadersList.map(p => (
+                          <option key={p.name} value={p.name}>
+                            👑 {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {servantsList.length > 0 && (
+                      <optgroup label={currentLanguage === 'sl' ? '🤝 Služabniki' : '🤝 Volunteers'}>
+                        {servantsList.map(p => (
+                          <option key={p.name} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {membersList.length > 0 && (
+                      <optgroup label={currentLanguage === 'sl' ? '👥 Člani skupnosti' : '👥 Church Members'}>
+                        {membersList.map(p => (
+                          <option key={p.name} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
 
@@ -430,6 +633,7 @@ export default function VisitorTrackerModal({
                     <option value="contacted">{currentLanguage === 'sl' ? '🔵 Kontaktirano / V stiku' : '🔵 Contacted / In touch'}</option>
                     <option value="connected">{currentLanguage === 'sl' ? '🟢 Povezano z domačo skupino' : '🟢 Connected to Home Group'}</option>
                     <option value="completed">{currentLanguage === 'sl' ? '✅ Zaključeno' : '✅ Completed'}</option>
+                    <option value="just_visiting">{currentLanguage === 'sl' ? '⚪ Samo na obisku (Brez nadaljnjega stika)' : '⚪ Just Visiting (No contact needed)'}</option>
                   </select>
                 </div>
               </div>
@@ -492,23 +696,36 @@ export default function VisitorTrackerModal({
                         <h4 className="font-display font-bold text-sm text-gray-900">
                           {v.visitorName}
                         </h4>
+
+                        {(v.attendeeCount && v.attendeeCount > 1) ? (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-100/90 text-amber-900 border border-amber-300 shadow-2xs flex items-center gap-1">
+                            <span>👥 {v.attendeeCount}</span>
+                            <span>{currentLanguage === 'sl' ? (v.attendeeCount === 2 ? 'osebi' : v.attendeeCount <= 4 ? 'osebe' : 'oseb') : 'people'}</span>
+                          </span>
+                        ) : null}
                         
                         {/* Status Badge */}
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 ${
                           v.followUpStatus === 'new' 
                             ? 'bg-amber-100 text-amber-900 border-amber-300' 
                             : v.followUpStatus === 'contacted'
                             ? 'bg-indigo-100 text-indigo-900 border-indigo-200'
+                            : v.followUpStatus === 'just_visiting'
+                            ? 'bg-slate-100 text-slate-700 border-slate-300'
                             : 'bg-emerald-100 text-emerald-900 border-emerald-200'
                         }`}>
                           {v.followUpStatus === 'new' && <Clock className="w-3 h-3 text-amber-700" />}
                           {v.followUpStatus === 'contacted' && <PhoneCall className="w-3 h-3 text-indigo-700" />}
                           {(v.followUpStatus === 'connected' || v.followUpStatus === 'completed') && <CheckCircle2 className="w-3 h-3 text-emerald-700" />}
+                          {v.followUpStatus === 'just_visiting' && (
+                            <span className="w-2.5 h-2.5 rounded-full bg-white border border-slate-400 inline-block shrink-0 shadow-2xs" />
+                          )}
                           <span>
-                            {v.followUpStatus === 'new' && 'Za kontakt'}
-                            {v.followUpStatus === 'contacted' && 'Kontaktirano'}
-                            {v.followUpStatus === 'connected' && 'Povezano'}
-                            {v.followUpStatus === 'completed' && 'Zaključeno'}
+                            {v.followUpStatus === 'new' && (currentLanguage === 'sl' ? 'Za kontakt' : 'To Contact')}
+                            {v.followUpStatus === 'contacted' && (currentLanguage === 'sl' ? 'Kontaktirano' : 'Contacted')}
+                            {v.followUpStatus === 'connected' && (currentLanguage === 'sl' ? 'Povezano' : 'Connected')}
+                            {v.followUpStatus === 'completed' && (currentLanguage === 'sl' ? 'Zaključeno' : 'Completed')}
+                            {v.followUpStatus === 'just_visiting' && (currentLanguage === 'sl' ? 'Samo na obisku' : 'Just Visiting')}
                           </span>
                         </span>
                       </div>
@@ -516,7 +733,7 @@ export default function VisitorTrackerModal({
                       <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 font-sans">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3 text-gray-400" />
-                          <span>Obisk: <strong>{v.sundayDate}</strong></span>
+                          <span>Obisk: <strong>{formatToEuropeanDate(v.sundayDate)}</strong></span>
                         </span>
                         {v.contactInfo && (
                           <span className="flex items-center gap-1 font-mono text-[11px] text-gray-700 bg-gray-100 px-2 py-0.5 rounded-md">
@@ -577,7 +794,19 @@ export default function VisitorTrackerModal({
                   <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-1.5 text-gray-700">
                       <UserCheck className="w-3.5 h-3.5 text-amber-800" />
-                      <span>Odgovorna oseba za kontakt: <strong>{v.assignedFollowUpPerson || 'Pastor Aleš'}</strong></span>
+                      <span className="flex items-center gap-1 flex-wrap">
+                        <span>{currentLanguage === 'sl' ? 'Odgovorna oseba za kontakt:' : 'Assigned volunteer:'}</span>
+                        {v.assignedFollowUpPerson ? (
+                          <span className="inline-flex items-center gap-1">
+                            {leadersList.some(l => l.name.toLowerCase() === v.assignedFollowUpPerson?.toLowerCase()) && (
+                              <span title={currentLanguage === 'sl' ? 'Voditelj' : 'Leader'}>👑</span>
+                            )}
+                            <strong className="text-gray-900">{v.assignedFollowUpPerson}</strong>
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 italic font-medium">{currentLanguage === 'sl' ? 'Nihče' : 'None'}</span>
+                        )}
+                      </span>
                     </div>
 
                     {canEdit && (
@@ -586,12 +815,13 @@ export default function VisitorTrackerModal({
                         <select
                           value={v.followUpStatus}
                           onChange={(e) => handleStatusChange(v.id, e.target.value as FollowUpStatus)}
-                          className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold text-gray-800 focus:outline-none focus:border-amber-600"
+                          className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-[11px] font-bold text-gray-800 focus:outline-none focus:border-amber-600 cursor-pointer"
                         >
                           <option value="new">🟡 Novo</option>
                           <option value="contacted">🔵 Kontaktirano</option>
                           <option value="connected">🟢 Povezano</option>
                           <option value="completed">✅ Zaključeno</option>
+                          <option value="just_visiting">⚪ Samo na obisku</option>
                         </select>
                       </div>
                     )}

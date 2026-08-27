@@ -280,13 +280,14 @@ export interface ServiceSunday {
   specialFocus?: SpecialSundayFocus;
 }
 
-export type FollowUpStatus = 'new' | 'contacted' | 'connected' | 'completed';
+export type FollowUpStatus = 'new' | 'contacted' | 'connected' | 'completed' | 'just_visiting';
 
 export interface VisitorConnection {
   id: string;
   sundayId?: string;
   sundayDate: string;
   visitorName: string;
+  attendeeCount?: number;
   contactInfo?: string;
   invitedBy?: string;
   notes?: string;
@@ -459,6 +460,7 @@ export interface BlackoutDate {
   id: string;
   personName: string;
   personId?: string;
+  familyMemberNames?: string[]; // Linked family members included in this absence
   startDate: string; // YYYY-MM-DD or DD. MM. YYYY
   endDate: string;
   reason?: string;

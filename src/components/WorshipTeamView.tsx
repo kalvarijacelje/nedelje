@@ -33,6 +33,7 @@ import {
 import { SASU_ALL_SONGS, SASU_GOOGLE_SHEETS_URL } from '../data/sasuSongsData';
 import UnifiedPersonAssigner from './UnifiedPersonAssigner';
 import { getSundayOfMonthIndex } from '../lib/sundaySpecialFocus';
+import { parseEuropeanDate, formatToEuropeanDate } from '../utils/dateUtils';
 import { 
   Music, 
   Plus, 
@@ -92,16 +93,7 @@ interface WorshipTeamViewProps {
   ministries?: Ministry[];
 }
 
-const parseSheetDate = (dateStr: string): Date => {
-  if (!dateStr) return new Date(0);
-  const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return new Date(0);
-  const day = parts[0];
-  const month = parts[1] - 1;
-  let year = parts[2];
-  if (year < 100) year = 2000 + year;
-  return new Date(year, month, day);
-};
+
 
 const academicYear2627Start = new Date(2026, 8, 1);  // Sep 1, 2026 (first Sunday: Sep 6, 2026)
 const academicYear2627End = new Date(2027, 7, 31);   // Aug 31, 2027
@@ -518,7 +510,7 @@ export default function WorshipTeamView({
   };
 
   const handleCopyPreviousLineup = (targetEntry: WorshipRosterEntry) => {
-    const sorted = [...activeRoster].sort((a, b) => parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime());
+    const sorted = [...activeRoster].sort((a, b) => parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime());
     const currentIndex = sorted.findIndex(e => e.id === targetEntry.id || matchWorshipRosterEntry(e.date, [targetEntry]));
     if (currentIndex <= 0) return;
     const prevEntry = sorted[currentIndex - 1];
@@ -687,14 +679,14 @@ export default function WorshipTeamView({
   // Academic Year item counts
   const count2627 = useMemo(() => {
     return combinedRoster.filter(r => {
-      const d = parseSheetDate(r.date);
+      const d = parseEuropeanDate(r.date);
       return d >= academicYear2627Start && d <= academicYear2627End;
     }).length;
   }, [combinedRoster]);
 
   const count2526 = useMemo(() => {
     return combinedRoster.filter(r => {
-      const d = parseSheetDate(r.date);
+      const d = parseEuropeanDate(r.date);
       return d < academicYear2627Start;
     }).length;
   }, [combinedRoster]);
@@ -705,7 +697,7 @@ export default function WorshipTeamView({
     if (!sundays || sundays.length === 0) return counts;
 
     sundays.forEach(sunday => {
-      const d = parseSheetDate(sunday.date);
+      const d = parseEuropeanDate(sunday.date);
       // Check if on or after Sep 1, 2026
       if (d >= academicYear2627Start && d <= academicYear2627End) {
         const setlist = sunday.worshipSetlist || [];
@@ -877,7 +869,7 @@ export default function WorshipTeamView({
   // Incomplete Roster Entries Count
   const incompleteCount = useMemo(() => {
     return combinedRoster.filter(r => {
-      const d = parseSheetDate(r.date);
+      const d = parseEuropeanDate(r.date);
       const inYear = rosterYearView === '2026_2027' ? (d >= academicYear2627Start && d <= academicYear2627End) : (d < academicYear2627Start);
       if (!inYear) return false;
       return !r.leader || !r.acoustic || !r.drums || !r.bass || !r.keys || !r.sound || !r.slides;
@@ -888,7 +880,7 @@ export default function WorshipTeamView({
   const filteredRoster = useMemo(() => {
     return combinedRoster
       .filter(r => {
-        const d = parseSheetDate(r.date);
+        const d = parseEuropeanDate(r.date);
         if (rosterYearView === '2026_2027') {
           return d >= academicYear2627Start && d <= academicYear2627End;
         } else {
@@ -896,7 +888,7 @@ export default function WorshipTeamView({
         }
       })
       .sort((a, b) => {
-        return parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime();
+        return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
       })
       .filter(r => {
         if (filterIncompleteOnly) {
@@ -2265,11 +2257,11 @@ export default function WorshipTeamView({
                             className={`text-xs font-bold font-mono hover:text-indigo-600 transition cursor-pointer text-left ${isLordSupper ? 'underline decoration-rose-400 underline-offset-4 text-slate-900' : 'text-slate-900'}`}
                             title={currentLanguage === 'sl' ? 'Odpri celoten nedeljski razpored' : 'Open Sunday detail'}
                           >
-                            {entry.date}
+                            {formatToEuropeanDate(entry.date)}
                           </button>
                         ) : (
                           <span className={`text-xs font-bold font-mono ${isLordSupper ? 'underline decoration-rose-400 underline-offset-4 text-slate-900' : 'text-slate-900'}`}>
-                            {entry.date}
+                            {formatToEuropeanDate(entry.date)}
                           </span>
                         )}
                         {isLordSupper ? (
@@ -2550,10 +2542,10 @@ export default function WorshipTeamView({
                                   className="hover:text-indigo-600 hover:underline transition cursor-pointer text-left"
                                   title={currentLanguage === 'sl' ? 'Odpri nedeljski razpored' : 'Open Sunday detail'}
                                 >
-                                  {entry.date}
+                                  {formatToEuropeanDate(entry.date)}
                                 </button>
                               ) : (
-                                <span>{entry.date}</span>
+                                <span>{formatToEuropeanDate(entry.date)}</span>
                               )}
                               {isLordSupper ? (
                                 <span 
@@ -3210,7 +3202,7 @@ export default function WorshipTeamView({
           <div className="bg-white rounded-2xl border border-gray-200 max-w-lg w-full p-5 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-150 pb-3">
               <h3 className="font-display font-semibold text-slate-900 text-sm flex items-center gap-2">
-                <span>🎵 {currentLanguage === 'sl' ? 'Uredi slavilni razpored za' : 'Edit Worship Schedule for'} {editingRosterEntry.date}</span>
+                <span>🎵 {currentLanguage === 'sl' ? 'Uredi slavilni razpored za' : 'Edit Worship Schedule for'} {formatToEuropeanDate(editingRosterEntry.date)}</span>
               </h3>
               <button onClick={() => setEditingRosterEntry(null)} className="text-gray-400 hover:text-gray-700 cursor-pointer">
                 <X className="w-5 h-5" />

@@ -538,6 +538,7 @@ export function generateICSContent(sundayDate: string, ministryName: string, not
     day = parseInt(parts[0], 10) || 6;
     month = parseInt(parts[1], 10) || 9;
     year = parseInt(parts[2], 10) || 2026;
+    if (year < 100) year += 2000;
   }
 
   const pad = (n: number) => n < 10 ? `0${n}` : `${n}`;
@@ -595,6 +596,7 @@ export function getGoogleCalendarAddUrl(sundayDate: string, ministryName: string
     day = parseInt(parts[0], 10) || 6;
     month = parseInt(parts[1], 10) || 9;
     year = parseInt(parts[2], 10) || 2026;
+    if (year < 100) year += 2000;
   }
   const pad = (n: number) => n < 10 ? `0${n}` : `${n}`;
   const startStr = `${year}${pad(month)}${pad(day)}T100000`;

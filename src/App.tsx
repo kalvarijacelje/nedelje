@@ -15,6 +15,7 @@ import {
 import { INITIAL_WORSHIP_ROSTER } from './data/worshipData';
 import { syncWorshipRosterFromSundayAssignments } from './utils/worshipSync';
 import { syncSundaySchoolLessonsFromSunday, syncSundaysFromSundaySchoolLessons } from './utils/sundaySchoolSync';
+import { parseEuropeanDate, formatToEuropeanDate } from './utils/dateUtils';
 
 import HomeDashboard from './components/HomeDashboard';
 import ScheduleView from './components/ScheduleView';
@@ -39,7 +40,6 @@ import { INITIAL_VISITOR_CONNECTIONS } from './data/visitorData';
 
 import KcKalvarijaLogo from './components/KcKalvarijaLogo';
 import { EcosystemNavbar } from './components/EcosystemNavbar';
-import { NotificationQueueProvider } from './context/NotificationQueueContext';
 import NotificationQueueBar from './components/NotificationQueueBar';
 
 import { 
@@ -116,7 +116,7 @@ type TabType = 'home' | 'sundays' | 'statistics' | 'sunday_school' | 'worship' |
 
 const TAB_TO_PATH: Record<TabType, string> = {
   home: '/domov',
-  sundays: '/urnik',
+  sundays: '/razpored',
   statistics: '/statistika',
   sunday_school: '/sola',
   worship: '/slavilna',
@@ -128,7 +128,7 @@ const PATH_TO_TAB: Record<string, TabType> = {
   '/': 'home',
   '/dom': 'home',
   '/domov': 'home',
-  '/urnik': 'sundays',
+  '/razpored': 'sundays',
   '/statistika': 'statistics',
   '/analitika': 'statistics',
   '/sola': 'sunday_school',
@@ -702,7 +702,7 @@ export default function App() {
     const newB: BlackoutDate = {
       ...b,
       id: 'blackout-' + Date.now(),
-      createdAt: new Date().toLocaleDateString('sl')
+      createdAt: formatToEuropeanDate(new Date())
     };
     setBlackoutDates(prev => [newB, ...prev]);
     insertBlackoutToSupabase(b).catch(console.warn);
@@ -1793,22 +1793,13 @@ export default function App() {
 
   // Safe automatic scheduling calculation adding exact 7 days to next service record
   const handleAddSunday = async () => {
-    const parseSheetDate = (dateStr: string): Date => {
-      const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-      if (parts.length < 3) return new Date();
-      const day = parts[0];
-      const month = parts[1] - 1;
-      const year = 2000 + parts[2];
-      return new Date(year, month, day);
-    };
-
     const sorted = [...sundays].sort((a, b) => {
-      return parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime();
+      return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
     });
 
     let newDateStr = '';
     if (sorted.length > 0) {
-      const latestDate = parseSheetDate(sorted[sorted.length - 1].date);
+      const latestDate = parseEuropeanDate(sorted[sorted.length - 1].date);
       latestDate.setDate(latestDate.getDate() + 7);
       const d = latestDate.getDate();
       const m = latestDate.getMonth() + 1;
@@ -2036,8 +2027,7 @@ export default function App() {
   }
 
   return (
-    <NotificationQueueProvider>
-      <div className="flex flex-col min-h-screen bg-[#FAF7F5] font-sans selection:bg-[#93032E] selection:text-white pb-20 max-w-full overflow-x-hidden">
+    <div className="flex flex-col min-h-screen bg-[#FAF7F5] font-sans selection:bg-[#93032E] selection:text-white pb-20 max-w-full overflow-x-hidden">
       
       {/* Universal 2-Tier Ecosystem Navbar */}
       <EcosystemNavbar
@@ -2073,10 +2063,10 @@ export default function App() {
                   ? 'bg-[#93032E] text-white shadow-xs'
                   : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
               }`}
-              title={currentLanguage === 'sl' ? 'Urnik' : 'Roster'}
+              title={currentLanguage === 'sl' ? 'Razpored' : 'Schedule'}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>{currentLanguage === 'sl' ? 'Urnik' : 'Roster'}</span>
+              <span>{currentLanguage === 'sl' ? 'Razpored' : 'Schedule'}</span>
             </button>
 
             <button
@@ -2231,6 +2221,7 @@ export default function App() {
                 onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
                 onOpenRundownModal={handleOpenRundownModal}
                 visitors={visitorConnections}
+                blackoutDates={blackoutDates}
               />
             )}
 
@@ -2338,25 +2329,25 @@ export default function App() {
 
             {/* Extra Admin Controls Block (Collapsible) */}
             {activeTab === 'people' && activeRole === 'Admin' && users.length > 0 && (
-              <div className="px-4 pb-6 max-w-lg mx-auto w-full space-y-3">
+              <div className="px-2 sm:px-4 pb-12 max-w-6xl mx-auto w-full space-y-4">
                 {/* Save confirmation toast inside section */}
                 {roleActionToast && (
-                  <div className="bg-emerald-600 text-white p-3 rounded-xl text-xs font-semibold flex items-center justify-between shadow-md border border-emerald-500 animate-fade-in">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
+                  <div className="bg-emerald-600 text-white p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-md border border-emerald-500 animate-fade-in">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-200 shrink-0" />
                       <span className="truncate">{roleActionToast.message}</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setRoleActionToast(null)}
-                      className="text-emerald-200 hover:text-white font-bold text-sm shrink-0 ml-2 cursor-pointer"
+                      className="text-emerald-200 hover:text-white font-bold text-base shrink-0 ml-2 cursor-pointer p-1"
                     >
                       &times;
                     </button>
                   </div>
                 )}
 
-                <div className="border-t border-gray-200/80 my-4 pt-4">
+                <div className="border-t border-gray-200/80 my-6 pt-6">
                   {(() => {
                     const unlinkedCount = users.filter(u => !people.some(p => p && (
                       p.name === u.personName || 
@@ -2370,33 +2361,35 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setShowManageUserRoles(!showManageUserRoles)}
-                        className={`w-full flex items-center justify-between p-3 rounded-xl transition cursor-pointer font-sans border ${
+                        className={`w-full flex items-center justify-between p-4 rounded-2xl transition cursor-pointer font-sans border shadow-xs ${
                           unlinkedCount > 0 
-                            ? 'bg-amber-50 hover:bg-amber-100/80 border-amber-300 shadow-xs' 
-                            : 'bg-slate-100 hover:bg-slate-200/80 border-slate-250'
+                            ? 'bg-amber-50 hover:bg-amber-100/90 border-amber-300' 
+                            : 'bg-white hover:bg-slate-50 border-slate-200/90'
                         }`}
                       >
-                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                          <ShieldAlert className={`w-4 h-4 shrink-0 ${unlinkedCount > 0 ? 'text-amber-600' : 'text-indigo-600'}`} />
-                          <span className="font-display font-semibold text-xs uppercase tracking-wider text-slate-800 font-mono truncate">
-                            {currentLanguage === 'sl' ? 'Upravljanje Vlog Planerja' : 'Manage User Roles'}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+                          <div className={`p-2 rounded-xl shrink-0 ${unlinkedCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                            <ShieldAlert className="w-5 h-5" />
+                          </div>
+                          <span className="font-display font-bold text-sm uppercase tracking-wider text-slate-800 font-mono">
+                            {currentLanguage === 'sl' ? 'Upravljanje Vlog & Dostopov Planerja' : 'Manage User Roles & Access'}
                           </span>
-                          <span className="text-[10px] bg-indigo-100 text-indigo-800 font-mono font-bold px-2 py-0.5 rounded-full border border-indigo-200 shrink-0">
-                            {users.length}
+                          <span className="text-xs bg-indigo-100 text-indigo-800 font-mono font-bold px-2.5 py-0.5 rounded-full border border-indigo-200 shrink-0">
+                            {users.length} {currentLanguage === 'sl' ? 'uporabnikov' : 'users'}
                           </span>
                           {unlinkedCount > 0 && (
-                            <span className="text-[10px] bg-amber-500 text-white font-mono font-bold px-2 py-0.5 rounded-full shrink-0 shadow-2xs">
+                            <span className="text-xs bg-amber-500 text-white font-mono font-bold px-2.5 py-0.5 rounded-full shrink-0 shadow-2xs">
                               ⚠️ {unlinkedCount} {currentLanguage === 'sl' ? 'nepovezanih' : 'unlinked'}
                             </span>
                           )}
                           {viewerCount > 0 && (
-                            <span className="text-[10px] bg-slate-200 text-slate-700 font-mono font-bold px-2 py-0.5 rounded-full shrink-0">
+                            <span className="text-xs bg-slate-100 text-slate-700 border border-slate-300 font-mono font-bold px-2.5 py-0.5 rounded-full shrink-0">
                               👁️ {viewerCount} {currentLanguage === 'sl' ? 'gledalcev' : 'viewers'}
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold shrink-0">
-                          <span>{showManageUserRoles ? (currentLanguage === 'sl' ? 'Skrij' : 'Hide') : (currentLanguage === 'sl' ? 'Prikaži' : 'Show')}</span>
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-600 shrink-0 pl-2">
+                          <span>{showManageUserRoles ? (currentLanguage === 'sl' ? 'Skrij seznam' : 'Hide list') : (currentLanguage === 'sl' ? 'Prikaži seznam' : 'Show list')}</span>
                           {showManageUserRoles ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                         </div>
                       </button>
@@ -2405,16 +2398,16 @@ export default function App() {
                 </div>
 
                 {showManageUserRoles && (
-                  <div className="space-y-3.5 animate-fade-in bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200">
-                    <div className="flex items-center justify-between text-[11px] text-slate-600 leading-relaxed font-sans">
+                  <div className="space-y-4 animate-fade-in bg-slate-50/90 p-4 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm">
+                    <div className="flex items-center justify-between text-xs text-slate-600 leading-relaxed font-sans bg-white/80 p-3.5 px-4 rounded-2xl border border-slate-200">
                       <p>
                         {currentLanguage === 'sl' 
-                          ? 'Kot administrator lahko spremenite vloge registriranih uporabnikov (samodejno shranjevanje) ter jih povežete s profili sodelavcev.' 
-                          : 'As an Administrator, change user roles (auto-saved) and link Google accounts to volunteer profiles.'}
+                          ? 'Kot administrator lahko spremenite vloge registriranih Google računov ter jih povežete s profili v bazi sodelavcev. Vse spremembe se takoj samodejno shranijo.' 
+                          : 'As an Administrator, manage registered Google account permissions and link accounts to roster volunteer profiles. All changes auto-save instantly.'}
                       </p>
                     </div>
 
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                       {users.map((u) => {
                         const linkedPerson = people.find(p => p && (
                           p.name === u.personName || 
@@ -2426,46 +2419,56 @@ export default function App() {
                         const isUnlinked = !linkedPerson;
 
                         return (
-                          <div key={u.uid} className={`rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition ${
+                          <div key={u.uid} className={`rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition shadow-xs ${
                             isUnlinked 
-                              ? 'border-2 border-amber-500 bg-amber-50/90 shadow-md ring-2 ring-amber-400/20' 
-                              : 'bg-white border border-gray-200 shadow-xs'
+                              ? 'border-2 border-amber-500/80 bg-amber-50/90 shadow-sm ring-2 ring-amber-400/20' 
+                              : 'bg-white border border-slate-200 hover:border-slate-300'
                           }`}>
-                            <div className="space-y-1 min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-bold text-slate-900 leading-none truncate">{u.displayName || 'Google User'}</span>
+                            {/* Left Column: User details */}
+                            <div className="space-y-1.5 min-w-0 flex-1">
+                              <div className="flex items-center gap-2.5 flex-wrap">
+                                <span className="text-sm font-bold text-slate-900 leading-snug">
+                                  {u.displayName || 'Google User'}
+                                </span>
                                 {isUnlinked ? (
-                                  <span className="text-[9px] font-mono font-bold bg-amber-600 text-white px-2 py-0.5 rounded-full shadow-2xs flex items-center gap-1">
+                                  <span className="text-[10px] font-mono font-bold bg-amber-600 text-white px-2.5 py-0.5 rounded-full shadow-2xs flex items-center gap-1">
                                     <span>⚠️</span>
                                     <span>{currentLanguage === 'sl' ? 'NI POVEZAN S PROFILOM' : 'NOT LINKED TO ROSTER'}</span>
                                   </span>
                                 ) : (
-                                  <span className="text-[9px] font-mono font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded-full">
-                                    ✓ {currentLanguage === 'sl' ? 'Povezan' : 'Linked'}
+                                  <span className="text-[10px] font-mono font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <span>✓</span>
+                                    <span>{currentLanguage === 'sl' ? 'Povezan račun' : 'Linked account'}</span>
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-slate-500 font-mono block truncate">{u.email}</span>
+
+                              <div className="text-xs text-slate-500 font-mono break-all select-all">
+                                ✉️ {u.email}
+                              </div>
+
                               {linkedPerson ? (
-                                <span className="text-[10px] text-indigo-700 font-bold block truncate">
-                                  👤 {currentLanguage === 'sl' ? 'Profil v bazi: ' : 'Roster profile: '}{linkedPerson.name}
-                                </span>
+                                <div className="text-xs text-indigo-700 font-semibold flex items-center gap-1.5 pt-0.5">
+                                  <span>👤 {currentLanguage === 'sl' ? 'Profil v bazi sodelavcev:' : 'Roster profile:'}</span>
+                                  <span className="font-bold underline decoration-indigo-300 underline-offset-2">{linkedPerson.name}</span>
+                                </div>
                               ) : (
-                                <span className="text-[10px] text-amber-800 font-semibold block truncate">
-                                  🔔 {currentLanguage === 'sl' ? 'Izberite profil sodelavca za povezavo:' : 'Choose a volunteer profile to link:'}
-                                </span>
+                                <div className="text-xs text-amber-900 font-semibold flex items-center gap-1.5 pt-0.5">
+                                  <span>🔔 {currentLanguage === 'sl' ? 'Izberite profil sodelavca za povezavo:' : 'Choose a volunteer profile to link:'}</span>
+                                </div>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap shrink-0">
+                            {/* Right Column: Linking, Role Selector, Delete */}
+                            <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-200/60">
                               {/* Option to link this account to a Person in people database */}
                               <select
                                 value={currentLinkVal}
                                 onChange={(e) => handleLinkUserPerson(u.uid, e.target.value || undefined)}
-                                className={`text-[10px] border p-1.5 px-2 rounded-lg focus:outline-none font-medium cursor-pointer transition ${
+                                className={`text-xs border py-2.5 px-3 rounded-xl focus:outline-none font-medium cursor-pointer transition w-full sm:w-auto min-w-[220px] lg:min-w-[240px] shadow-2xs ${
                                   isUnlinked 
-                                    ? 'bg-amber-100 border-2 border-amber-500 text-amber-950 font-bold focus:ring-2 focus:ring-amber-500 shadow-xs animate-pulse-short' 
-                                    : 'bg-slate-50 border-gray-250 text-slate-800'
+                                    ? 'bg-amber-100 border-2 border-amber-500 text-amber-950 font-bold focus:ring-2 focus:ring-amber-500' 
+                                    : 'bg-slate-50 hover:bg-white border-slate-300 text-slate-800 focus:ring-2 focus:ring-indigo-500'
                                 }`}
                                 title={currentLanguage === 'sl' ? 'Poveži z imenom v bazi sodelavcev' : 'Link to volunteer in database'}
                               >
@@ -2484,7 +2487,7 @@ export default function App() {
                               <select
                                 value={u.role}
                                 onChange={(e) => handleUpdateUserRole(u.uid, e.target.value as UserRole)}
-                                className="text-[11px] bg-slate-50 hover:bg-slate-100 border border-gray-300 p-1.5 px-2 rounded-lg focus:outline-none font-bold cursor-pointer text-slate-800 transition"
+                                className="text-xs bg-slate-50 hover:bg-white border border-slate-300 py-2.5 px-3 rounded-xl focus:outline-none font-bold cursor-pointer text-slate-800 transition focus:ring-2 focus:ring-indigo-500 shadow-2xs w-full sm:w-auto min-w-[130px]"
                                 title={currentLanguage === 'sl' ? 'Spremeni vlogo (samodejno shranjeno)' : 'Change role (automatically saved)'}
                               >
                                 <option value="Admin">🛠️ Admin</option>
@@ -2497,10 +2500,10 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={() => handleDeleteUser(u.uid, u.email)}
-                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-800 border border-rose-200 rounded-lg transition active:scale-95 cursor-pointer shrink-0"
+                                className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-800 border border-rose-200 rounded-xl transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
                                 title={currentLanguage === 'sl' ? 'Izbriši uporabniški račun in e-pošto' : 'Delete user account and erase email'}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -2545,7 +2548,7 @@ export default function App() {
           >
             <Calendar className="w-4 h-4 shrink-0 text-sky-600" />
             <span className="text-[8px] sm:text-[9px] uppercase tracking-tight font-bold mt-0.5 truncate max-w-full text-center">
-              {currentLanguage === 'sl' ? 'URNIK' : 'ROSTER'}
+              {currentLanguage === 'sl' ? 'RAZPORED' : 'ROSTER'}
             </span>
           </button>
 
@@ -2727,6 +2730,5 @@ export default function App() {
         {/* Mobile/Desktop PWA Install Banner */}
         <PwaInstallBanner currentLang={currentLanguage} />
       </div>
-    </NotificationQueueProvider>
   );
 }

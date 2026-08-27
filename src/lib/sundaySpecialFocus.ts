@@ -1,5 +1,6 @@
 import { ServiceSunday, SpecialSundayFocus, CommunionCheckitem, Ministry } from '../types';
 import { resolveMinistryAssignments } from '../utils/worshipSync';
+import { parseEuropeanDate } from '../utils/dateUtils';
 
 export const DEFAULT_COMMUNION_CHECKLIST: CommunionCheckitem[] = [
   { id: 'chk-1', textSl: 'Pripravi brezglutenski kruh in navadne kruhke', done: true },
@@ -24,17 +25,11 @@ export const SAMPLE_FAMILY_PRAYER_LIST = [
 export function getSundayOfMonthIndex(dateStr: string): { day: number; sundayIndex: number; monthName: string } {
   if (!dateStr) return { day: 1, sundayIndex: 1, monthName: 'Avgust' };
 
-  // Normalize separators: replace slash or dash or multiple spaces with dots
-  const clean = dateStr.replace(/[/\-\s]+/g, '.').replace(/\.+/g, '.');
-  const parts = clean.split('.').filter(Boolean);
+  const d = parseEuropeanDate(dateStr);
+  if (d.getTime() === 0) return { day: 1, sundayIndex: 1, monthName: 'Avgust' };
 
-  let day = 1;
-  let month = 8;
-
-  if (parts.length >= 2) {
-    day = parseInt(parts[0], 10) || 1;
-    month = parseInt(parts[1], 10) || 8;
-  }
+  const day = d.getDate();
+  const month = d.getMonth() + 1;
 
   // Calculate Sunday index in month: days 1..7 -> 1st Sunday, 8..14 -> 2nd Sunday, 15..21 -> 3rd Sunday, 22..28 -> 4th Sunday, 29..31 -> 5th Sunday
   const sundayIndex = Math.min(5, Math.max(1, Math.ceil(day / 7)));

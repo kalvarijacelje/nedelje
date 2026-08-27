@@ -359,10 +359,22 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
   );
 }
 
-export function useNotificationQueue() {
+const defaultFallbackContext: NotificationQueueContextType = {
+  queue: [],
+  pendingBatches: [],
+  queueAssignment: () => '',
+  flushBatchNow: async () => {},
+  flushAllNow: async () => {},
+  cancelBatch: () => {},
+  removeQueuedItem: () => {},
+  queueToast: null,
+  dismissQueueToast: () => {},
+};
+
+export function useNotificationQueue(): NotificationQueueContextType {
   const context = useContext(NotificationQueueContext);
   if (!context) {
-    throw new Error('useNotificationQueue must be used within a NotificationQueueProvider');
+    return defaultFallbackContext;
   }
   return context;
 }

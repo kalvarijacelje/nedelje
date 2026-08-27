@@ -126,10 +126,14 @@ export const UnifiedPersonAssigner: React.FC<UnifiedPersonAssignerProps> = ({
         isSpecialist = tags.includes('zvok') || tags.includes('sound') || tags.includes('audio') || prefList.includes('zvok') || prefList.includes('av_tech');
       } else if (cleanRole === 'slides' || cleanRole === 'projekcija' || cleanRole === 'besedila') {
         isSpecialist = tags.includes('projekcija') || tags.includes('slides') || tags.includes('besedila') || prefList.includes('besedila') || prefList.includes('av_tech');
-      } else if (cleanRole === 'teacher' || cleanRole === 'ucitelj' || cleanRole === 'nedeljska_sola_mlajsa' || cleanRole === 'nedeljska_sola_starejsa') {
-        isSpecialist = tags.includes('učitelj') || tags.includes('teacher') || tags.includes('šola') || tags.includes('kids') || prefList.includes('nedeljska_sola_mlajsa') || prefList.includes('nedeljska_sola_starejsa');
+      } else if (cleanRole === 'nedeljska_sola_mlajsa' || cleanRole === 'nedeljska_sola_mlajsa_helper' || cleanRole === 'mlajsa') {
+        isSpecialist = prefList.includes('nedeljska_sola_mlajsa') || prefList.includes('otroško služenje - mlajša') || ledList.includes('nedeljska_sola_mlajsa') || ledList.includes('otroško služenje - mlajša') || tags.includes('mlajša');
+      } else if (cleanRole === 'nedeljska_sola_starejsa' || cleanRole === 'nedeljska_sola_starejsa_helper' || cleanRole === 'starejsa') {
+        isSpecialist = prefList.includes('nedeljska_sola_starejsa') || prefList.includes('otroško služenje - starejša') || ledList.includes('nedeljska_sola_starejsa') || ledList.includes('otroško služenje - starejša') || tags.includes('starejša');
+      } else if (cleanRole === 'teacher' || cleanRole === 'ucitelj') {
+        isSpecialist = tags.includes('učitelj') || tags.includes('teacher') || tags.includes('šola') || tags.includes('kids') || prefList.includes('nedeljska_sola') || prefList.includes('nedeljska_sola_mlajsa') || prefList.includes('nedeljska_sola_starejsa');
       } else if (cleanRole === 'assistant' || cleanRole === 'pomocnik') {
-        isSpecialist = tags.includes('pomočnik') || tags.includes('assistant') || tags.includes('šola') || tags.includes('kids') || prefList.includes('nedeljska_sola_mlajsa') || prefList.includes('nedeljska_sola_starejsa');
+        isSpecialist = tags.includes('pomočnik') || tags.includes('assistant') || tags.includes('šola') || tags.includes('kids') || prefList.includes('nedeljska_sola') || prefList.includes('nedeljska_sola_mlajsa') || prefList.includes('nedeljska_sola_starejsa');
       } else if (roleKey) {
         isSpecialist = prefList.includes(cleanRole) || ledList.includes(cleanRole);
       }

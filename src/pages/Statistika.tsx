@@ -32,6 +32,7 @@ import {
 import HeroHeaderBanner from '../components/HeroHeaderBanner';
 import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import { getEffectiveSundayFocus, getSundayCoverageStats, isMinistryApplicableOnSunday } from '../lib/sundaySpecialFocus';
+import { parseEuropeanDate, formatToEuropeanDate } from '../utils/dateUtils';
 
 interface StatistikaProps {
   sundays: ServiceSunday[];
@@ -57,27 +58,15 @@ export default function Statistika({
   const [sundaySearch, setSundaySearch] = useState('');
   const [selectedLogSundayId, setSelectedLogSundayId] = useState<string | null>(null);
 
-  // Parse Slovenian style date "DD. MM. YY" or "DD. MM. YYYY" into a comparable Date object
-  const parseSheetDate = (dateStr: string): Date => {
-    if (!dateStr) return new Date(0);
-    const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-    if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return new Date(0);
-    const day = parts[0];
-    const month = parts[1] - 1;
-    let year = parts[2];
-    if (year < 100) year = 2000 + year;
-    return new Date(year, month, day);
-  };
-
   // Sort sundays chronologically
-  const sortedSundays = [...sundays].sort((a, b) => parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime());
+  const sortedSundays = [...sundays].sort((a, b) => parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime());
 
   // Filter Academic Year 2026/2027 sundays (Sep 1, 2026 -> Aug 31, 2027)
   const academicYear2627Start = new Date(2026, 8, 1);
   const academicYear2627End = new Date(2027, 7, 31);
 
   const aySundays = sortedSundays.filter(s => {
-    const d = parseSheetDate(s.date);
+    const d = parseEuropeanDate(s.date);
     return d >= academicYear2627Start && d <= academicYear2627End;
   });
 
@@ -536,7 +525,7 @@ export default function Statistika({
               >
                 <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
                   <div className="flex items-center gap-2.5 flex-wrap">
-                    <span className="font-bold text-sm text-gray-900 font-mono">{sun.date}</span>
+                    <span className="font-bold text-sm text-gray-900 font-mono">{formatToEuropeanDate(sun.date)}</span>
                     {sun.themeSl && (
                       <span className="text-xs font-semibold text-indigo-950 font-display">
                         📖 {sun.themeSl}

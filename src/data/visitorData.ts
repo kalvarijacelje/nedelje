@@ -13,7 +13,7 @@ export const INITIAL_VISITOR_CONNECTIONS: VisitorConnection[] = [
     assignedFollowUpPerson: 'Pastor Aleš',
     followUpStatus: 'contacted',
     coffeeShopNotes: 'Naročila kapučino v Kavarni Živa Vera, pogovor o mladinski in družinski skupini.',
-    createdAt: '2025-08-10'
+    createdAt: '10. 8. 2025'
   },
   {
     id: 'vis-2',
@@ -27,6 +27,6 @@ export const INITIAL_VISITOR_CONNECTIONS: VisitorConnection[] = [
     assignedFollowUpPerson: 'Whitney',
     followUpStatus: 'new',
     coffeeShopNotes: 'Družili smo se ob rogljičku in kavi spodaj v Živi Veri.',
-    createdAt: '2025-08-10'
+    createdAt: '10. 8. 2025'
   }
 ];

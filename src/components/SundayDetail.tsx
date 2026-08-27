@@ -26,32 +26,12 @@ import {
   generateVolunteerChatInviteMessage,
   getWhatsAppInvitationUrl
 } from '../services/notificationService';
+import { parseEuropeanDate, formatToEuropeanDate, formatEuropeanDateRange, formatEuropeanDateTime } from '../utils/dateUtils';
 
 export function parseToDateOnly(dateStr: string): Date | null {
   if (!dateStr) return null;
-  const trimmed = dateStr.trim();
-  // Handles "6. 9. 26" or "06. 09. 2026" or "6. 9. 2026"
-  if (trimmed.includes('.')) {
-    const parts = trimmed.split('.').map(p => p.trim()).filter(Boolean);
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      let year = parseInt(parts[2], 10);
-      if (year < 100) year += 2000;
-      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-        return new Date(year, month, day, 0, 0, 0, 0);
-      }
-    }
-  }
-  // Handles ISO "YYYY-MM-DD"
-  if (trimmed.includes('-')) {
-    const parts = trimmed.split('-').map(p => parseInt(p.trim(), 10));
-    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-      return new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
-    }
-  }
-  const d = new Date(trimmed);
-  return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  const d = parseEuropeanDate(dateStr);
+  return d.getTime() === 0 ? null : d;
 }
 
 export function checkPersonAbsenceOnSunday(
@@ -69,7 +49,15 @@ export function checkPersonAbsenceOnSunday(
     if (!b || !b.startDate) continue;
     const bName = (b.personName || '').toLowerCase().trim();
     const bId = (b.personId || '').toLowerCase().trim();
-    const matchesPerson = (bId && bId === normTarget) || (bName && bName === normTarget);
+    const familyNames = Array.isArray(b.familyMemberNames)
+      ? b.familyMemberNames.map(f => (f || '').toLowerCase().trim())
+      : [];
+
+    const matchesPerson =
+      (bId && bId === normTarget) ||
+      (bName && bName === normTarget) ||
+      familyNames.includes(normTarget);
+
     if (!matchesPerson) continue;
 
     const start = parseToDateOnly(b.startDate);
@@ -1167,19 +1155,8 @@ export default function SundayDetail({
   };
 
   const handleDuplicateFromPrevious = () => {
-    if (!canEditGeneral) return;
-
-    const parseDateParts = (dStr: string) => {
-      const parts = dStr.split('.').map(p => parseInt(p.trim(), 10));
-      if (parts.length < 3) return new Date();
-      const day = parts[0];
-      const month = parts[1] - 1;
-      const year = 2000 + parts[2];
-      return new Date(year, month, day);
-    };
-
     const sortedSundays = [...allSundays].sort((a, b) => {
-      return parseDateParts(a.date).getTime() - parseDateParts(b.date).getTime();
+      return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
     });
 
     const currentIndex = sortedSundays.findIndex((s) => s.id === sunday.id);
@@ -1235,19 +1212,8 @@ export default function SundayDetail({
   const coverageStats = getSundayCoverageStats(sunday, ministries, worshipRoster);
   const coveredCount = coverageStats.filledRequired;
 
-  const parseSheetDate = (dateStr: string): Date => {
-    if (!dateStr) return new Date(0);
-    const parts = dateStr.split('.').map(p => parseInt(p.trim(), 10));
-    if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return new Date(0);
-    const day = parts[0];
-    const month = parts[1] - 1;
-    let year = parts[2];
-    if (year < 100) year = 2000 + year;
-    return new Date(year, month, day);
-  };
-
   const sortedSundays = [...allSundays].sort((a, b) => {
-    return parseSheetDate(a.date).getTime() - parseSheetDate(b.date).getTime();
+    return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
   });
 
   const currentSundayIndex = sortedSundays.findIndex(s => s.id === sunday.id);
@@ -1424,8 +1390,8 @@ export default function SundayDetail({
                         : `⚠️ ${overrideConfirmationTarget.person.name} has already DECLINED this assignment for (${sunday.date})${overrideConfirmationTarget.reason ? `: "${overrideConfirmationTarget.reason}"` : ''}. Are you sure you want to add them anyway?`
                     ) : (
                       currentLanguage === 'sl'
-                        ? `🌴 Oseba ${overrideConfirmationTarget.person.name} je na dopustu (${overrideConfirmationTarget.startDate && overrideConfirmationTarget.endDate && overrideConfirmationTarget.startDate !== overrideConfirmationTarget.endDate ? `od ${overrideConfirmationTarget.startDate} do ${overrideConfirmationTarget.endDate}` : overrideConfirmationTarget.startDate ? `na dan ${overrideConfirmationTarget.startDate}` : `za dan ${sunday.date}`})${overrideConfirmationTarget.reason ? `: "${overrideConfirmationTarget.reason}"` : ''}. Ali jo res želite dodati?`
-                        : `🌴 ${overrideConfirmationTarget.person.name} is on vacation (${overrideConfirmationTarget.startDate && overrideConfirmationTarget.endDate && overrideConfirmationTarget.startDate !== overrideConfirmationTarget.endDate ? `from ${overrideConfirmationTarget.startDate} to ${overrideConfirmationTarget.endDate}` : overrideConfirmationTarget.startDate ? `on ${overrideConfirmationTarget.startDate}` : `for ${sunday.date}`})${overrideConfirmationTarget.reason ? `: "${overrideConfirmationTarget.reason}"` : ''}. Are you sure you want to add them?`
+                        ? `🌴 Oseba ${overrideConfirmationTarget.person.name} je na dopustu (${formatEuropeanDateRange(overrideConfirmationTarget.startDate, overrideConfirmationTarget.endDate, 'do')})${overrideConfirmationTarget.reason ? `: "${overrideConfirmationTarget.reason}"` : ''}. Ali jo res želite dodati?`
+                        : `🌴 ${overrideConfirmationTarget.person.name} is on vacation (${formatEuropeanDateRange(overrideConfirmationTarget.startDate, overrideConfirmationTarget.endDate, 'to')})${overrideConfirmationTarget.reason ? `: "${overrideConfirmationTarget.reason}"` : ''}. Are you sure you want to add them?`
                     )}
                   </p>
                 </div>
@@ -2091,7 +2057,7 @@ export default function SundayDetail({
                                       <span className="font-bold">Sporočilo ob zavrnitvi:</span> "{detail.declineReason}"
                                       {detail.responseAt && (
                                         <span className="text-[10px] text-rose-700 block font-mono">
-                                          Odziv: {new Date(detail.responseAt).toLocaleDateString('sl-SI')} {new Date(detail.responseAt).toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' })}
+                                          Odziv: {formatEuropeanDateTime(detail.responseAt)}
                                         </span>
                                       )}
                                     </div>
@@ -2308,8 +2274,8 @@ export default function SundayDetail({
                               tooltip = (declineReason ? `Zavrnjeno: "${declineReason}"` : 'Oseba je zavrnila ta termin') + otherMinistryText;
                             } else if (isAbsent) {
                               badgeClasses = 'opacity-60 bg-amber-50/70 border-amber-200 text-amber-900 hover:opacity-100 hover:bg-amber-100 transition';
-                              const dateInfo = absenceStartDate && absenceEndDate && absenceStartDate !== absenceEndDate
-                                ? ` (${absenceStartDate} - ${absenceEndDate})`
+                              const dateInfo = absenceStartDate
+                                ? ` (${formatEuropeanDateRange(absenceStartDate, absenceEndDate, '-')})`
                                 : '';
                               tooltip = (absenceReason 
                                 ? `Odsotnost / Dopust${dateInfo}: "${absenceReason}"` 

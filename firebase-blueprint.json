@@ -26,7 +26,7 @@
     },
     "ServiceSunday": {
       "title": "ServiceSunday",
-      "description": "A Sunday worship service roster and setup",
+      "description": "A Sunday worship service schedule and setup",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
