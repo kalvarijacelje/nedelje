@@ -5,11 +5,11 @@
 
 import React, { useState } from 'react';
 import { ServiceSunday, Ministry, UserRole, Translation } from '../types';
-import { Calendar, Trash2, Edit3, ChevronRight, Filter, AlertCircle, Check, FolderArchive, Sparkles, PlusCircle, History, Wine, HeartHandshake, BarChart3, Clock, X } from 'lucide-react';
+import { Calendar, ChevronRight, AlertCircle, Check, Sparkles, PlusCircle, History, BarChart3, Clock, X } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { getEffectiveSundayFocus, getSundayCoverageStats } from '../lib/sundaySpecialFocus';
-import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import { parseEuropeanDate, formatToEuropeanDate } from '../utils/dateUtils';
+import { getAutoSundayStatus } from '../utils/academicYear';
 
 interface ScheduleViewProps {
   sundays: ServiceSunday[];
@@ -23,7 +23,6 @@ interface ScheduleViewProps {
   onOpenStatistics?: () => void;
 }
 
-type FilterStatus = 'all' | 'draft' | 'ready' | 'completed';
 type YearView = '2026_2027' | 'history' | 'all';
 
 export default function ScheduleView({
@@ -38,30 +37,14 @@ export default function ScheduleView({
   onOpenStatistics,
 }: ScheduleViewProps) {
   const [yearView, setYearView] = useState<YearView>('2026_2027');
-  const [filter, setFilter] = useState<FilterStatus>('all');
-  const [sundayToDelete, setSundayToDelete] = useState<ServiceSunday | null>(null);
-
-  useBackdropHistory(!!sundayToDelete, () => setSundayToDelete(null), 'schedule-delete-sunday');
 
   const canEdit = userRole === 'Admin' || userRole === 'Leader';
 
-  // Threshold date for Academic Year 2026/2027: September 1, 2026 (first Sunday: Sep 6, 2026)
-  const academicYearStartDate = new Date(2026, 8, 1);
+  // Threshold date for Academic Year 2026/2027: August 20, 2026 (first Sunday: Aug 30, 2026)
+  const academicYearStartDate = new Date(2026, 7, 20);
 
   const isAcademicYear2627 = (dateStr: string) => {
     return parseEuropeanDate(dateStr).getTime() >= academicYearStartDate.getTime();
-  };
-
-  const getEffectiveSundayStatus = (s: ServiceSunday): 'draft' | 'ready' | 'completed' => {
-    if (s.status === 'completed') return 'completed';
-    const sDate = parseEuropeanDate(s.date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    // If the Sunday is in the past, automatically categorize as completed/archived
-    if (sDate.getTime() < today.getTime()) {
-      return 'completed';
-    }
-    return s.status || 'draft';
   };
 
   const count2627 = sundays.filter(s => isAcademicYear2627(s.date)).length;
@@ -77,19 +60,14 @@ export default function ScheduleView({
   // Sort Sundays chronologically (newest first for schedule browsing, or ascending based on view)
   const sortedSundays = [...yearFilteredSundays].sort((a, b) => {
     if (yearView === '2026_2027') {
-      // Ascending for upcoming academic year (from Aug/Sep 2026 onwards)
+      // Ascending for upcoming academic year (from Aug 2026 onwards)
       return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
     }
     // Descending for history / all
     return parseEuropeanDate(b.date).getTime() - parseEuropeanDate(a.date).getTime();
   });
 
-  // Filter by status tab
-  const filteredSundays = sortedSundays.filter((s) => {
-    if (filter === 'all') return true;
-    const effectiveStatus = getEffectiveSundayStatus(s);
-    return effectiveStatus === filter;
-  });
+  const filteredSundays = sortedSundays;
 
   return (
     <div id="schedule-view-component" className="w-full space-y-5 animate-fade-in pb-12">
@@ -179,56 +157,6 @@ export default function ScheduleView({
         </div>
       </HeroHeaderBanner>
 
-      {/* Filter Badges (All, Draft, Ready, Completed) */}
-      <div id="schedule-status-filters" className="flex items-center gap-2 overflow-x-auto custom-scrollbar pt-1 pb-1">
-        <span className="text-[10px] text-gray-400 font-mono uppercase font-bold tracking-wider mr-0.5 shrink-0">
-          {currentLanguage === 'sl' ? 'Status:' : 'Status:'}
-        </span>
-        <button
-          onClick={() => setFilter('all')}
-          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border ${
-            filter === 'all'
-              ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-              : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
-          }`}
-        >
-          {currentLanguage === 'sl' ? 'Vsi statusi' : 'All status'}
-        </button>
-        <button
-          onClick={() => setFilter('draft')}
-          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border flex items-center gap-1.5 ${
-            filter === 'draft'
-              ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-              : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-200'
-          }`}
-        >
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          <span>{translations.statusDraft}</span>
-        </button>
-        <button
-          onClick={() => setFilter('ready')}
-          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border flex items-center gap-1.5 ${
-            filter === 'ready'
-              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200'
-          }`}
-        >
-          <Check className="w-3.5 h-3.5 shrink-0" />
-          <span>{translations.statusReady}</span>
-        </button>
-        <button
-          onClick={() => setFilter('completed')}
-          className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition shrink-0 cursor-pointer border flex items-center gap-1.5 ${
-            filter === 'completed'
-              ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-              : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
-          }`}
-        >
-          <FolderArchive className="w-3.5 h-3.5 shrink-0" />
-          <span>{translations.statusCompleted}</span>
-        </button>
-      </div>
-
       {/* Empty State Banner if 2026/2027 is selected but empty */}
       {yearView === '2026_2027' && count2627 === 0 && (
         <div className="bg-gradient-to-br from-indigo-50/80 via-white to-indigo-50/30 border border-indigo-100 rounded-2xl p-4 sm:p-6 text-center space-y-3 shadow-xs">
@@ -282,13 +210,11 @@ export default function ScheduleView({
               borderAccentClass = 'border-l-4 border-l-rose-400 bg-gradient-to-r from-rose-50/30 via-rose-50/10 to-white';
             }
 
-            const effectiveStatus = getEffectiveSundayStatus(sunday);
+            const effectiveStatus = getAutoSundayStatus(sunday.date);
             const statusTagClass = 
-              effectiveStatus === 'draft' ? 'tag-neutral' :
               effectiveStatus === 'ready' ? 'tag-ready' : 'bg-[#EEF2FF] text-[#4338CA] border border-indigo-200';
 
             const statusLabel = 
-              effectiveStatus === 'draft' ? translations.statusDraft :
               effectiveStatus === 'ready' ? translations.statusReady : translations.statusCompleted;
 
             return (
@@ -424,15 +350,6 @@ export default function ScheduleView({
 
                 {/* Right Arrow/Actions layout */}
                 <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                  {canEdit && (
-                    <button
-                      onClick={() => setSundayToDelete(sunday)}
-                      className="p-1.5 hover:bg-rose-50 text-gray-400 hover:text-rose-600 rounded-md transition focus:outline-none cursor-pointer"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
                   <button
                     onClick={() => onSelectSunday(sunday.id)}
                     className="p-1 text-gray-400 hover:text-gray-800 transition focus:outline-none cursor-pointer"
@@ -456,60 +373,6 @@ export default function ScheduleView({
           ) : null
         )}
       </div>
-
-      {/* Sunday Delete Modal */}
-      {sundayToDelete && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in"
-          onClick={() => setSundayToDelete(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4 animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-display font-semibold text-gray-900 text-sm">
-                  {currentLanguage === 'sl' ? 'Izbris nedeljskega bogoslužja' : 'Delete Sunday Roster'}
-                </h3>
-                <p className="text-xs text-indigo-600 font-medium font-mono truncate">
-                  {sundayToDelete.date}
-                </p>
-              </div>
-            </div>
-
-            <p className="text-xs text-gray-700 leading-relaxed bg-slate-50 p-3.5 rounded-xl border border-slate-200/70 font-medium">
-              {currentLanguage === 'sl' 
-                ? 'Ali ste prepričani, da želite izbrisati to nedeljo?' 
-                : 'Are you sure you want to delete this service date?'}
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setSundayToDelete(null)}
-                className="px-4 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg transition cursor-pointer"
-              >
-                {currentLanguage === 'sl' ? 'Prekliči' : 'Cancel'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onDeleteSunday(sundayToDelete.id);
-                  setSundayToDelete(null);
-                }}
-                className="px-4.5 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{currentLanguage === 'sl' ? 'Izbriši' : 'Delete'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

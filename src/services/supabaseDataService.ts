@@ -19,6 +19,7 @@ import {
   normalizeUserRole
 } from '../types';
 import { getAutoSundayStatus } from '../utils/academicYear';
+import { unpackWorshipCompoundString } from '../utils/worshipSync';
 
 const envUrl = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -174,30 +175,40 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
         if (Array.isArray(details)) {
           details.forEach((d) => {
             if (!d.personName) return;
-            const key = `${ministryId}_${d.personName.toLowerCase().trim()}`;
-            processedPersonMinistryKeys.add(key);
 
-            const token = ensureToken(d.confirmationToken, sunday.id, ministryId, d.personName);
-            d.confirmationToken = token;
+            const isWorship = ministryId === 'slavilna_ekipa' || ministryId === 'slavilna';
+            const unpacked = isWorship 
+              ? unpackWorshipCompoundString(d.personName) 
+              : [{ name: d.personName, roleOrInstrument: d.notes || '' }];
 
-            const cleanSlug = d.personName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
-            const rowId = `${sunday.id}_${ministryId}_${cleanSlug}`;
-            const personId = resolvePersonId(d.personName);
+            unpacked.forEach(({ name: realName, roleOrInstrument }) => {
+              if (!realName || realName === '/' || realName === '-') return;
+              const key = `${ministryId}_${realName.toLowerCase().trim()}`;
+              if (processedPersonMinistryKeys.has(key)) return;
+              processedPersonMinistryKeys.add(key);
 
-            assignmentRows.push({
-              id: rowId,
-              sunday_id: sunday.id,
-              ministry_id: ministryId,
-              person_name: d.personName,
-              person_id: personId,
-              status: d.status || 'pending',
-              notes: d.notes || null,
-              decline_reason: d.declineReason || null,
-              assigned_by_id: d.assignedByLeaderId || null,
-              assigned_by_name: d.assignedByLeaderName || null,
-              confirmation_token: token,
-              assigned_at: d.assignedAt || new Date().toISOString(),
-              response_at: d.responseAt || null
+              const token = ensureToken(d.confirmationToken, sunday.id, ministryId, realName);
+              d.confirmationToken = token;
+
+              const cleanSlug = toCanonicalPersonId(realName).replace(/^p-/, '');
+              const rowId = `${sunday.id}_${ministryId}_${cleanSlug}`;
+              const personId = resolvePersonId(realName);
+
+              assignmentRows.push({
+                id: rowId,
+                sunday_id: sunday.id,
+                ministry_id: ministryId,
+                person_name: realName.trim(),
+                person_id: personId,
+                status: d.status || 'pending',
+                notes: roleOrInstrument || d.notes || null,
+                decline_reason: d.declineReason || null,
+                assigned_by_id: d.assignedByLeaderId || null,
+                assigned_by_name: d.assignedByLeaderName || null,
+                confirmation_token: token,
+                assigned_at: d.assignedAt || new Date().toISOString(),
+                response_at: d.responseAt || null
+              });
             });
           });
         }
@@ -208,32 +219,41 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
     if (sunday.assignments) {
       Object.entries(sunday.assignments).forEach(([ministryId, names]) => {
         if (Array.isArray(names)) {
-          names.forEach(name => {
-            if (!name || typeof name !== 'string') return;
-            const key = `${ministryId}_${name.toLowerCase().trim()}`;
-            if (!processedPersonMinistryKeys.has(key)) {
-              processedPersonMinistryKeys.add(key);
-              const token = ensureToken(undefined, sunday.id, ministryId, name);
-              const cleanSlug = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
-              const rowId = `${sunday.id}_${ministryId}_${cleanSlug}`;
-              const personId = resolvePersonId(name);
+          names.forEach(rawName => {
+            if (!rawName || typeof rawName !== 'string') return;
 
-              assignmentRows.push({
-                id: rowId,
-                sunday_id: sunday.id,
-                ministry_id: ministryId,
-                person_name: name.trim(),
-                person_id: personId,
-                status: 'confirmed',
-                notes: null,
-                decline_reason: null,
-                assigned_by_id: null,
-                assigned_by_name: 'Vodja službe',
-                confirmation_token: token,
-                assigned_at: new Date().toISOString(),
-                response_at: null
-              });
-            }
+            const isWorship = ministryId === 'slavilna_ekipa' || ministryId === 'slavilna';
+            const unpacked = isWorship 
+              ? unpackWorshipCompoundString(rawName) 
+              : [{ name: rawName, roleOrInstrument: '' }];
+
+            unpacked.forEach(({ name: realName, roleOrInstrument }) => {
+              if (!realName || realName === '/' || realName === '-') return;
+              const key = `${ministryId}_${realName.toLowerCase().trim()}`;
+              if (!processedPersonMinistryKeys.has(key)) {
+                processedPersonMinistryKeys.add(key);
+                const token = ensureToken(undefined, sunday.id, ministryId, realName);
+                const cleanSlug = toCanonicalPersonId(realName).replace(/^p-/, '');
+                const rowId = `${sunday.id}_${ministryId}_${cleanSlug}`;
+                const personId = resolvePersonId(realName);
+
+                assignmentRows.push({
+                  id: rowId,
+                  sunday_id: sunday.id,
+                  ministry_id: ministryId,
+                  person_name: realName.trim(),
+                  person_id: personId,
+                  status: 'confirmed',
+                  notes: roleOrInstrument || null,
+                  decline_reason: null,
+                  assigned_by_id: null,
+                  assigned_by_name: 'Vodja slavljenja',
+                  confirmation_token: token,
+                  assigned_at: new Date().toISOString(),
+                  response_at: null
+                });
+              }
+            });
           });
         }
       });
@@ -447,6 +467,8 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
         isExemptFromBurnout: Boolean(row.is_exempt_from_burnout),
         isPastorOrStaff: Boolean(row.is_exempt_from_burnout),
         isArchived: Boolean(row.is_archived || row.active === false),
+        createdBy: row.created_by_name || row.created_by || undefined,
+        createdAt: row.created_at || undefined,
         auth_user_id: row.auth_user_id || undefined
       }));
   } catch (err) {
@@ -560,6 +582,7 @@ export async function upsertPersonToSupabase(person: Person): Promise<boolean> {
       led_ministries: person.ledMinistries || [],
       family_members: person.familyMembers || [],
       is_exempt_from_burnout: Boolean(person.isExemptFromBurnout || person.isPastorOrStaff),
+      created_by_name: person.createdBy || undefined,
       updated_at: new Date().toISOString()
     };
 

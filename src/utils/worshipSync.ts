@@ -42,6 +42,82 @@ export function matchWorshipRosterEntry(
   });
 }
 
+export interface ExtractedWorshipPerson {
+  name: string;
+  roleOrInstrument: string; // e.g. "Vodja slavljenja", "Akustika", "Bobni", "Bas", "Klaviature", "Vokali"
+}
+
+/**
+ * Unpacks compound worship strings (e.g. "Band: Whitney Lajlar (Akustika), Nina Čičič (Klaviature)...")
+ * into individual volunteer objects with their instrument/role.
+ */
+export function unpackWorshipCompoundString(rawString: string): ExtractedWorshipPerson[] {
+  const result: ExtractedWorshipPerson[] = [];
+  const trimmed = (rawString || '').trim();
+  if (!trimmed || trimmed === '/' || trimmed === '-') return [];
+
+  if (trimmed.startsWith('Vodja:')) {
+    const leaderName = trimmed.replace(/^Vodja:\s*/, '').trim();
+    if (leaderName) result.push({ name: leaderName, roleOrInstrument: 'Vodja slavljenja' });
+  } else if (trimmed.startsWith('Band:')) {
+    const bandContent = trimmed.replace(/^Band:\s*/, '');
+    const parts = bandContent.split(',').map(p => p.trim());
+    parts.forEach(p => {
+      if (p.includes('(Akustika)')) {
+        result.push({ name: p.replace(/\s*\(Akustika\)/, '').trim(), roleOrInstrument: 'Akustika' });
+      } else if (p.includes('(Klaviature)')) {
+        result.push({ name: p.replace(/\s*\(Klaviature\)/, '').trim(), roleOrInstrument: 'Klaviature' });
+      } else if (p.includes('(Bobni)')) {
+        result.push({ name: p.replace(/\s*\(Bobni\)/, '').trim(), roleOrInstrument: 'Bobni' });
+      } else if (p.includes('(Bas)')) {
+        result.push({ name: p.replace(/\s*\(Bas\)/, '').trim(), roleOrInstrument: 'Bas' });
+      } else if (p) {
+        result.push({ name: p, roleOrInstrument: 'Band' });
+      }
+    });
+  } else if (trimmed.startsWith('Vokali:')) {
+    const vocalContent = trimmed.replace(/^Vokali:\s*/, '');
+    vocalContent.split(',').map(p => p.trim()).forEach(v => {
+      if (v) result.push({ name: v, roleOrInstrument: 'Vokali' });
+    });
+  } else {
+    // Standard individual person name
+    result.push({ name: trimmed, roleOrInstrument: 'Slavilna ekipa' });
+  }
+
+  return result;
+}
+
+/**
+ * Extracts all individual musicians and vocalists from a WorshipRosterEntry
+ */
+export function extractWorshipVolunteersFromEntry(entry: WorshipRosterEntry): ExtractedWorshipPerson[] {
+  const list: ExtractedWorshipPerson[] = [];
+
+  const addPerson = (name: string, role: string) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed || trimmed === '-' || trimmed === '/' || trimmed.toLowerCase() === 'all') return;
+    const clean = trimmed.toLowerCase();
+    const existing = list.find(item => item.name.toLowerCase() === clean);
+    if (existing) {
+      existing.roleOrInstrument += `, ${role}`;
+    } else {
+      list.push({ name: trimmed, roleOrInstrument: role });
+    }
+  };
+
+  if (entry.leader) addPerson(entry.leader, 'Vodja slavljenja');
+  if (entry.acoustic) addPerson(entry.acoustic, 'Akustika');
+  if (entry.keys) addPerson(entry.keys, 'Klaviature');
+  if (entry.drums) addPerson(entry.drums, 'Bobni');
+  if (entry.bass) addPerson(entry.bass, 'Bas');
+  if (entry.vocals) {
+    entry.vocals.split(',').forEach(v => addPerson(v, 'Vokali'));
+  }
+
+  return list;
+}
+
 /**
  * Formats a WorshipRosterEntry into a clear summary list of assigned members:
  * - Worship Leader
@@ -187,6 +263,28 @@ export function syncWorshipRosterFromSundayAssignments(
     if (parsedVocals.length > 0) vocals = parsedVocals.join(', ');
   }
 
+  // Also check structured assignmentDetails for direct instrument and vocal roles
+  const details = sunday.assignmentDetails?.['slavilna_ekipa'] || sunday.assignmentDetails?.['slavilna'] || [];
+  if (details.length > 0) {
+    const detailVocals: string[] = [];
+    details.forEach(d => {
+      if (!d || !d.personName) return;
+      const pName = d.personName.trim();
+      const n = (d.notes || '').toLowerCase();
+      if (n.includes('vodja')) leader = pName;
+      if (n.includes('akustika') || n.includes('kitara')) acoustic = pName;
+      if (n.includes('klavir') || n.includes('klaviatur')) keys = pName;
+      if (n.includes('bobni')) drums = pName;
+      if (n.includes('bas')) bass = pName;
+      if (n.includes('vokal')) {
+        if (!detailVocals.includes(pName)) detailVocals.push(pName);
+      }
+    });
+    if (detailVocals.length > 0) {
+      vocals = detailVocals.join(', ');
+    }
+  }
+
   const updatedEntry: WorshipRosterEntry = {
     id: entryId,
     date: existingEntry ? existingEntry.date : sunday.date,
@@ -243,7 +341,30 @@ export function syncSundayFromWorshipRosterEntry(
   nextAssignments['slavilna_ekipa'] = teamItems;
   nextAssignments['slavilna'] = teamItems;
 
-  // 2. Sync tech roles and worship intro
+  // 2. Build structured assignmentDetails with individual musicians and instrument notes
+  const extractedVolunteers = extractWorshipVolunteersFromEntry(entry);
+  const nextDetails = { ...(sunday.assignmentDetails || {}) };
+  const existingWorshipDetails = nextDetails['slavilna_ekipa'] || nextDetails['slavilna'] || [];
+
+  const newWorshipDetails: MinistryAssignment[] = extractedVolunteers.map(vol => {
+    const existing = existingWorshipDetails.find(d => d && d.personName && d.personName.toLowerCase() === vol.name.toLowerCase());
+    return {
+      personName: vol.name,
+      status: existing?.status || 'confirmed',
+      notes: vol.roleOrInstrument,
+      assignedByLeaderId: existing?.assignedByLeaderId || '',
+      assignedByLeaderName: existing?.assignedByLeaderName || 'Vodja slavljenja',
+      assignedAt: existing?.assignedAt || new Date().toISOString(),
+      confirmationToken: existing?.confirmationToken || `token_${Date.now()}_${vol.name.replace(/[^a-z0-9]/gi, '')}`,
+      responseAt: existing?.responseAt || null,
+      declineReason: existing?.declineReason || undefined
+    };
+  });
+
+  nextDetails['slavilna_ekipa'] = newWorshipDetails;
+  nextDetails['slavilna'] = newWorshipDetails;
+
+  // 3. Sync tech roles and worship intro
   if (entry.sound !== undefined) {
     nextAssignments['zvok'] = entry.sound && entry.sound.trim() && entry.sound.trim() !== '-' && entry.sound !== '/' ? [entry.sound.trim()] : [];
   }
@@ -256,7 +377,8 @@ export function syncSundayFromWorshipRosterEntry(
 
   return {
     ...sunday,
-    assignments: nextAssignments
+    assignments: nextAssignments,
+    assignmentDetails: nextDetails
   };
 }
 

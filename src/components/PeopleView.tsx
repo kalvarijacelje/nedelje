@@ -453,7 +453,7 @@ export default function PeopleView({
   const [reminderModalPerson, setReminderModalPerson] = useState<Person | null>(null);
   const [copiedReminderText, setCopiedReminderText] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
-  const [activePeopleTab, setActivePeopleTab] = useState<'active' | 'members' | 'youth' | 'visitors'>('active');
+  const [activePeopleTab, setActivePeopleTab] = useState<'all' | 'active' | 'members' | 'youth' | 'visitors'>('all');
   const [showPendingUsersModal, setShowPendingUsersModal] = useState<boolean>(false);
 
   // Quick edit member state
@@ -572,6 +572,8 @@ export default function PeopleView({
       preferredMinistries: selectedPrefs,
       ledMinistries: selectedLedMinistries,
       familyMembers: newFamilyList,
+      createdBy: activePerson?.name || (userRole === 'Leader' ? 'Vodja' : 'Admin'),
+      createdAt: new Date().toISOString(),
     };
 
     onAddPerson(createdPerson);
@@ -808,6 +810,7 @@ export default function PeopleView({
     return 'members';
   };
 
+  const allPeopleCount = (people || []).filter(p => p && p.name).length;
   const activeServantsCount = (people || []).filter(p => p && p.name && getPersonCategory(p) === 'active').length;
   const churchMembersCount = (people || []).filter(p => p && p.name && getPersonCategory(p) === 'members').length;
   const youthAndChildrenCount = (people || []).filter(p => p && p.name && getPersonCategory(p) === 'youth').length;
@@ -815,8 +818,10 @@ export default function PeopleView({
 
   const filteredPeople = (people || []).filter((p) => {
     if (!p || typeof p !== 'object' || !p.name) return false;
-    const cat = getPersonCategory(p);
-    if (cat !== activePeopleTab) return false;
+    if (activePeopleTab !== 'all') {
+      const cat = getPersonCategory(p);
+      if (cat !== activePeopleTab) return false;
+    }
 
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
@@ -1417,6 +1422,23 @@ export default function PeopleView({
             <span>{showAddForm ? (currentLanguage === 'sl' ? 'Zapri obrazec' : 'Close Form') : (currentLanguage === 'sl' ? 'Dodaj osebo' : 'Add Person')}</span>
           </button>
         )}
+
+        {/* Tab 0: All People */}
+        <button
+          type="button"
+          onClick={() => setActivePeopleTab('all')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activePeopleTab === 'all'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5 text-indigo-500" />
+          <span>{currentLanguage === 'sl' ? 'Vsi' : 'All'}</span>
+          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'all' ? 'bg-indigo-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+            {allPeopleCount}
+          </span>
+        </button>
 
         {/* Tab 1: Active Servants */}
         <button
@@ -2238,8 +2260,8 @@ export default function PeopleView({
 
         return (
           <div id="people-database-list" className="space-y-6">
-            {/* Pinned Logged-in User Card Section (Active tab only) */}
-            {myPersonCard && (!searchQuery || myPersonCard.name.toLowerCase().includes(searchQuery.toLowerCase().trim())) && activePeopleTab === 'active' && (
+            {/* Pinned Logged-in User Card Section (Active & All tabs) */}
+            {myPersonCard && (!searchQuery || myPersonCard.name.toLowerCase().includes(searchQuery.toLowerCase().trim())) && (activePeopleTab === 'active' || activePeopleTab === 'all') && (
               <div className="space-y-3 pb-3 border-b border-indigo-200/80">
                 <div className="flex items-center gap-2 pb-1">
                   <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs">
@@ -2255,6 +2277,37 @@ export default function PeopleView({
 
                 <div className="w-full">
                   {renderMyProfileCard(myPersonCard)}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 0: ALL PEOPLE */}
+            {activePeopleTab === 'all' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-indigo-200/80">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-xs">
+                      👥
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-xs sm:text-sm text-indigo-950 uppercase tracking-wider">
+                        {currentLanguage === 'sl' ? 'Vsi sodelavci in člani v bazi' : 'All People in Database'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-sans">
+                        {currentLanguage === 'sl' ? 'Celoten seznam vseh oseb (sodelavci, člani, mladina, otroci in obiskovalci)' : 'Complete directory of all registered individuals'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-full border border-indigo-200">
+                    {filteredPeople.length}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {filteredPeople
+                    .slice()
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || '', currentLanguage === 'sl' ? 'sl' : 'en'))
+                    .map((p, idx) => renderPersonCard(p, false, idx))}
                 </div>
               </div>
             )}

@@ -95,7 +95,7 @@ interface WorshipTeamViewProps {
 
 
 
-const academicYear2627Start = new Date(2026, 8, 1);  // Sep 1, 2026 (first Sunday: Sep 6, 2026)
+const academicYear2627Start = new Date(2026, 7, 20);  // Late Aug 2026 (includes Aug 30, 2026)
 const academicYear2627End = new Date(2027, 7, 31);   // Aug 31, 2027
 
 export const getCategoryBadge = (category?: WorshipSong['category'], lang: 'sl' | 'en' = 'sl') => {

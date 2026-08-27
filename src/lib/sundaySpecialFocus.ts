@@ -48,7 +48,7 @@ export function getSundayOfMonthIndex(dateStr: string): { day: number; sundayInd
  * - 1st, 3rd, 5th Sunday of month = Prayer Focus for Family / Person
  */
 export function getEffectiveSundayFocus(sunday: ServiceSunday, indexInList = 0): SpecialSundayFocus {
-  if (sunday.specialFocus) {
+  if (sunday.specialFocus && sunday.specialFocus.type && sunday.specialFocus.type !== 'none') {
     return sunday.specialFocus;
   }
 

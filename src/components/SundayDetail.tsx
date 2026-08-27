@@ -15,7 +15,7 @@ import { listChatSpaces, sendChatMessage, buildWorkflowMessage } from '../lib/go
 import { isExemptFromBurnout } from '../lib/burnoutAnalytics';
 import SpecialSundayFocusSection from './SpecialSundayFocusSection';
 import { getApplicableMinistriesForSunday, getSundayCoverageStats } from '../lib/sundaySpecialFocus';
-import { resolveMinistryAssignments } from '../utils/worshipSync';
+import { resolveMinistryAssignments, matchWorshipRosterEntry } from '../utils/worshipSync';
 import { getSundaySchoolLesson } from '../utils/sundaySchoolSync';
 import { batchAssignPersonToConsecutiveSundays, getConsecutiveSundayDates } from '../utils/recurringAssignments';
 import { useNotificationQueue } from '../hooks/useNotificationQueue';
@@ -431,6 +431,7 @@ export default function SundayDetail({
   const [selectedLeaderForContact, setSelectedLeaderForContact] = useState<Person | null>(null);
   const [showAllOtherMinistries, setShowAllOtherMinistries] = useState<boolean>(false);
   const [rosterSearchQuery, setRosterSearchQuery] = useState<string>('');
+  const [selectedWorshipInstrument, setSelectedWorshipInstrument] = useState<string | null>(null);
   const resolveTargetCategory = React.useCallback((cat?: string | null, mId?: string | null): string => {
     if (cat) {
       if (cat === 'service' || cat === 'sermon_prayer') return 'sermon_prayer';
@@ -1017,7 +1018,12 @@ export default function SundayDetail({
   const [enableSeries, setEnableSeries] = useState(false);
   const [seriesWeekCount, setSeriesWeekCount] = useState<number>(5);
 
-  const handleAddAssignment = (ministryId: string, personOrName: string | Person, skipNotification = false) => {
+  const handleAddAssignment = (
+    ministryId: string, 
+    personOrName: string | Person, 
+    skipNotification = false,
+    instrumentNote?: string
+  ) => {
     let resolvedName = '';
     let matchedRosterPerson: Person | undefined = undefined;
 
@@ -1048,7 +1054,10 @@ export default function SundayDetail({
 
       if (matchedRosterPerson?.email) {
         const minObj = ministries.find(m => m.id === ministryId);
-        const minName = minObj ? (currentLanguage === 'sl' ? minObj.nameSl : minObj.nameEn) : ministryId;
+        let minName = minObj ? (currentLanguage === 'sl' ? minObj.nameSl : minObj.nameEn) : ministryId;
+        if (instrumentNote) {
+          minName = `${minName} (${instrumentNote})`;
+        }
         const leaderName = activePerson?.name || 'Vodja službe';
 
         batchItems.forEach(item => {
@@ -1077,7 +1086,38 @@ export default function SundayDetail({
       }
     } else {
       const currentDetails = getAssignmentDetails(ministryId);
-      if (currentDetails.some(d => d.personName.toLowerCase() === resolvedName.toLowerCase())) return;
+      const existingDetail = currentDetails.find(d => d.personName.toLowerCase() === resolvedName.toLowerCase());
+
+      if (existingDetail) {
+        if (instrumentNote) {
+          const currentNotes = existingDetail.notes || '';
+          const currentRoles = currentNotes.split(',').map(r => r.trim()).filter(Boolean);
+          
+          if (!currentRoles.includes(instrumentNote)) {
+            const newRoles = [...currentRoles, instrumentNote];
+            const updatedDetails = currentDetails.map(d => 
+              d.personName.toLowerCase() === resolvedName.toLowerCase()
+                ? { ...d, notes: newRoles.join(', ') }
+                : d
+            );
+            handleUpdateAssignmentDetails(ministryId, updatedDetails);
+            setSuccessToast(currentLanguage === 'sl' 
+              ? `✓ Dodana vloga ${instrumentNote} za ${resolvedName}!` 
+              : `✓ Added role ${instrumentNote} for ${resolvedName}!`
+            );
+            setTimeout(() => setSuccessToast(null), 3000);
+            return;
+          } else {
+            setSuccessToast(currentLanguage === 'sl' 
+              ? `ℹ️ ${resolvedName} že ima vlogo: ${instrumentNote}.` 
+              : `ℹ️ ${resolvedName} already has role: ${instrumentNote}.`
+            );
+            setTimeout(() => setSuccessToast(null), 3000);
+            return;
+          }
+        }
+        return;
+      }
 
       const isSelfAssign = activePerson && (resolvedName.toLowerCase() === activePerson.name.toLowerCase());
       const token = generateConfirmationToken(sunday.id, ministryId, resolvedName);
@@ -1085,7 +1125,7 @@ export default function SundayDetail({
       const newDetail: MinistryAssignment = {
         personName: resolvedName,
         status: isSelfAssign ? 'confirmed' : 'pending',
-        notes: '',
+        notes: instrumentNote || '',
         assignedByLeaderId: activePerson?.id || '',
         assignedByLeaderName: activePerson?.name || 'Vodja službe',
         assignedAt: new Date().toISOString(),
@@ -1099,7 +1139,10 @@ export default function SundayDetail({
         setTimeout(() => setSuccessToast(null), 3000);
       } else if (!skipNotification && matchedRosterPerson?.email) {
         const minObj = ministries.find(m => m.id === ministryId);
-        const minName = minObj ? (currentLanguage === 'sl' ? minObj.nameSl : minObj.nameEn) : ministryId;
+        let minName = minObj ? (currentLanguage === 'sl' ? minObj.nameSl : minObj.nameEn) : ministryId;
+        if (instrumentNote) {
+          minName = `${minName} (${instrumentNote})`;
+        }
         
         queueAssignment({
           volunteerName: resolvedName,
@@ -1142,6 +1185,10 @@ export default function SundayDetail({
     absenceEndDate?: string
   ) => {
     if (isChosen) {
+      if ((ministryId === 'slavilna_ekipa' || ministryId === 'slavilna') && selectedWorshipInstrument) {
+        handleAddAssignment(ministryId, person, false, selectedWorshipInstrument);
+        return;
+      }
       triggerRemovalConfirmation(ministryId, person.name);
       return;
     }
@@ -1168,14 +1215,41 @@ export default function SundayDetail({
       }
     }
 
-    handleAddAssignment(ministryId, person);
+    const noteToPass = (ministryId === 'slavilna_ekipa' || ministryId === 'slavilna') ? (selectedWorshipInstrument || undefined) : undefined;
+    handleAddAssignment(ministryId, person, false, noteToPass);
   };
 
   const handleConfirmOverrideAssignment = () => {
     if (!overrideConfirmationTarget) return;
     const { person, ministryId } = overrideConfirmationTarget;
-    handleAddAssignment(ministryId, person);
+    const noteToPass = (ministryId === 'slavilna_ekipa' || ministryId === 'slavilna') ? (selectedWorshipInstrument || undefined) : undefined;
+    handleAddAssignment(ministryId, person, false, noteToPass);
     setOverrideConfirmationTarget(null);
+  };
+
+  const handleRemoveSpecificRole = (ministryId: string, personName: string, roleToRemove: string) => {
+    const currentDetails = getAssignmentDetails(ministryId);
+    const existing = currentDetails.find(d => d.personName.toLowerCase() === personName.toLowerCase());
+    if (!existing) return;
+
+    const roles = (existing.notes || '').split(',').map(r => r.trim()).filter(Boolean);
+    const remainingRoles = roles.filter(r => r.toLowerCase() !== roleToRemove.toLowerCase());
+
+    if (remainingRoles.length === 0) {
+      handleRemoveAssignment(ministryId, personName);
+    } else {
+      const updated = currentDetails.map(d => 
+        d.personName.toLowerCase() === personName.toLowerCase() 
+          ? { ...d, notes: remainingRoles.join(', ') }
+          : d
+      );
+      handleUpdateAssignmentDetails(ministryId, updated);
+      setSuccessToast(currentLanguage === 'sl' 
+        ? `✓ Odstranjena vloga ${roleToRemove} za ${personName}` 
+        : `✓ Removed role ${roleToRemove} for ${personName}`
+      );
+      setTimeout(() => setSuccessToast(null), 2500);
+    }
   };
 
   const handleRemoveAssignment = (ministryId: string, personName: string) => {
@@ -1863,8 +1937,47 @@ export default function SundayDetail({
                                 </span>
                               )}
                               {detail.notes && !detail.declineReason && (
-                                <span className="text-[11px] cursor-help" title={detail.notes}>
-                                  💬
+                                <span className="inline-flex items-center gap-1 flex-wrap">
+                                  {detail.notes.split(',').map(r => r.trim()).filter(Boolean).map((roleStr, rIdx) => {
+                                    const isVodja = roleStr.toLowerCase().includes('vodja');
+                                    const isAkustika = roleStr.toLowerCase().includes('akustika') || roleStr.toLowerCase().includes('kitara');
+                                    const isBas = roleStr.toLowerCase().includes('bas');
+                                    const isBobni = roleStr.toLowerCase().includes('bobni');
+                                    const isKlavir = roleStr.toLowerCase().includes('klavir') || roleStr.toLowerCase().includes('klaviatur');
+                                    const isVokal = roleStr.toLowerCase().includes('vokal');
+                                    
+                                    const emoji = isVodja ? '👑' : isAkustika ? '🎸' : isBas ? '🎸' : isBobni ? '🥁' : isKlavir ? '🎹' : isVokal ? '🎤' : '🎵';
+                                    const color = isVodja ? 'bg-amber-100 text-amber-900 border-amber-200' :
+                                                  isVokal ? 'bg-rose-100 text-rose-900 border-rose-200' :
+                                                  isBas ? 'bg-blue-100 text-blue-900 border-blue-200' :
+                                                  isBobni ? 'bg-orange-100 text-orange-900 border-orange-200' :
+                                                  isKlavir ? 'bg-indigo-100 text-indigo-900 border-indigo-200' :
+                                                  'bg-purple-100 text-purple-900 border-purple-200';
+
+                                    const hasMultipleRoles = detail.notes!.split(',').filter(Boolean).length > 1;
+
+                                    return (
+                                      <span 
+                                        key={rIdx} 
+                                        className={`inline-flex items-center gap-1 text-[10px] font-sans font-bold px-1.5 py-0.2 rounded border shadow-2xs ${color}`}
+                                      >
+                                        <span>{emoji} {roleStr}</span>
+                                        {hasMultipleRoles && (hasLeaderAuthority || isMeOrFamily) && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRemoveSpecificRole(ministry.id, detail.personName, roleStr);
+                                            }}
+                                            className="text-gray-400 hover:text-red-600 transition ml-0.5 font-bold cursor-pointer text-xs"
+                                            title={currentLanguage === 'sl' ? `Odstrani vlogo ${roleStr}` : `Remove role ${roleStr}`}
+                                          >
+                                            &times;
+                                          </button>
+                                        )}
+                                      </span>
+                                    );
+                                  })}
                                 </span>
                               )}
                               {(hasLeaderAuthority || isMeOrFamily) && (
@@ -1903,93 +2016,135 @@ export default function SundayDetail({
 
                 {/* Servant & Family Self-Service Quick Action Panel */}
                 {activePerson && (
-                  <div className="px-3.5 py-2 bg-slate-50/70 border-t border-gray-150 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 font-mono">
-                        🙋 {currentLanguage === 'sl' ? 'Prijavi se:' : 'Sign up:'}
-                      </span>
+                  <div className="px-3.5 py-2 bg-slate-50/70 border-t border-gray-150 space-y-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 font-mono">
+                          🙋 {currentLanguage === 'sl' ? 'Prijavi se:' : 'Sign up:'}
+                        </span>
 
-                      {isMeAssigned ? (
-                        <button
-                          type="button"
-                          onClick={() => triggerRemovalConfirmation(ministry.id, activePerson.name)}
-                          className="inline-flex items-center gap-1 text-[11px] bg-indigo-600 text-white font-bold px-2.5 py-0.5 rounded-full shadow-2xs hover:bg-rose-600 transition cursor-pointer"
-                          title={currentLanguage === 'sl' ? 'Klikni za odjavo' : 'Click to step down'}
-                        >
-                          <span>✔ {activePerson.name}</span>
-                          <span className="text-xs font-mono">&times;</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleAddAssignment(ministry.id, activePerson)}
-                          className="inline-flex items-center gap-1 text-[11px] bg-white text-indigo-700 font-semibold border border-indigo-200 hover:bg-indigo-50 px-2.5 py-0.5 rounded-full transition cursor-pointer active:scale-95"
-                        >
-                          <span>+ {activePerson.name}</span>
-                        </button>
-                      )}
-
-                      {/* + OSTALI (OTHERS) Button for Leader / Admin */}
-                      {hasLeaderAuthority && (
-                        <button
-                          type="button"
-                          onClick={() => setActiveMinistryEditId(isEditingThis ? null : ministry.id)}
-                          className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full transition cursor-pointer active:scale-95 border ${
-                            isEditingThis
-                              ? 'bg-indigo-700 text-white border-indigo-800 shadow-2xs'
-                              : 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
-                          }`}
-                          title={currentLanguage === 'sl' ? 'Prijava ostalih članov ekipe' : 'Sign up others'}
-                        >
-                          <span>{isEditingThis ? '✓' : '+'} 👥 {currentLanguage === 'sl' ? 'OSTALI' : 'OTHERS'}</span>
-                        </button>
-                      )}
-
-                      {!isAdmin && myFamilyMembers.map(famName => {
-                        const isFamAssigned = assignedPeople.includes(famName);
-                        return isFamAssigned ? (
+                        {isMeAssigned ? (
                           <button
-                            key={famName}
                             type="button"
-                            onClick={() => triggerRemovalConfirmation(ministry.id, famName)}
-                            className="inline-flex items-center gap-1 text-[11px] bg-emerald-600 text-white font-bold px-2.5 py-0.5 rounded-full shadow-2xs hover:bg-rose-600 transition cursor-pointer"
-                            title={currentLanguage === 'sl' ? 'Klikni za odjavo družinskega člana' : 'Click to step down family member'}
+                            onClick={() => triggerRemovalConfirmation(ministry.id, activePerson.name)}
+                            className="inline-flex items-center gap-1 text-[11px] bg-indigo-600 text-white font-bold px-2.5 py-0.5 rounded-full shadow-2xs hover:bg-rose-600 transition cursor-pointer"
+                            title={currentLanguage === 'sl' ? 'Klikni za odjavo' : 'Click to step down'}
                           >
-                            <span>👨‍👩‍👧 {famName}</span>
+                            <span>✔ {activePerson.name}</span>
                             <span className="text-xs font-mono">&times;</span>
                           </button>
                         ) : (
                           <button
-                            key={famName}
                             type="button"
-                            onClick={() => handleAddAssignment(ministry.id, famName)}
-                            className="inline-flex items-center gap-1 text-[11px] bg-white text-emerald-800 font-semibold border border-emerald-250 hover:bg-emerald-50 px-2.5 py-0.5 rounded-full transition cursor-pointer active:scale-95"
+                            onClick={() => handleAddAssignment(ministry.id, activePerson)}
+                            className="inline-flex items-center gap-1 text-[11px] bg-white text-indigo-700 font-semibold border border-indigo-200 hover:bg-indigo-50 px-2.5 py-0.5 rounded-full transition cursor-pointer active:scale-95"
                           >
-                            <span>+ 👨‍👩‍👧 {famName}</span>
+                            <span>+ {activePerson.name}</span>
                           </button>
-                        );
-                      })}
+                        )}
+
+                        {/* + OSTALI (OTHERS) Button for Leader / Admin */}
+                        {hasLeaderAuthority && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveMinistryEditId(isEditingThis ? null : ministry.id)}
+                            className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full transition cursor-pointer active:scale-95 border ${
+                              isEditingThis
+                                ? 'bg-indigo-700 text-white border-indigo-800 shadow-2xs'
+                                : 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+                            }`}
+                            title={currentLanguage === 'sl' ? 'Prijava ostalih članov ekipe' : 'Sign up others'}
+                          >
+                            <span>{isEditingThis ? '✓' : '+'} 👥 {currentLanguage === 'sl' ? 'OSTALI' : 'OTHERS'}</span>
+                          </button>
+                        )}
+
+                        {!isAdmin && myFamilyMembers.map(famName => {
+                          const isFamAssigned = assignedPeople.includes(famName);
+                          return isFamAssigned ? (
+                            <button
+                              key={famName}
+                              type="button"
+                              onClick={() => triggerRemovalConfirmation(ministry.id, famName)}
+                              className="inline-flex items-center gap-1 text-[11px] bg-emerald-600 text-white font-bold px-2.5 py-0.5 rounded-full shadow-2xs hover:bg-rose-600 transition cursor-pointer"
+                              title={currentLanguage === 'sl' ? 'Klikni za odjavo družinskega člana' : 'Click to step down family member'}
+                            >
+                              <span>👨‍👩‍👧 {famName}</span>
+                              <span className="text-xs font-mono">&times;</span>
+                            </button>
+                          ) : (
+                            <button
+                              key={famName}
+                              type="button"
+                              onClick={() => handleAddAssignment(ministry.id, famName)}
+                              className="inline-flex items-center gap-1 text-[11px] bg-white text-emerald-800 font-semibold border border-emerald-250 hover:bg-emerald-50 px-2.5 py-0.5 rounded-full transition cursor-pointer active:scale-95"
+                            >
+                              <span>+ 👨‍👩‍👧 {famName}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {!isAdmin && (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            placeholder={currentLanguage === 'sl' ? 'Dodaj družinskega člana...' : 'Add family member...'}
+                            value={newFamilyMemberInput}
+                            onChange={(e) => setNewFamilyMemberInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddFamilyMember(newFamilyMemberInput);
+                            }}
+                            className="text-[10px] px-2 py-0.5 bg-white border border-gray-250 rounded-lg text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-32"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddFamilyMember(newFamilyMemberInput)}
+                            className="text-[10px] bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-2 py-0.5 rounded-lg cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {!isAdmin && (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="text"
-                          placeholder={currentLanguage === 'sl' ? 'Dodaj družinskega člana...' : 'Add family member...'}
-                          value={newFamilyMemberInput}
-                          onChange={(e) => setNewFamilyMemberInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddFamilyMember(newFamilyMemberInput);
-                          }}
-                          className="text-[10px] px-2 py-0.5 bg-white border border-gray-250 rounded-lg text-gray-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-32"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleAddFamilyMember(newFamilyMemberInput)}
-                          className="text-[10px] bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-2 py-0.5 rounded-lg cursor-pointer"
-                        >
-                          +
-                        </button>
+                    {/* Worship Instrument Quick Slots Selector for Slavilna ekipa */}
+                    {(ministry.id === 'slavilna_ekipa' || ministry.id === 'slavilna') && hasLeaderAuthority && (
+                      <div className="pt-2 border-t border-purple-200/60 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-mono font-bold uppercase text-purple-800 mr-0.5 flex items-center gap-1">
+                          🎸 {currentLanguage === 'sl' ? 'Dodaj po inštrumentu:' : 'Add by Instrument:'}
+                        </span>
+                        {[
+                          { key: 'Vodja', labelSl: '👑 Vodja', labelEn: '👑 Leader' },
+                          { key: 'Akustika', labelSl: '🎸 Akustika', labelEn: '🎸 Acoustic' },
+                          { key: 'Klaviature', labelSl: '🎹 Klaviature', labelEn: '🎹 Keys' },
+                          { key: 'Bobni', labelSl: '🥁 Bobni', labelEn: '🥁 Drums' },
+                          { key: 'Bas', labelSl: '🎸 Bas', labelEn: '🎸 Bass' },
+                          { key: 'Vokali', labelSl: '🎤 Vokali', labelEn: '🎤 Vocals' },
+                        ].map(inst => {
+                          const isSelected = selectedWorshipInstrument === inst.key;
+                          return (
+                            <button
+                              key={inst.key}
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) {
+                                  setSelectedWorshipInstrument(null);
+                                } else {
+                                  setSelectedWorshipInstrument(inst.key);
+                                  setActiveMinistryEditId(ministry.id);
+                                }
+                              }}
+                              className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full transition cursor-pointer active:scale-95 border ${
+                                isSelected
+                                  ? 'bg-purple-700 text-white border-purple-800 shadow-2xs ring-2 ring-purple-300'
+                                  : 'bg-purple-50 text-purple-900 border-purple-200 hover:bg-purple-100'
+                              }`}
+                            >
+                              {currentLanguage === 'sl' ? inst.labelSl : inst.labelEn}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2022,6 +2177,36 @@ export default function SundayDetail({
                                     <span className="font-mono text-xs font-bold text-gray-900">
                                       👤 {getPrivacyDisplayName(detail.personName, userRole, activePerson?.name, authUser?.email || activePerson?.email, authUser?.id || authUser?.uid || activePerson?.id, people)}
                                     </span>
+                                    {detail.notes && (
+                                      <span className="inline-flex items-center gap-1 flex-wrap">
+                                        {detail.notes.split(',').map(r => r.trim()).filter(Boolean).map((roleStr, rIdx) => {
+                                          const isVodja = roleStr.toLowerCase().includes('vodja');
+                                          const isAkustika = roleStr.toLowerCase().includes('akustika') || roleStr.toLowerCase().includes('kitara');
+                                          const isBas = roleStr.toLowerCase().includes('bas');
+                                          const isBobni = roleStr.toLowerCase().includes('bobni');
+                                          const isKlavir = roleStr.toLowerCase().includes('klavir') || roleStr.toLowerCase().includes('klaviatur');
+                                          const isVokal = roleStr.toLowerCase().includes('vokal');
+                                          
+                                          const emoji = isVodja ? '👑' : isAkustika ? '🎸' : isBas ? '🎸' : isBobni ? '🥁' : isKlavir ? '🎹' : isVokal ? '🎤' : '🎵';
+                                          const color = isVodja ? 'bg-amber-100 text-amber-900 border-amber-200' :
+                                                        isVokal ? 'bg-rose-100 text-rose-900 border-rose-200' :
+                                                        isBas ? 'bg-blue-100 text-blue-900 border-blue-200' :
+                                                        isBobni ? 'bg-orange-100 text-orange-900 border-orange-200' :
+                                                        isKlavir ? 'bg-indigo-100 text-indigo-900 border-indigo-200' :
+                                                        'bg-purple-100 text-purple-900 border-purple-200';
+
+                                          return (
+                                            <span 
+                                              key={rIdx} 
+                                              className={`inline-flex items-center gap-0.5 text-[10px] font-sans font-bold px-1.5 py-0.2 rounded border shadow-2xs ${color}`}
+                                            >
+                                              <span>{emoji}</span>
+                                              <span>{roleStr}</span>
+                                            </span>
+                                          );
+                                        })}
+                                      </span>
+                                    )}
                                     {detail.assignedByLeaderName && (
                                       <span className="text-[10px] text-gray-400">
                                         (dodelil: {getPrivacyDisplayName(detail.assignedByLeaderName, userRole, activePerson?.name, authUser?.email || activePerson?.email, authUser?.id || authUser?.uid || activePerson?.id, people)})

@@ -319,6 +319,8 @@ export interface Person {
   isExemptFromBurnout?: boolean;
   excludeFromBurnout?: boolean;
   isArchived?: boolean; // Flag indicating if volunteer profile is archived
+  createdBy?: string; // Name or ID of leader/admin who created this profile
+  createdAt?: string; // ISO creation timestamp
 }
 
 export interface NotificationBatchItem {

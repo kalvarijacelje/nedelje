@@ -61,8 +61,8 @@ export default function Statistika({
   // Sort sundays chronologically
   const sortedSundays = [...sundays].sort((a, b) => parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime());
 
-  // Filter Academic Year 2026/2027 sundays (Sep 1, 2026 -> Aug 31, 2027)
-  const academicYear2627Start = new Date(2026, 8, 1);
+  // Filter Academic Year 2026/2027 sundays (Aug 20, 2026 -> Aug 31, 2027)
+  const academicYear2627Start = new Date(2026, 7, 20);
   const academicYear2627End = new Date(2027, 7, 31);
 
   const aySundays = sortedSundays.filter(s => {
