@@ -30,7 +30,7 @@ interface HomeDashboardProps {
   userRole: UserRole;
   translations: Translation;
   currentLanguage: 'sl' | 'en';
-  onSelectSunday: (id: string) => void;
+  onSelectSunday: (id: string, ministryId?: string, categoryId?: string) => void;
   onAddSunday: () => void;
   onUpdateSunday?: (updated: ServiceSunday) => void;
   onOpenVisitorModal?: () => void;
@@ -788,7 +788,7 @@ export default function HomeDashboard({
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                     {/* 1. Preacher */}
                     <div 
-                      onClick={() => onSelectSunday(nextSunday.id)}
+                      onClick={() => onSelectSunday(nextSunday.id, 'ucenje', 'sermon_prayer')}
                       className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-sky-500 bg-gradient-to-r from-sky-50/40 via-white to-white hover:border-sky-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
                       title={preacher || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
                     >
@@ -803,7 +803,7 @@ export default function HomeDashboard({
 
                     {/* 2. Worship Leader */}
                     <div 
-                      onClick={() => onSelectSunday(nextSunday.id)}
+                      onClick={() => onSelectSunday(nextSunday.id, 'slavilna_ekipa', 'worship')}
                       className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50/40 via-white to-white hover:border-purple-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
                       title={worshipLeader || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
                     >
@@ -818,7 +818,7 @@ export default function HomeDashboard({
 
                     {/* 3. Younger Kids School */}
                     <div 
-                      onClick={() => onSelectSunday(nextSunday.id)}
+                      onClick={() => onSelectSunday(nextSunday.id, 'nedeljska_sola_mlajsa', 'kids')}
                       className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-50/40 via-white to-white hover:border-emerald-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
                       title={youngerTeacher || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
                     >
@@ -833,7 +833,7 @@ export default function HomeDashboard({
 
                     {/* 4. Older Kids School */}
                     <div 
-                      onClick={() => onSelectSunday(nextSunday.id)}
+                      onClick={() => onSelectSunday(nextSunday.id, 'nedeljska_sola_starejsa', 'kids')}
                       className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-teal-500 bg-gradient-to-r from-teal-50/40 via-white to-white hover:border-teal-400 hover:shadow-xs transition cursor-pointer flex flex-col justify-between"
                       title={olderTeacher || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
                     >
@@ -848,7 +848,7 @@ export default function HomeDashboard({
 
                     {/* 5. Hospitality & Coffee */}
                     <div 
-                      onClick={() => onSelectSunday(nextSunday.id)}
+                      onClick={() => onSelectSunday(nextSunday.id, 'gostoljubje', 'hospitality')}
                       className="p-2.5 rounded-xl border border-slate-200/90 border-l-4 border-l-rose-400 bg-gradient-to-r from-rose-50/40 via-white to-white hover:border-rose-300 hover:shadow-xs transition cursor-pointer flex flex-col justify-between col-span-2 sm:col-span-1"
                       title={hospitalityLead || (currentLanguage === 'sl' ? 'Ni določeno' : 'Not assigned')}
                     >
@@ -1181,7 +1181,7 @@ export default function HomeDashboard({
                     return (
                       <button
                         key={ministry.id}
-                        onClick={() => onSelectSunday(nextSunday.id)}
+                        onClick={() => onSelectSunday(nextSunday.id, ministry.id, ministry.category)}
                         className={`text-left px-3 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/90 rounded-xl transition flex justify-between items-center group cursor-pointer shadow-2xs ${borderClass}`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0 pr-2">
@@ -1239,7 +1239,7 @@ export default function HomeDashboard({
                     return (
                       <button
                         key={ministry.id}
-                        onClick={() => onSelectSunday(nextSunday.id)}
+                        onClick={() => onSelectSunday(nextSunday.id, ministry.id, ministry.category)}
                         className={`text-left px-3 py-2 bg-slate-50/70 hover:bg-slate-100/80 border border-slate-200 rounded-xl transition flex justify-between items-center group cursor-pointer shadow-2xs ${borderClass}`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0 pr-2">

@@ -16,6 +16,7 @@ import { INITIAL_WORSHIP_ROSTER } from './data/worshipData';
 import { syncWorshipRosterFromSundayAssignments } from './utils/worshipSync';
 import { syncSundaySchoolLessonsFromSunday, syncSundaysFromSundaySchoolLessons } from './utils/sundaySchoolSync';
 import { parseEuropeanDate, formatToEuropeanDate } from './utils/dateUtils';
+import { generateAcademicYear2026_2027, getAutoSundayStatus, seedAcademicYearToSupabase } from './utils/academicYear';
 
 import HomeDashboard from './components/HomeDashboard';
 import ScheduleView from './components/ScheduleView';
@@ -349,10 +350,37 @@ const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] =>
 
 const mergeSundaysWithDefaults = (fetched: ServiceSunday[], base: ServiceSunday[]): ServiceSunday[] => {
   const map = new Map<string, ServiceSunday>();
+  
+  // 1. Initial past year sundays
   INITIAL_SUNDAYS.forEach(s => { if (s && s.id) map.set(s.id, s); });
-  base.forEach(s => { if (s && s.id) map.set(s.id, s); });
-  fetched.forEach(s => { if (s && s.id) map.set(s.id, s); });
-  return Array.from(map.values());
+  
+  // 2. Standard 2026/2027 Academic Year (Aug 30, 2026 -> Aug 29, 2027)
+  const standardAy = generateAcademicYear2026_2027();
+  standardAy.forEach(s => { if (s && s.id) map.set(s.id, s); });
+
+  // 3. Overlay base/local storage (filtering out any obsolete s_ay2627_ keys)
+  base.forEach(s => { 
+    if (s && s.id && !s.id.startsWith('s_ay2627_')) {
+      map.set(s.id, {
+        ...s,
+        status: getAutoSundayStatus(s.date)
+      }); 
+    } 
+  });
+
+  // 4. Overlay authoritative remote records
+  fetched.forEach(s => { 
+    if (s && s.id && !s.id.startsWith('s_ay2627_')) {
+      map.set(s.id, {
+        ...s,
+        status: getAutoSundayStatus(s.date)
+      }); 
+    } 
+  });
+
+  return Array.from(map.values()).sort((a, b) => {
+    return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
+  });
 };
 
 export default function App() {
@@ -363,16 +391,11 @@ export default function App() {
       try {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const existingIds = new Set(parsed.map((s: any) => s.id));
-          const missingInitial = INITIAL_SUNDAYS.filter(s => !existingIds.has(s.id));
-          if (missingInitial.length > 0) {
-            return [...parsed, ...missingInitial];
-          }
-          return parsed;
+          return mergeSundaysWithDefaults([], parsed);
         }
       } catch (e) { /* ignore */ }
     }
-    return INITIAL_SUNDAYS;
+    return mergeSundaysWithDefaults([], []);
   });
   const [people, setPeople] = useState<Person[]>(() => {
     const raw = localStorage.getItem('church_roster_people_v2');
@@ -1843,80 +1866,14 @@ export default function App() {
     }
   };
 
-  // Generate all Sundays for Academic Year 2026/2027 (Sep 6, 2026 -> Aug 29, 2027)
+  // Generate & Seed all Sundays for Academic Year 2026/2027 (Aug 30, 2026 -> Aug 29, 2027)
   const handleGenerateAcademicYear = async () => {
-    const startDate = new Date(2026, 8, 6); // Sep 6, 2026
-    const endDate = new Date(2027, 7, 29); // Aug 29, 2027
-
-    const existingDates = new Set(sundays.map(s => s.date.replace(/\s+/g, '')));
-
-    const newSundaysToAdd: ServiceSunday[] = [];
-    const currentDate = new Date(startDate);
-
-    while (currentDate <= endDate) {
-      const d = currentDate.getDate();
-      const m = currentDate.getMonth() + 1;
-      const y = currentDate.getFullYear() % 100;
-      const formattedDate = `${d}. ${m}. ${y}`;
-      const normalizedKey = formattedDate.replace(/\s+/g, '');
-
-      if (!existingDates.has(normalizedKey)) {
-        const sundayId = `s_ay2627_${currentDate.getTime()}`;
-        newSundaysToAdd.push({
-          id: sundayId,
-          date: formattedDate,
-          themeSl: 'Nedeljsko bogoslužje',
-          themeEn: 'Sunday Service',
-          status: 'draft',
-          guest: '',
-          assignments: {},
-          absentOrNotes: ''
-        });
-      }
-
-      currentDate.setDate(currentDate.getDate() + 7);
-    }
-
-    if (newSundaysToAdd.length === 0) {
-      return;
-    }
-
-    setSundays(prev => {
-      const updated = [...prev, ...newSundaysToAdd];
-      localStorage.setItem('church_roster_sundays_v2', JSON.stringify(updated));
-      return updated;
-    });
-
-    if (IS_SUPABASE_CONFIGURED) {
+    const res = await seedAcademicYearToSupabase(sundays);
+    if (res.syncedSundays && res.syncedSundays.length > 0) {
+      setSundays(res.syncedSundays);
       try {
-        const rows = newSundaysToAdd.map(s => ({
-          id: s.id,
-          date: s.date,
-          theme_sl: s.themeSl || '',
-          theme_en: s.themeEn || '',
-          status: s.status || 'draft',
-          guest: s.guest || '',
-          absent_or_notes: s.absentOrNotes || '',
-          special_focus: s.specialFocus || null,
-          worship_setlist: s.worshipSetlist || [],
-          updated_at: new Date().toISOString()
-        }));
-        await supabase.from('nedelje_services').upsert(rows);
-      } catch (e) {
-        console.warn('[Supabase] batch academic year upsert error:', e);
-      }
-    }
-
-    if (IS_FIREBASE_ENABLED && db) {
-      try {
-        const batch = writeBatch(db);
-        newSundaysToAdd.forEach(s => {
-          batch.set(doc(db, 'sundays', s.id), s);
-        });
-        await batch.commit();
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, 'sundays/batch_academic_year');
-      }
+        localStorage.setItem('church_roster_sundays_v2', JSON.stringify(res.syncedSundays));
+      } catch (e) {}
     }
   };
 
@@ -2189,6 +2146,8 @@ export default function App() {
               setSelectedSundayId(null);
               setTargetMinistryId(null);
               setTargetCategory(null);
+              setActiveTab('sundays');
+              window.history.pushState(null, '', '/razpored');
             }}
             onSelectSunday={(id) => handleSelectSunday(id)}
             onUpdateSunday={handleUpdateSunday}

@@ -112,7 +112,7 @@ export function generateSingleInviteEmail({
 
   const text = `Pozdravljeni ${volunteerName},
 
-Vodja službe ${leaderName} vas vabi k sodelovanju pri službi ${ministryName}.
+Vodja službe ${leaderName} te vabi k sodelovanju pri službi ${ministryName}.
 
 📅 ${sundayDate} – ${ministryName}
 
@@ -156,7 +156,7 @@ Ekipa KC Kalvarija
               </p>
               
               <p style="font-size: 15px; color: #334155; margin-bottom: 24px; line-height: 1.6;">
-                Vodja službe <strong>${leaderName}</strong> vas vabi k sodelovanju pri službi <strong>${ministryName}</strong>.
+                Vodja službe <strong>${leaderName}</strong> te vabi k sodelovanju pri službi <strong>${ministryName}</strong>.
               </p>
               
               <!-- Date Card Item -->
@@ -255,7 +255,7 @@ export function generateBatchInviteEmail({
 
   const text = `Pozdravljeni ${volunteerName},
 
-Vodja službe ${leaderName} vas vabi k sodelovanju pri službi ${ministryName} za ${count} terminov:
+Vodja službe ${leaderName} te vabi k sodelovanju pri službi ${ministryName} za ${count} terminov:
 ${itemsText}
 
 Če ne utegnete, preprosto kliknite 'Ne morem' pri posameznem terminu – vsako pravočasno obvestilo nam je v veliko pomoč.
@@ -323,7 +323,7 @@ Ekipa KC Kalvarija
               </p>
               
               <p style="font-size: 15px; color: #334155; margin-bottom: 20px; line-height: 1.6;">
-                Vodja službe <strong>${leaderName}</strong> vas vabi k sodelovanju pri službi <strong>${ministryName}</strong> za naslednjih <strong>${count} terminov</strong>:
+                Vodja službe <strong>${leaderName}</strong> te vabi k sodelovanju pri službi <strong>${ministryName}</strong> za naslednjih <strong>${count} terminov</strong>:
               </p>
 
               <!-- List of Dates -->
@@ -638,7 +638,7 @@ export function generateVolunteerChatInviteMessage({
 }): string {
   const root = baseUrl || getPublicAppBaseUrl();
   const confirmUrl = `${root.replace(/\/$/, '')}/potrdi?token=${encodeURIComponent(token)}`;
-  return `Živjo ${volunteerName}!\n\nVodja službe ${leaderName} vas vabi k sodelovanju pri službi *${ministryName}* dne *${sundayDate}*.\n\nProsimo za potrditev s klikom na povezavo:\n${confirmUrl}`;
+  return `Zdravo ${volunteerName}!\n\nVodja službe ${leaderName} te vabi k sodelovanju pri službi *${ministryName}* dne *${sundayDate}*.\n\nProsimo za potrditev s klikom na povezavo:\n${confirmUrl}`;
 }
 
 /**

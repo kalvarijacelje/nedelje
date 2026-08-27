@@ -26,6 +26,7 @@ import {
   generateVolunteerChatInviteMessage,
   getWhatsAppInvitationUrl
 } from '../services/notificationService';
+import { getAutoSundayStatus } from '../utils/academicYear';
 import { parseEuropeanDate, formatToEuropeanDate, formatEuropeanDateRange, formatEuropeanDateTime } from '../utils/dateUtils';
 
 export function parseToDateOnly(dateStr: string): Date | null {
@@ -430,18 +431,38 @@ export default function SundayDetail({
   const [selectedLeaderForContact, setSelectedLeaderForContact] = useState<Person | null>(null);
   const [showAllOtherMinistries, setShowAllOtherMinistries] = useState<boolean>(false);
   const [rosterSearchQuery, setRosterSearchQuery] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>(() => {
-    if (initialCategory) return initialCategory;
-    if (initialMinistryId && ministries) {
-      const found = ministries.find(m => m.id === initialMinistryId);
+  const resolveTargetCategory = React.useCallback((cat?: string | null, mId?: string | null): string => {
+    if (cat) {
+      if (cat === 'service' || cat === 'sermon_prayer') return 'sermon_prayer';
+      if (cat === 'prep_clean' || cat === 'cleaning') return 'cleaning';
+      if (['cleaning', 'hospitality', 'sermon_prayer', 'worship', 'audio_video', 'kids', 'post_service'].includes(cat)) {
+        return cat;
+      }
+    }
+    if (mId && ministries) {
+      const found = ministries.find(m => m.id === mId);
       if (found) {
-        if (['prep_clean', 'hospitality', 'service', 'worship', 'audio_video', 'kids', 'post_service'].includes(found.category)) {
+        if (found.category === 'service' || found.category === 'sermon_prayer') return 'sermon_prayer';
+        if (found.category === 'prep_clean' || found.category === 'cleaning') return 'cleaning';
+        if (['cleaning', 'hospitality', 'sermon_prayer', 'worship', 'audio_video', 'kids', 'post_service'].includes(found.category)) {
           return found.category;
         }
       }
     }
     return 'all';
-  });
+  }, [ministries]);
+
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => resolveTargetCategory(initialCategory, initialMinistryId));
+
+  // Sync category when initialCategory or initialMinistryId changes
+  React.useEffect(() => {
+    if (initialCategory || initialMinistryId) {
+      const targetCat = resolveTargetCategory(initialCategory, initialMinistryId);
+      if (targetCat && targetCat !== 'all') {
+        setSelectedCategory(targetCat);
+      }
+    }
+  }, [initialCategory, initialMinistryId, sunday.id, resolveTargetCategory]);
   const [overrideMenuOpenId, setOverrideMenuOpenId] = useState<string | null>(null);
   const { queueAssignment, batches, removeQueuedItem } = useNotificationQueue();
   const [pendingRemoval, setPendingRemoval] = useState<{
@@ -1292,7 +1313,7 @@ export default function SundayDetail({
                 className="px-3.5 py-2 bg-white/15 hover:bg-white/25 text-white font-semibold text-xs rounded-xl border border-white/20 transition flex items-center gap-1.5 cursor-pointer backdrop-blur-xs shadow-2xs active:scale-95"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>{currentLanguage === 'sl' ? 'Vse nedelje' : 'Back'}</span>
+                <span>{currentLanguage === 'sl' ? 'Vse nedelje' : 'All Sundays'}</span>
               </button>
 
               {previousSunday && onSelectSunday && (
@@ -1330,21 +1351,15 @@ export default function SundayDetail({
                 </button>
               )}
 
-              {canEditGeneral ? (
-                <select
-                  value={status}
-                  onChange={(e) => handleStatusChange(e.target.value as any)}
-                  className="px-3 py-2 bg-white text-emerald-950 font-bold text-xs rounded-xl border border-white/30 transition cursor-pointer font-mono shadow-2xs focus:outline-none"
-                >
-                  <option value="draft">⚠️ {currentLanguage === 'sl' ? 'Osnutek' : 'Draft Schedule'}</option>
-                  <option value="ready">✅ {currentLanguage === 'sl' ? 'Pripravljeno' : 'Ready'}</option>
-                  <option value="completed">📁 {currentLanguage === 'sl' ? 'Zaključeno' : 'Completed'}</option>
-                </select>
-              ) : (
-                <span className="text-xs font-mono font-bold px-3 py-1.5 bg-white/15 rounded-xl border border-white/20">
-                  {status === 'ready' ? `✅ ${translations.statusReady}` : status === 'draft' ? `⚠️ ${translations.statusDraft}` : `📁 ${translations.statusCompleted}`}
-                </span>
-              )}
+              <span 
+                className="text-xs font-mono font-bold px-3.5 py-2 bg-white/20 text-white rounded-xl border border-white/25 flex items-center gap-1.5 shadow-2xs backdrop-blur-xs select-none"
+                title={getAutoSundayStatus(sunday.date) === 'completed' ? (currentLanguage === 'sl' ? 'Nedelja je že potekla' : 'Sunday has passed') : (currentLanguage === 'sl' ? 'Razpored je pripravljen in aktiven' : 'Schedule is ready and active')}
+              >
+                {getAutoSundayStatus(sunday.date) === 'completed' 
+                  ? `📁 ${currentLanguage === 'sl' ? 'Zaključeno' : 'Completed'}` 
+                  : `✅ ${currentLanguage === 'sl' ? 'Pripravljeno' : 'Ready'}`
+                }
+              </span>
             </div>
           }
         />

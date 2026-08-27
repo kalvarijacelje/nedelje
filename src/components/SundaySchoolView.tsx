@@ -1418,7 +1418,7 @@ export default function SundaySchoolView({
                           {onSelectSunday && (
                             <button
                               type="button"
-                              onClick={() => onSelectSunday(sun.id)}
+                              onClick={() => onSelectSunday(sun.id, 'nedeljska_sola_mlajsa', 'kids')}
                               className="text-xs text-orange-600 font-bold hover:text-orange-700 hover:underline flex items-center gap-1 cursor-pointer transition"
                             >
                               <span>{currentLanguage === 'sl' ? 'Celoten razpored nedelje →' : 'Full Sunday Roster →'}</span>

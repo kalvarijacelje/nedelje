@@ -18,6 +18,7 @@ import {
   User,
   normalizeUserRole
 } from '../types';
+import { getAutoSundayStatus } from '../utils/academicYear';
 
 const envUrl = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -114,25 +115,42 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
 export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boolean> {
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
+    const autoStatus = getAutoSundayStatus(sunday.date);
+
     const { error: sundayErr } = await supabase
       .from('nedelje_services')
       .upsert({
         id: sunday.id,
         date: sunday.date,
+        service_date: sunday.date,
         theme_sl: sunday.themeSl || '',
         theme_en: sunday.themeEn || '',
-        status: sunday.status || 'draft',
+        status: autoStatus,
         guest: sunday.guest || '',
         absent_or_notes: sunday.absentOrNotes || '',
-        special_focus: sunday.specialFocus || null,
+        special_focus: sunday.specialFocus || { type: 'none' },
         worship_setlist: sunday.worshipSetlist || [],
         updated_at: new Date().toISOString()
-      });
+      }, { onConflict: 'id' });
 
     if (sundayErr) {
       console.warn('[Supabase] upsertSunday error:', sundayErr.message);
       return false;
     }
+
+    const resolvePersonId = (name: string): string | null => {
+      if (!name) return null;
+      const clean = name.toLowerCase().trim();
+      try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('church_roster_people_v2') : null;
+        if (raw) {
+          const parsed: Person[] = JSON.parse(raw);
+          const found = parsed.find(p => p && p.name && p.name.toLowerCase().trim() === clean);
+          if (found?.id) return found.id;
+        }
+      } catch {}
+      return 'p-' + clean.replace(/[^a-z0-9]/g, '_');
+    };
 
     // Synchronize assignment details reliably (reconcile assignmentDetails + assignments)
     const assignmentRows: any[] = [];
@@ -162,10 +180,16 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
             const token = ensureToken(d.confirmationToken, sunday.id, ministryId, d.personName);
             d.confirmationToken = token;
 
+            const cleanSlug = d.personName.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+            const rowId = `${sunday.id}_${ministryId}_${cleanSlug}`;
+            const personId = resolvePersonId(d.personName);
+
             assignmentRows.push({
+              id: rowId,
               sunday_id: sunday.id,
               ministry_id: ministryId,
               person_name: d.personName,
+              person_id: personId,
               status: d.status || 'pending',
               notes: d.notes || null,
               decline_reason: d.declineReason || null,
@@ -190,11 +214,16 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
             if (!processedPersonMinistryKeys.has(key)) {
               processedPersonMinistryKeys.add(key);
               const token = ensureToken(undefined, sunday.id, ministryId, name);
+              const cleanSlug = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+              const rowId = `${sunday.id}_${ministryId}_${cleanSlug}`;
+              const personId = resolvePersonId(name);
 
               assignmentRows.push({
+                id: rowId,
                 sunday_id: sunday.id,
                 ministry_id: ministryId,
                 person_name: name.trim(),
+                person_id: personId,
                 status: 'confirmed',
                 notes: null,
                 decline_reason: null,
@@ -210,12 +239,22 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
       });
     }
 
-    // Clear existing assignments for this sunday and re-insert complete list
-    await supabase.from('nedelje_assignments').delete().eq('sunday_id', sunday.id);
+    // Upsert all active assignments for this sunday
     if (assignmentRows.length > 0) {
-      const { error: insertErr } = await supabase.from('nedelje_assignments').insert(assignmentRows);
-      if (insertErr) {
-        console.warn('[Supabase] insert assignments notice:', insertErr.message);
+      const { error: upsertErr } = await supabase.from('nedelje_assignments').upsert(assignmentRows, { onConflict: 'id' });
+      if (upsertErr) {
+        console.warn('[Supabase] upsert assignments error:', upsertErr.message);
+      }
+
+      // Safely delete only assignments that were removed from this specific Sunday
+      const activeIds = assignmentRows.map(r => r.id);
+      if (activeIds.length > 0) {
+        const idListStr = `(${activeIds.map(id => `"${id}"`).join(',')})`;
+        await supabase
+          .from('nedelje_assignments')
+          .delete()
+          .eq('sunday_id', sunday.id)
+          .not('id', 'in', idListStr);
       }
     }
 

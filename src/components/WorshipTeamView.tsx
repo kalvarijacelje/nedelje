@@ -2253,7 +2253,7 @@ export default function WorshipTeamView({
                         {matchedSunday && onSelectSunday ? (
                           <button
                             type="button"
-                            onClick={() => onSelectSunday(matchedSunday.id)}
+                            onClick={() => onSelectSunday(matchedSunday.id, 'slavilna_ekipa', 'worship')}
                             className={`text-xs font-bold font-mono hover:text-indigo-600 transition cursor-pointer text-left ${isLordSupper ? 'underline decoration-rose-400 underline-offset-4 text-slate-900' : 'text-slate-900'}`}
                             title={currentLanguage === 'sl' ? 'Odpri celoten nedeljski razpored' : 'Open Sunday detail'}
                           >
@@ -2538,7 +2538,7 @@ export default function WorshipTeamView({
                               {matchedSunday && onSelectSunday ? (
                                 <button
                                   type="button"
-                                  onClick={() => onSelectSunday(matchedSunday.id)}
+                                  onClick={() => onSelectSunday(matchedSunday.id, 'slavilna_ekipa', 'worship')}
                                   className="hover:text-indigo-600 hover:underline transition cursor-pointer text-left"
                                   title={currentLanguage === 'sl' ? 'Odpri nedeljski razpored' : 'Open Sunday detail'}
                                 >
