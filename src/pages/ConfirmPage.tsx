@@ -336,7 +336,7 @@ export default function ConfirmPage({
             Pozdravljeni, {assignment.personName}!
           </h2>
           <p className="text-xs text-gray-600 leading-relaxed">
-            Vodja službe <strong className="text-gray-900">{leaderName}</strong> vas vabi k sodelovanju pri službi <strong className="text-indigo-700">{ministryName}</strong>.
+            Vodja službe <strong className="text-gray-900">{leaderName}</strong> te vabi k sodelovanju pri službi <strong className="text-indigo-700">{ministryName}</strong>.
           </p>
         </div>
 
