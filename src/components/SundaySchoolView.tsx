@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ServiceSunday, Person, Translation, SundaySchoolLesson, SundaySchoolSupply, SundaySchoolGroupKey, BlackoutDate, Ministry } from '../types';
+import { ServiceSunday, Person, Translation, SundaySchoolLesson, SundaySchoolSupply, SundaySchoolGroupKey, BlackoutDate, Ministry, UserRole } from '../types';
 import { 
   BookOpen, 
   Package, 
@@ -25,7 +25,8 @@ import {
   Layers,
   Clock,
   UserPlus,
-  AlertTriangle
+  AlertTriangle,
+  ShieldAlert
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
@@ -45,6 +46,7 @@ interface SundaySchoolViewProps {
   translations: Translation;
   currentLanguage: 'sl' | 'en';
   canEdit: boolean;
+  userRole?: UserRole;
   onSelectSunday?: (sundayId: string) => void;
   onUpdateSunday?: (updated: ServiceSunday) => void;
   onGenerateAcademicYear?: () => void;
@@ -62,13 +64,17 @@ export default function SundaySchoolView({
   translations,
   currentLanguage,
   canEdit,
+  userRole,
   onSelectSunday,
   onUpdateSunday,
   onGenerateAcademicYear,
   blackoutDates,
   ministries
 }: SundaySchoolViewProps) {
-  const [activeTab, setActiveTab] = useState<'roster' | 'lessons' | 'curriculum' | 'supplies'>('roster');
+  const isViewer = userRole === 'Viewer' || !canEdit;
+  const [activeTab, setActiveTab] = useState<'roster' | 'lessons' | 'curriculum' | 'supplies'>(() => 
+    isViewer ? 'lessons' : 'roster'
+  );
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<'all' | 'mlajsa' | 'starejsa'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [rosterYearView, setRosterYearView] = useState<'2026_2027' | '2025_2026'>('2026_2027');
@@ -1056,8 +1062,12 @@ export default function SundaySchoolView({
                         <div className="flex items-center gap-1.5 text-gray-700">
                           <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                           <span className="font-semibold text-gray-900">Učitelji:</span>
-                          <span className="text-gray-600">{lesson.teachers.join(', ')}</span>
-                          {lesson.helpers.length > 0 && (
+                          <span className="text-gray-600">
+                            {canEdit 
+                              ? (lesson.teachers.length > 0 ? lesson.teachers.join(', ') : (currentLanguage === 'sl' ? 'Ni razporejeno' : 'Unassigned'))
+                              : (lesson.teachers.length > 0 ? (currentLanguage === 'sl' ? 'Dodeljen učitelj' : 'Assigned teacher') : (currentLanguage === 'sl' ? 'Ni razporejeno' : 'Unassigned'))}
+                          </span>
+                          {lesson.helpers.length > 0 && canEdit && (
                             <span className="text-gray-400 italic">({lesson.helpers.join(', ')})</span>
                           )}
                         </div>
@@ -1259,7 +1269,29 @@ export default function SundaySchoolView({
       )}
 
       {/* --- TAB 3: ROSTER VIEW --- */}
-      {activeTab === 'roster' && (() => {
+      {activeTab === 'roster' && (
+        isViewer ? (
+          <div id="sunday-school-roster-restricted" className="max-w-2xl mx-auto w-full p-8 my-8 bg-white border border-slate-200 rounded-2xl shadow-xs text-center space-y-4 font-sans animate-fade-in">
+            <div className="w-14 h-14 mx-auto bg-amber-50 text-amber-600 rounded-full flex items-center justify-center border border-amber-200 shadow-2xs">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-display font-semibold text-gray-900 text-base">
+                {currentLanguage === 'sl' ? 'Dostop do razporeda učiteljev je omejen' : 'Sunday School Roster Access Restricted'}
+              </h3>
+              <p className="text-xs font-semibold text-amber-900 max-w-md mx-auto">
+                {currentLanguage === 'sl'
+                  ? 'Razpored učiteljev in pomočnikov nedeljske šole je dostopen le odobrenim sodelavcem'
+                  : 'Teacher and assistant schedules are accessible only to approved team servants and leaders'}
+              </p>
+            </div>
+            <p className="text-xs text-gray-500 max-w-md mx-auto leading-relaxed">
+              {currentLanguage === 'sl'
+                ? 'Kot pregledovalec si lahko ogledate učne lekcije, učni načrt ter sezname gradiv v zavihkih »Lekcije«, »Učni načrt« in »Materiali«.'
+                : 'As a viewer, you can browse Sunday school lessons, curriculum, and teaching supplies in the "Lessons", "Curriculum", and "Supplies" tabs.'}
+            </p>
+          </div>
+        ) : (() => {
         const academicYear2627Start = new Date(2026, 7, 20);  // Late Aug 2026 (includes Aug 30, 2026)
         const academicYear2627End = new Date(2027, 7, 31);   // Aug 31, 2027
 
@@ -1294,36 +1326,26 @@ export default function SundaySchoolView({
             || sun.assignments?.[primaryKey.toLowerCase()]
             || sun.assignments?.[secondaryKey.toLowerCase()];
 
+          let resolved = '';
           if (directAssigned && directAssigned.length > 0) {
-            return directAssigned.join(', ');
+            resolved = directAssigned.join(', ');
+          } else if (legacyNedeljskaSola && legacyNedeljskaSola.length > 0) {
+            resolved = groupKey === 'mlajsa' ? legacyNedeljskaSola[0] : (legacyNedeljskaSola.length > 1 ? legacyNedeljskaSola[1] : legacyNedeljskaSola[0]);
+          } else if (legacyKids && legacyKids.length > 0) {
+            resolved = groupKey === 'mlajsa' ? legacyKids[0] : (legacyKids.length > 1 ? legacyKids[1] : legacyKids[0]);
+          } else if (lesson && lesson.teachers && lesson.teachers.length > 0) {
+            resolved = lesson.teachers.join(', ');
           }
 
-          // Fallback to legacy 'nedeljska_sola' array where index 0 is younger, index 1 is older
-          const legacyNedeljskaSola = sun.assignments?.['nedeljska_sola'];
-          if (legacyNedeljskaSola && legacyNedeljskaSola.length > 0) {
-            if (groupKey === 'mlajsa') {
-              return legacyNedeljskaSola[0];
-            } else {
-              return legacyNedeljskaSola.length > 1 ? legacyNedeljskaSola[1] : legacyNedeljskaSola[0];
-            }
+          if (!resolved) {
+            return currentLanguage === 'sl' ? 'Ni razporejeno' : 'Unassigned';
           }
 
-          // Fallback to legacy 'kids' array
-          const legacyKids = sun.assignments?.['kids'];
-          if (legacyKids && legacyKids.length > 0) {
-            if (groupKey === 'mlajsa') {
-              return legacyKids[0];
-            } else {
-              return legacyKids.length > 1 ? legacyKids[1] : legacyKids[0];
-            }
+          if (!canEdit) {
+            return currentLanguage === 'sl' ? 'Dodeljen učitelj' : 'Assigned teacher';
           }
 
-          // Fallback to lesson plan teachers if set
-          if (lesson && lesson.teachers && lesson.teachers.length > 0) {
-            return lesson.teachers.join(', ');
-          }
-
-          return currentLanguage === 'sl' ? 'Ni razporejeno' : 'Unassigned';
+          return resolved;
         };
 
         return (
@@ -1638,7 +1660,7 @@ export default function SundaySchoolView({
             </div>
           </div>
         );
-      })()}
+      })())}
 
       {/* --- TAB 4: CURRICULUM & GOOGLE DOCS --- */}
       {activeTab === 'curriculum' && (

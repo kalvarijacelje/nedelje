@@ -152,6 +152,19 @@ export const getPrivacyDisplayName = (
   return parts[0];
 };
 
+/**
+ * Extracts just the first name from a full name string.
+ * Handles single names, multi-word first names, and trims whitespace.
+ * Example: "Whitney Lajlar" -> "Whitney", "Franc Šarkan" -> "Franc"
+ */
+export const getFirstName = (fullName?: string | null): string => {
+  if (!fullName) return '';
+  const clean = fullName.trim();
+  if (!clean) return '';
+  const parts = clean.split(/\s+/).filter(Boolean);
+  return parts[0] || clean;
+};
+
 export type Language = 'en' | 'sl';
 
 export type ServiceStatus = 'draft' | 'ready' | 'completed';

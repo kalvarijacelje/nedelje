@@ -235,7 +235,7 @@ export const UnifiedPersonAssigner: React.FC<UnifiedPersonAssignerProps> = ({
     if (compact) {
       return (
         <span className="text-slate-700 font-medium text-xs truncate block">
-          {assignedList.join(', ') || '-'}
+          {assignedList.length > 0 ? (currentLanguage === 'sl' ? 'Dodeljeno' : 'Assigned') : '-'}
         </span>
       );
     }
@@ -251,7 +251,7 @@ export const UnifiedPersonAssigner: React.FC<UnifiedPersonAssignerProps> = ({
           ) : (
             assignedList.map(name => (
               <span key={name} className="text-xs font-semibold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-250">
-                👤 {name}
+                👤 {currentLanguage === 'sl' ? 'Dodeljeno' : 'Assigned'}
               </span>
             ))
           )}

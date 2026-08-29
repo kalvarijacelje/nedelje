@@ -922,7 +922,7 @@ export default function App() {
         (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
       ));
 
-      let resolvedRole: UserRole = 'Servant';
+      let resolvedRole: UserRole = 'Viewer';
 
       if (dbProfile) {
         resolvedRole = normalizeUserRole(dbProfile.role);
@@ -1006,7 +1006,7 @@ export default function App() {
             full_name: userFullName || userEmail.split('@')[0],
             name: userFullName || userEmail.split('@')[0],
             email: userEmail,
-            role: 'member',
+            role: 'Viewer',
             member_type: 'member',
             preferred_ministries: [],
             family_members: [],
@@ -2065,48 +2065,52 @@ export default function App() {
               <span>{currentLanguage === 'sl' ? 'Službe' : 'Teams'}</span>
             </button>
 
-            <button
-              onClick={() => handleNavTab('people')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
-                activeTab === 'people'
-                  ? 'bg-[#93032E] text-white shadow-xs'
-                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
-              }`}
-              title={currentLanguage === 'sl' ? 'Ekipa' : 'People'}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>{currentLanguage === 'sl' ? 'Ekipa' : 'People'}</span>
-            </button>
+            {canAccessPersonalData(activeRole) && (
+              <button
+                onClick={() => handleNavTab('people')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                  activeTab === 'people'
+                    ? 'bg-[#93032E] text-white shadow-xs'
+                    : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+                }`}
+                title={currentLanguage === 'sl' ? 'Ekipa' : 'People'}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>{currentLanguage === 'sl' ? 'Ekipa' : 'People'}</span>
+              </button>
+            )}
           </>
         }
         rightActionItems={
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setIsNotificationModalOpen(true)}
-              className="relative p-2 bg-slate-100 hover:bg-slate-200 text-[#93032E] rounded-xl transition cursor-pointer flex items-center justify-center shrink-0"
-              title={currentLanguage === 'sl' ? 'Opomniki in obvestila' : 'Notifications & Reminders'}
-            >
-              <Bell className="w-4 h-4" />
-              {activeUpcomingDutiesCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-[#93032E] text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-xs">
-                  {activeUpcomingDutiesCount}
-                </span>
-              )}
-            </button>
+          activeRole !== 'Viewer' ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setIsNotificationModalOpen(true)}
+                className="relative p-2 bg-slate-100 hover:bg-slate-200 text-[#93032E] rounded-xl transition cursor-pointer flex items-center justify-center shrink-0"
+                title={currentLanguage === 'sl' ? 'Opomniki in obvestila' : 'Notifications & Reminders'}
+              >
+                <Bell className="w-4 h-4" />
+                {activeUpcomingDutiesCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-[#93032E] text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-xs">
+                    {activeUpcomingDutiesCount}
+                  </span>
+                )}
+              </button>
 
-            <button
-              onClick={() => setIsSwapModalOpen(true)}
-              className="relative p-2 bg-slate-100 hover:bg-slate-200 text-[#034C3C] rounded-xl transition cursor-pointer flex items-center justify-center shrink-0"
-              title={currentLanguage === 'sl' ? 'Oglasna deska za zamenjave' : 'Shift Swap Board'}
-            >
-              <ArrowRightLeft className="w-4 h-4" />
-              {swapRequests.filter(r => r.status === 'open').length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-[#034C3C] text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
-                  {swapRequests.filter(r => r.status === 'open').length}
-                </span>
-              )}
-            </button>
-          </div>
+              <button
+                onClick={() => setIsSwapModalOpen(true)}
+                className="relative p-2 bg-slate-100 hover:bg-slate-200 text-[#034C3C] rounded-xl transition cursor-pointer flex items-center justify-center shrink-0"
+                title={currentLanguage === 'sl' ? 'Oglasna deska za zamenjave' : 'Shift Swap Board'}
+              >
+                <ArrowRightLeft className="w-4 h-4" />
+                {swapRequests.filter(r => r.status === 'open').length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-[#034C3C] text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                    {swapRequests.filter(r => r.status === 'open').length}
+                  </span>
+                )}
+              </button>
+            </div>
+          ) : null
         }
       />
 
@@ -2217,6 +2221,7 @@ export default function App() {
               <SundaySchoolView
                 sundays={sundays}
                 people={people}
+                userRole={activeRole}
                 lessons={sundaySchoolLessons}
                 supplies={sundaySchoolSupplies}
                 onUpdateLessons={handleUpdateSundaySchoolLessons}

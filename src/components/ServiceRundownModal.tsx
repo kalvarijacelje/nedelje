@@ -990,7 +990,7 @@ export default function ServiceRundownModal({
                         <h5 className="text-sm font-bold text-white tracking-tight">{song.titleSl}</h5>
                         {song.titleEn && <p className="text-xs text-slate-400 mt-0.5">{song.titleEn}</p>}
                         
-                        {song.leadSinger && (
+                        {song.leadSinger && userRole !== 'Viewer' && (
                           <p className="text-xs text-violet-300 font-medium mt-1.5 flex items-center gap-1">
                             <User className="w-3 h-3" />
                             <span>Vokal: {song.leadSinger}</span>

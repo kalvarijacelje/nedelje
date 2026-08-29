@@ -371,17 +371,23 @@ function MinistryCard({
                     key={`${leader.id || leader.name}-${lIdx}`}
                     className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white text-slate-900 px-2 py-1 rounded-lg border border-slate-250 shadow-2xs"
                   >
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectLeaderForContact(leader);
-                      }}
-                      className="hover:text-indigo-600 transition cursor-pointer flex items-center gap-1"
-                      title={currentLanguage === 'sl' ? `Odpri podrobnosti: ${leader.name}` : `View details: ${leader.name}`}
-                    >
-                      <span>{leader.name}</span>
-                    </button>
+                    {userRole === 'Viewer' ? (
+                      <span className="text-slate-600 font-mono text-[11px]">
+                        {currentLanguage === 'sl' ? 'Dodeljen vodja' : 'Assigned leader'}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectLeaderForContact(leader);
+                        }}
+                        className="hover:text-indigo-600 transition cursor-pointer flex items-center gap-1"
+                        title={currentLanguage === 'sl' ? `Odpri podrobnosti: ${leader.name}` : `View details: ${leader.name}`}
+                      >
+                        <span>{leader.name}</span>
+                      </button>
+                    )}
 
                     {canAccessPersonalData(userRole) && (
                       <div className="flex items-center gap-1 pl-1 border-l border-slate-200 ml-1">
@@ -514,7 +520,9 @@ function MinistryCard({
                                 badgeClasses = 'bg-amber-100 text-amber-950 border-amber-400 animate-pulse';
                               }
 
-                              const statusTooltip = isPending 
+                              const statusTooltip = userRole === 'Viewer'
+                                ? (isConfirmed ? (currentLanguage === 'sl' ? 'Potrjeno' : 'Confirmed') : (currentLanguage === 'sl' ? 'Zasedeno' : 'Assigned'))
+                                : isPending 
                                 ? (currentLanguage === 'sl' ? 'V čakanju na potrditev' : 'Pending confirmation')
                                 : isOverloaded 
                                 ? (currentLanguage === 'sl' ? 'Udeleženec je preobremenjen' : 'Volunteer has high load / conflicts')
@@ -528,8 +536,8 @@ function MinistryCard({
                                 >
                                   {isConfirmed && !isOverloaded && <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3] shrink-0" />}
                                   {isPending && <Clock className="w-2.5 h-2.5 text-amber-600 stroke-[2.5] shrink-0" />}
-                                  <span>{name}</span>
-                                  {isOverloaded && <span className="text-[9px] text-amber-700 font-bold">⚠️</span>}
+                                  <span>{userRole === 'Viewer' ? (currentLanguage === 'sl' ? 'Dodeljeno' : 'Assigned') : name}</span>
+                                  {isOverloaded && userRole !== 'Viewer' && <span className="text-[9px] text-amber-700 font-bold">⚠️</span>}
                                 </span>
                               );
                             })
@@ -543,8 +551,8 @@ function MinistryCard({
                             </span>
                           )}
 
-                          {/* Declined volunteers indicator showing decline note on hover/click */}
-                          {declinedDetails.map((dec, dIdx) => (
+                          {/* Declined volunteers indicator (Hidden for Viewers) */}
+                          {userRole !== 'Viewer' && declinedDetails.map((dec, dIdx) => (
                             <span
                               key={`dec-${dIdx}`}
                               className="px-1.5 py-0.5 rounded-lg border font-mono text-[9px] bg-rose-50/70 text-rose-700 border-rose-200 line-through opacity-80 flex items-center gap-0.5 cursor-help"
@@ -812,7 +820,7 @@ export default function MinistryView({
         ))}
       </div>
 
-      {selectedLeaderForContact && (
+      {selectedLeaderForContact && userRole !== 'Viewer' && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 space-y-4 animate-scale-up">
             <div className="flex items-start justify-between">

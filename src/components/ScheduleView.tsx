@@ -244,7 +244,9 @@ export default function ScheduleView({
                         );
                       }
                       if (effFocus.type === 'prayer_focus') {
-                        const famName = effFocus.prayerFocus?.familyNameOrPerson;
+                        const famName = userRole === 'Viewer' 
+                          ? (currentLanguage === 'sl' ? 'Oznanjena družina' : 'Featured Family')
+                          : effFocus.prayerFocus?.familyNameOrPerson;
                         return (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200 flex items-center gap-1">
                             <span className="text-[11px] leading-none shrink-0">🙏</span>
@@ -265,9 +267,9 @@ export default function ScheduleView({
                       <span className="text-gray-400 font-mono tracking-wider font-bold text-[9px] uppercase mr-1">{translations.themeLabel}:</span> 
                       <span className="text-gray-800 font-semibold">{currentLanguage === 'sl' ? sunday.themeSl : sunday.themeEn}</span>
                     </p>
-                    {(sunday.guest || sunday.absentOrNotes) && (
+                    {(sunday.guest || (userRole !== 'Viewer' && sunday.absentOrNotes)) && (
                       <p className="text-[11px] text-gray-400 truncate">
-                        💡 {sunday.guest ? `${sunday.guest} • ` : ''}{sunday.absentOrNotes}
+                        💡 {sunday.guest ? `${sunday.guest}${userRole !== 'Viewer' && sunday.absentOrNotes ? ' • ' : ''}` : ''}{userRole !== 'Viewer' ? sunday.absentOrNotes : ''}
                       </p>
                     )}
                   </div>
@@ -318,7 +320,9 @@ export default function ScheduleView({
                         });
                       }
 
-                      const declinedTooltip = declinedList.length > 0
+                      const declinedTooltip = userRole === 'Viewer'
+                        ? (currentLanguage === 'sl' ? `${declinedCnt} zavrnjenih zadolžitev` : `${declinedCnt} declined assignments`)
+                        : declinedList.length > 0
                         ? declinedList.map(d => `${d.name}: "${d.reason || (currentLanguage === 'sl' ? 'Brez opombe' : 'No note')}"`).join('\n')
                         : (currentLanguage === 'sl' ? `${declinedCnt} zavrnjenih zadolžitev` : `${declinedCnt} declined assignments`);
 

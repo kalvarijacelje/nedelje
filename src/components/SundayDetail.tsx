@@ -1579,27 +1579,29 @@ export default function SundayDetail({
           </div>
         )}
 
-        {/* 2. COMPACT GENERAL NOTES CARD (No theme/guest bloat) */}
-        <div id="core-info-panel" className="p-4 bg-white rounded-2xl shadow-xs border border-gray-200 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 font-mono flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-emerald-700" />
-              <span>{currentLanguage === 'sl' ? 'Odsotnosti in posebne opombe' : 'Absences & Setup Notes'}</span>
-            </label>
-            <span className="text-[10px] font-mono font-bold text-gray-400">
-              {currentLanguage === 'sl' ? 'Samodejno shranjeno' : 'Auto-saved'}
-            </span>
-          </div>
+        {/* 2. COMPACT GENERAL NOTES CARD (Hidden for Viewers) */}
+        {userRole !== 'Viewer' && (
+          <div id="core-info-panel" className="p-4 bg-white rounded-2xl shadow-xs border border-gray-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 font-mono flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-emerald-700" />
+                <span>{currentLanguage === 'sl' ? 'Odsotnosti in posebne opombe' : 'Absences & Setup Notes'}</span>
+              </label>
+              <span className="text-[10px] font-mono font-bold text-gray-400">
+                {currentLanguage === 'sl' ? 'Samodejno shranjeno' : 'Auto-saved'}
+              </span>
+            </div>
 
-          <textarea
-            value={absentOrNotes || ''}
-            onChange={(e) => handleNotesChange(e.target.value)}
-            disabled={!canEditGeneral}
-            rows={2}
-            placeholder={currentLanguage === 'sl' ? 'Vnesite odsotnosti sodelavcev oz. posebna navodila za nedeljsko ekipo...' : 'Enter team member absences or special setup notes for Sunday...'}
-            className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 disabled:opacity-75 disabled:bg-gray-50 resize-none font-sans"
-          />
-        </div>
+            <textarea
+              value={absentOrNotes || ''}
+              onChange={(e) => handleNotesChange(e.target.value)}
+              disabled={!canEditGeneral}
+              rows={2}
+              placeholder={currentLanguage === 'sl' ? 'Vnesite odsotnosti sodelavcev oz. posebna navodila za nedeljsko ekipo...' : 'Enter team member absences or special setup notes for Sunday...'}
+              className="w-full text-xs px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 focus:outline-none focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 disabled:opacity-75 disabled:bg-gray-50 resize-none font-sans"
+            />
+          </div>
+        )}
 
         {/* 3. SLEEK SUB-NAVIGATION TOOLBAR SWITCHER */}
         <div className="bg-white border border-gray-200 rounded-2xl p-2 shadow-xs flex flex-wrap items-center justify-between gap-2">
@@ -1640,18 +1642,20 @@ export default function SundayDetail({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setShowPrayerFocus(!showPrayerFocus)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                showPrayerFocus
-                  ? 'bg-indigo-600 text-white shadow-2xs'
-                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-200'
-              }`}
-            >
-              <HeartHandshake className="w-4 h-4 text-indigo-700" />
-              <span>{currentLanguage === 'sl' ? '🕊️ Molitveni poudarek' : '🕊️ Prayer Focus'}</span>
-            </button>
+            {userRole !== 'Viewer' && (
+              <button
+                type="button"
+                onClick={() => setShowPrayerFocus(!showPrayerFocus)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  showPrayerFocus
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-200'
+                }`}
+              >
+                <HeartHandshake className="w-4 h-4 text-indigo-700" />
+                <span>{currentLanguage === 'sl' ? '🕊️ Molitveni poudarek' : '🕊️ Prayer Focus'}</span>
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 rounded-xl border border-gray-150 text-[11px] font-mono font-semibold text-gray-600">
@@ -1665,7 +1669,7 @@ export default function SundayDetail({
         </div>
 
         {/* Optional inline Prayer Focus section */}
-        {showPrayerFocus && (
+        {showPrayerFocus && userRole !== 'Viewer' && (
           <div className="animate-fade-in">
             <SpecialSundayFocusSection
               sunday={sunday}
@@ -1705,7 +1709,7 @@ export default function SundayDetail({
           </div>
         )}
 
-        {overloadedVolunteers.length > 0 && (
+        {userRole !== 'Viewer' && overloadedVolunteers.length > 0 && (
           <div id="overload-alert-banner" className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-800">
             <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <div>
@@ -1834,26 +1838,35 @@ export default function SundayDetail({
                           </span>
                         );
                       })()}
-                      {ministryLeaders.length > 0 && ministryLeaders.map((leader, lIdx) => (
-                        <div
-                          key={`${leader.id || leader.name}-${lIdx}`}
-                          className="inline-flex items-center gap-1 text-[10px] font-semibold bg-indigo-50/90 text-indigo-900 px-2 py-0.5 rounded-md border border-indigo-200/80 shadow-2xs"
-                        >
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedLeaderForContact(leader);
-                            }}
-                            className="hover:text-indigo-600 transition cursor-pointer flex items-center gap-1 font-mono"
-                            title={currentLanguage === 'sl' ? `Odpri kontaktno kartico: ${leader.name}` : `View contact details: ${leader.name}`}
+                      {ministryLeaders.length > 0 && ministryLeaders.map((leader, lIdx) => {
+                        const isViewer = userRole === 'Viewer';
+                        return (
+                          <div
+                            key={`${leader.id || leader.name}-${lIdx}`}
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold bg-indigo-50/90 text-indigo-900 px-2 py-0.5 rounded-md border border-indigo-200/80 shadow-2xs"
                           >
-                            <Crown className="w-3 h-3 text-amber-500 shrink-0" />
-                            <span>{currentLanguage === 'sl' ? 'Vodja:' : 'Leader:'} {leader.name}</span>
-                          </button>
+                            {isViewer ? (
+                              <span className="flex items-center gap-1 font-mono text-slate-700">
+                                <Crown className="w-3 h-3 text-amber-500 shrink-0" />
+                                <span>{currentLanguage === 'sl' ? 'Vodja določen' : 'Leader assigned'}</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedLeaderForContact(leader);
+                                }}
+                                className="hover:text-indigo-600 transition cursor-pointer flex items-center gap-1 font-mono"
+                                title={currentLanguage === 'sl' ? `Odpri kontaktno kartico: ${leader.name}` : `View contact details: ${leader.name}`}
+                              >
+                                <Crown className="w-3 h-3 text-amber-500 shrink-0" />
+                                <span>{currentLanguage === 'sl' ? 'Vodja:' : 'Leader:'} {leader.name}</span>
+                              </button>
+                            )}
 
-                          {canViewPersonContactInfo(userRole, undefined, leader) && (
-                            <div className="flex items-center gap-1 pl-1 border-l border-indigo-200 ml-0.5">
+                            {!isViewer && canViewPersonContactInfo(userRole, undefined, leader) && (
+                              <div className="flex items-center gap-1 pl-1 border-l border-indigo-200 ml-0.5">
                               {leader.phone && (
                                 <a
                                   href={`tel:${leader.phone.replace(/\s+/g, '')}`}
@@ -1889,7 +1902,8 @@ export default function SundayDetail({
                             </div>
                           )}
                         </div>
-                      ))}
+                      );
+                    })}
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
@@ -1907,7 +1921,14 @@ export default function SundayDetail({
                             badgeClasses = 'bg-rose-50/70 text-rose-700 border-rose-200 line-through opacity-80';
                           }
 
-                          const tooltipText = isDeclined 
+                          const isViewer = userRole === 'Viewer';
+                          const displayName = isViewer && !isMeOrFamily 
+                            ? (currentLanguage === 'sl' ? 'Dodeljeno' : 'Assigned')
+                            : `${detail.personName}${isMeOrFamily ? ' (Vi/Družina)' : ''}`;
+
+                          const tooltipText = isViewer && !isMeOrFamily
+                            ? (isConfirmed ? (currentLanguage === 'sl' ? 'Potrjeno' : 'Confirmed') : (currentLanguage === 'sl' ? 'Zasedeno' : 'Filled'))
+                            : isDeclined 
                             ? (detail.declineReason ? `Zavrnjeno: "${detail.declineReason}"` : (currentLanguage === 'sl' ? 'Zavrnjeno (termin je sproščen)' : 'Declined (slot released)'))
                             : isPending 
                             ? (currentLanguage === 'sl' ? 'V čakanju na potrditev' : 'Pending confirmation')
@@ -1925,13 +1946,13 @@ export default function SundayDetail({
                               {isPending && <Clock className="w-3 h-3 text-amber-600 stroke-[2.5] shrink-0" />}
                               {isDeclined && <X className="w-3 h-3 text-rose-500 stroke-[2.5] shrink-0" />}
 
-                              <span>{detail.personName}{isMeOrFamily ? ' (Vi/Družina)' : ''}</span>
+                              <span>{displayName}</span>
                               {isPending && (
                                 <span className="text-[10px] text-amber-700 font-sans font-normal opacity-90 hidden sm:inline">
                                   ({currentLanguage === 'sl' ? 'v čakanju' : 'pending'})
                                 </span>
                               )}
-                              {detail.declineReason && (
+                              {detail.declineReason && (!isViewer || isMeOrFamily) && (
                                 <span className="text-[10px] text-rose-700 italic cursor-help ml-0.5" title={`Opomba ob zavrnitvi: "${detail.declineReason}"`}>
                                   💬 "{detail.declineReason.length > 20 ? detail.declineReason.substring(0, 20) + '...' : detail.declineReason}"
                                 </span>
@@ -2015,7 +2036,7 @@ export default function SundayDetail({
                 </div>
 
                 {/* Servant & Family Self-Service Quick Action Panel */}
-                {activePerson && (
+                {activePerson && userRole !== 'Viewer' && (
                   <div className="px-3.5 py-2 bg-slate-50/70 border-t border-gray-150 space-y-2 text-xs">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">

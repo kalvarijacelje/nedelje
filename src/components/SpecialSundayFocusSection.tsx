@@ -210,14 +210,16 @@ export default function SpecialSundayFocusSection({
                   : '👤 Assigned for Communion Preparation & Serving:'}
               </span>
               <p className="text-sm font-bold text-gray-900 font-display">
-                {(focus.communion?.inChargeNames || []).join(', ') || 'Aleš & Whitney'}
+                {!canEdit 
+                  ? (currentLanguage === 'sl' ? 'Dodeljeni strežniki' : 'Assigned servants')
+                  : ((focus.communion?.inChargeNames || []).join(', ') || (currentLanguage === 'sl' ? 'Dodeljeni strežniki' : 'Assigned servants'))}
               </p>
             </div>
 
             <div className="space-y-1 text-xs text-gray-700 font-sans">
               <p><strong>{currentLanguage === 'sl' ? '🍞 Kruh:' : '🍞 Bread:'}</strong> {focus.communion?.breadType || (currentLanguage === 'sl' ? 'Brezglutenski kruh & navadni kruhki' : 'Gluten-free bread & regular loafs')}</p>
               <p><strong>{currentLanguage === 'sl' ? '🍷 Pijača:' : '🍷 Drink / Wine:'}</strong> {focus.communion?.drinkType || (currentLanguage === 'sl' ? 'Grozdni sok (brez alkohola) v posamičnih skodelicah' : 'Grape juice (non-alcoholic) in individual cups')}</p>
-              {focus.communion?.notes && (
+              {focus.communion?.notes && canEdit && (
                 <p className="text-gray-600 italic">"{focus.communion.notes}"</p>
               )}
             </div>
@@ -266,7 +268,9 @@ export default function SpecialSundayFocusSection({
                 {currentLanguage === 'sl' ? '🙏 Družina / Posameznik v Molitvi:' : '🙏 Family / Individual in Prayer:'}
               </span>
               <h4 className="text-base font-bold text-gray-900 font-display">
-                {focus.prayerFocus?.familyNameOrPerson || (currentLanguage === 'sl' ? 'Družina Novak' : 'Novak Family')}
+                {!canEdit 
+                  ? (currentLanguage === 'sl' ? 'Oznanjena družina' : 'Featured Family')
+                  : (focus.prayerFocus?.familyNameOrPerson || (currentLanguage === 'sl' ? 'Družina v molitvi' : 'Family in prayer'))}
               </h4>
             </div>
 
@@ -281,7 +285,7 @@ export default function SpecialSundayFocusSection({
               </div>
             )}
 
-            {focus.prayerFocus?.prayerRequests && (
+            {focus.prayerFocus?.prayerRequests && canEdit && (
               <div className="space-y-1">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-gray-400 block">
                   {currentLanguage === 'sl' ? '📌 Molitvene Potrebe:' : '📌 Prayer Requests / Needs:'}

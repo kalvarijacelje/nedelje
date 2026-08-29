@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { ServiceSunday, Ministry, UserRole, Translation, Person, VisitorConnection, BlackoutDate, canAccessPersonalData } from '../types';
+import { ServiceSunday, Ministry, UserRole, Translation, Person, VisitorConnection, BlackoutDate, canAccessPersonalData, getFirstName } from '../types';
 import { 
   Calendar, Users, ArrowRightLeft, AlertTriangle, ShieldCheck, Heart, Sparkles, ChevronRight, CheckCircle2, AlertCircle, Plus, Eye, BookOpen, Layers, Check, Clock, HelpCircle, X, ExternalLink, ShieldAlert, Award, Star, MessageSquare, Phone, Info, Music, Home, Wine, HeartHandshake, PlusCircle, Coffee, Edit, UserPlus, Copy, CheckCircle, Palmtree, ClipboardCheck, Bell, UserCheck, User, Crown
 } from 'lucide-react';
@@ -761,7 +761,7 @@ export default function HomeDashboard({
                   ) : effFocus.type === 'prayer_focus' ? (
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg text-xs font-semibold shrink-0 shadow-2xs">
                       <span>🙏</span>
-                      <span>{currentLanguage === 'sl' ? 'Molitev za družino:' : 'Prayer for Family:'} <strong className="text-indigo-950 font-bold">{effFocus.prayerFocus?.familyNameOrPerson || '—'}</strong></span>
+                      <span>{currentLanguage === 'sl' ? 'Molitev za družino:' : 'Prayer for Family:'} <strong className="text-indigo-950 font-bold">{userRole === 'Viewer' ? (currentLanguage === 'sl' ? 'Oznanjena družina' : 'Featured Family') : (effFocus.prayerFocus?.familyNameOrPerson || '—')}</strong></span>
                     </div>
                   ) : null}
                 </div>
@@ -770,11 +770,18 @@ export default function HomeDashboard({
 
             {/* 5 Key Responsibility Leaders for this Sunday */}
             {(() => {
-              const preacher = (nextSunday.assignments?.['ucenje'] || [])[0] || (nextSunday.assignments?.['sermon_prayer'] || [])[0] || nextSunday.guest || '';
-              const worshipLeader = (nextSunday.assignments?.['uvod_slavljenje'] || [])[0] || (nextSunday.assignments?.['slavilna_ekipa'] || [])[0] || '';
-              const youngerTeacher = (nextSunday.assignments?.['nedeljska_sola_mlajsa'] || [])[0] || '';
-              const olderTeacher = (nextSunday.assignments?.['nedeljska_sola_starejsa'] || [])[0] || '';
-              const hospitalityLead = (nextSunday.assignments?.['gostoljubje'] || [])[0] || (nextSunday.assignments?.['kava'] || [])[0] || '';
+              const rawPreacher = (nextSunday.assignments?.['ucenje'] || [])[0] || (nextSunday.assignments?.['sermon_prayer'] || [])[0] || nextSunday.guest || '';
+              const rawWorshipLeader = (nextSunday.assignments?.['uvod_slavljenje'] || [])[0] || (nextSunday.assignments?.['slavilna_ekipa'] || [])[0] || '';
+              const rawYoungerTeacher = (nextSunday.assignments?.['nedeljska_sola_mlajsa'] || [])[0] || '';
+              const rawOlderTeacher = (nextSunday.assignments?.['nedeljska_sola_starejsa'] || [])[0] || '';
+              const rawHospitalityLead = (nextSunday.assignments?.['gostoljubje'] || [])[0] || (nextSunday.assignments?.['kava'] || [])[0] || '';
+
+              const isViewer = userRole === 'Viewer';
+              const preacher = isViewer ? getFirstName(rawPreacher) : rawPreacher;
+              const worshipLeader = isViewer ? getFirstName(rawWorshipLeader) : rawWorshipLeader;
+              const youngerTeacher = isViewer ? getFirstName(rawYoungerTeacher) : rawYoungerTeacher;
+              const olderTeacher = isViewer ? getFirstName(rawOlderTeacher) : rawOlderTeacher;
+              const hospitalityLead = isViewer ? getFirstName(rawHospitalityLead) : rawHospitalityLead;
 
               return (
                 <div className="space-y-2">
@@ -881,42 +888,44 @@ export default function HomeDashboard({
               </div>
             </div>
 
-            {/* Quick Actions Panel directly on sunday card */}
-            <div className="pt-3 border-t border-gray-150 grid grid-cols-3 gap-2">
-              <button
-                onClick={() => setShowQuickAssign(!showQuickAssign)}
-                id="action-assign-person"
-                className={`flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl transition cursor-pointer font-sans text-xs font-bold border shadow-2xs active:scale-95 ${
-                  showQuickAssign 
-                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs' 
-                    : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-900 border-indigo-200/80'
-                }`}
-              >
-                <UserPlus className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span className="truncate">{currentLanguage === 'sl' ? 'Dodeli sodelavca' : 'Assign Person'}</span>
-              </button>
+            {/* Quick Actions Panel directly on sunday card (Hidden for Viewers) */}
+            {userRole !== 'Viewer' && (
+              <div className="pt-3 border-t border-gray-150 grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setShowQuickAssign(!showQuickAssign)}
+                  id="action-assign-person"
+                  className={`flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl transition cursor-pointer font-sans text-xs font-bold border shadow-2xs active:scale-95 ${
+                    showQuickAssign 
+                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs' 
+                      : 'bg-indigo-50 hover:bg-indigo-100/80 text-indigo-900 border-indigo-200/80'
+                  }`}
+                >
+                  <UserPlus className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="truncate">{currentLanguage === 'sl' ? 'Dodeli sodelavca' : 'Assign Person'}</span>
+                </button>
 
-              <button
-                onClick={() => onSelectSunday(nextSunday.id)}
-                id="action-edit-sunday"
-                className="flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 transition cursor-pointer border border-slate-200/80 font-sans text-xs font-bold shadow-2xs active:scale-95"
-              >
-                <Edit className="w-4 h-4 text-slate-600 shrink-0" />
-                <span className="truncate">{currentLanguage === 'sl' ? 'Uredi nedeljo' : 'Edit Sunday'}</span>
-              </button>
+                <button
+                  onClick={() => onSelectSunday(nextSunday.id)}
+                  id="action-edit-sunday"
+                  className="flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 transition cursor-pointer border border-slate-200/80 font-sans text-xs font-bold shadow-2xs active:scale-95"
+                >
+                  <Edit className="w-4 h-4 text-slate-600 shrink-0" />
+                  <span className="truncate">{currentLanguage === 'sl' ? 'Uredi nedeljo' : 'Edit Sunday'}</span>
+                </button>
 
-              <button
-                onClick={handleDuplicateWeek}
-                id="action-duplicate-week"
-                className="flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 transition cursor-pointer border border-slate-200/80 font-sans text-xs font-bold shadow-2xs active:scale-95"
-              >
-                <Copy className="w-4 h-4 text-slate-600 shrink-0" />
-                <span className="truncate">{currentLanguage === 'sl' ? 'Kopiraj teden' : 'Duplicate Week'}</span>
-              </button>
-            </div>
+                <button
+                  onClick={handleDuplicateWeek}
+                  id="action-duplicate-week"
+                  className="flex items-center justify-center gap-2 py-2.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 transition cursor-pointer border border-slate-200/80 font-sans text-xs font-bold shadow-2xs active:scale-95"
+                >
+                  <Copy className="w-4 h-4 text-slate-600 shrink-0" />
+                  <span className="truncate">{currentLanguage === 'sl' ? 'Kopiraj teden' : 'Duplicate Week'}</span>
+                </button>
+              </div>
+            )}
 
-            {/* Quick Assign Form Container (Collapsible Roster Helper) */}
-            {showQuickAssign && (
+            {/* Quick Assign Form Container (Collapsible Roster Helper - Only for non-viewers) */}
+            {userRole !== 'Viewer' && showQuickAssign && (
               <div id="quick-assign-dropdown-drawer" className="p-4 bg-indigo-50/70 rounded-xl border border-indigo-200 space-y-3 mt-3 animate-fade-in text-xs text-slate-800">
                 <div className="flex items-center justify-between">
                   <strong className="text-[#312E81] text-xs font-mono font-bold uppercase tracking-wider block">
@@ -1251,7 +1260,7 @@ export default function HomeDashboard({
                               {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
                             </span>
                             <span className="text-[10px] text-emerald-800 font-mono font-medium block truncate flex items-center gap-1">
-                              <span>👤 {assignedPeople.join(', ')}</span>
+                              <span>👤 {userRole === 'Viewer' ? (currentLanguage === 'sl' ? 'Dodeljeno sodelavcu' : 'Assigned') : assignedPeople.join(', ')}</span>
                             </span>
                           </div>
                         </div>
@@ -1270,13 +1279,56 @@ export default function HomeDashboard({
 
         {/* Right Sidebar Column on Desktop: Quick Operations Panel */}
         <div className="space-y-5">
-          <div id="quick-actions-panel" className="bg-white rounded-2xl shadow-2xs border border-gray-200/90 p-4 sm:p-5 space-y-3">
-            <div className="flex items-center justify-between pb-1 border-b border-gray-100">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500 font-mono flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                <span>{currentLanguage === 'sl' ? 'Hitra Orodja & Operacije' : 'Quick Operations & Tools'}</span>
-              </h3>
+          {userRole === 'Viewer' ? (
+            <div id="viewer-info-panel" className="bg-white rounded-2xl shadow-2xs border border-gray-200/90 p-5 space-y-4 font-sans">
+              <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-base shadow-2xs border border-indigo-100">
+                  ⛪
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider font-mono">
+                    {currentLanguage === 'sl' ? 'Nedeljska Bogoslužja' : 'Sunday Services'}
+                  </h3>
+                  <span className="text-[10px] text-gray-500 font-medium block">
+                    Krščanski center Kalvarija Celje
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-xs text-gray-600">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-150 space-y-1">
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <span>⏰</span>
+                    <span>{currentLanguage === 'sl' ? 'Vsako nedeljo ob 10:00' : 'Every Sunday at 10:00 AM'}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {currentLanguage === 'sl' 
+                      ? 'Skupno slavljenje, Božja beseda ter vzporedna otroška nedeljska šola.'
+                      : 'Corporate worship, Bible teaching, and kids Sunday school classes.'}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 text-indigo-950 text-[11px] space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-indigo-900">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>{currentLanguage === 'sl' ? 'Dostop pregledovalca (Viewer)' : 'Viewer Access Mode'}</span>
+                  </div>
+                  <p className="text-indigo-900/80 leading-relaxed">
+                    {currentLanguage === 'sl'
+                      ? 'Prijavljeni ste kot pregledovalec. Za vključitev v strežniško ekipo ali dodelitev vloge sodelavca kontaktirajte vodstvo cerkve.'
+                      : 'You are signed in as a viewer. To join a service team or request servant access, please contact church leadership.'}
+                  </p>
+                </div>
+              </div>
             </div>
+          ) : (
+            <div id="quick-actions-panel" className="bg-white rounded-2xl shadow-2xs border border-gray-200/90 p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between pb-1 border-b border-gray-100">
+                <h3 className="text-[11px] font-bold uppercase tracking-wider text-gray-500 font-mono flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{currentLanguage === 'sl' ? 'Hitra Orodja & Operacije' : 'Quick Operations & Tools'}</span>
+                </h3>
+              </div>
 
             <div className="flex flex-col gap-2">
               {/* 1. Live Sunday Attendance Check-in */}
@@ -1417,6 +1469,7 @@ export default function HomeDashboard({
               )}
             </div>
           </div>
+        )}
         </div>
 
       </div>

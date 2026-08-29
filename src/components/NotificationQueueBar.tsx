@@ -29,7 +29,7 @@ export default function NotificationQueueBar() {
     return () => clearInterval(interval);
   }, []);
 
-  const batchList: QueuedRecipientBatch[] = Object.values(batches);
+  const batchList: QueuedRecipientBatch[] = Object.values(batches || {});
 
   if (batchList.length === 0 && !queueToast) {
     return null;

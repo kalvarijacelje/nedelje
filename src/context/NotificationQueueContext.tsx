@@ -49,7 +49,19 @@ interface NotificationQueueContextType {
   dismissQueueToast: () => void;
 }
 
-const NotificationQueueContext = createContext<NotificationQueueContextType | null>(null);
+export const defaultFallbackContext: NotificationQueueContextType = {
+  batches: {},
+  totalQueuedCount: 0,
+  queueAssignment: () => false,
+  flushBatchNow: async () => false,
+  flushAllNow: async () => {},
+  cancelBatch: () => {},
+  removeQueuedItem: () => {},
+  queueToast: null,
+  dismissQueueToast: () => {},
+};
+
+const NotificationQueueContext = createContext<NotificationQueueContextType>(defaultFallbackContext);
 
 const STORAGE_KEY = 'kck_assignment_queue';
 const GRACE_PERIOD_MS = 10 * 60 * 1000; // 10 minutes
@@ -359,22 +371,7 @@ export function NotificationQueueProvider({ children }: { children: React.ReactN
   );
 }
 
-const defaultFallbackContext: NotificationQueueContextType = {
-  queue: [],
-  pendingBatches: [],
-  queueAssignment: () => '',
-  flushBatchNow: async () => {},
-  flushAllNow: async () => {},
-  cancelBatch: () => {},
-  removeQueuedItem: () => {},
-  queueToast: null,
-  dismissQueueToast: () => {},
-};
-
 export function useNotificationQueue(): NotificationQueueContextType {
   const context = useContext(NotificationQueueContext);
-  if (!context) {
-    return defaultFallbackContext;
-  }
-  return context;
+  return context || defaultFallbackContext;
 }

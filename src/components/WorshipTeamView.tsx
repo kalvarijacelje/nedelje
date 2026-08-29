@@ -64,6 +64,7 @@ import {
   ExternalLink,
   Trash2,
   AlertTriangle,
+  ShieldAlert,
   CheckCircle2,
   Edit,
   Pencil,
@@ -215,8 +216,8 @@ export default function WorshipTeamView({
   blackoutDates = [],
   ministries = []
 }: WorshipTeamViewProps) {
-  // Active sub-tab state (Default to Sunday Schedule 'roster')
-  const [activeSubTab, setActiveSubTab] = useState<'roster' | 'songs' | 'sasu' | 'sound' | 'archive'>('roster');
+  // Active sub-tab state (Default to Sunday Schedule 'roster' for team, or 'songs' for Viewers)
+  const [activeSubTab, setActiveSubTab] = useState<'roster' | 'songs' | 'sasu' | 'sound' | 'archive'>(() => userRole === 'Viewer' ? 'songs' : 'roster');
   const [rosterYearView, setRosterYearView] = useState<'2026_2027' | '2025_2026'>('2026_2027');
   const [filterIncompleteOnly, setFilterIncompleteOnly] = useState(false);
 
@@ -2125,7 +2126,29 @@ export default function WorshipTeamView({
         </div>
       )}
       {activeSubTab === 'roster' && (
-        <div className="space-y-4 animate-fade-in">
+        userRole === 'Viewer' ? (
+          <div id="worship-roster-restricted" className="max-w-2xl mx-auto w-full p-8 my-8 bg-white border border-slate-200 rounded-2xl shadow-xs text-center space-y-4 font-sans animate-fade-in">
+            <div className="w-14 h-14 mx-auto bg-amber-50 text-amber-600 rounded-full flex items-center justify-center border border-amber-200 shadow-2xs">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-display font-semibold text-gray-900 text-base">
+                {currentLanguage === 'sl' ? 'Dostop do razporeda slavljenja je omejen' : 'Worship Roster Access Restricted'}
+              </h3>
+              <p className="text-xs font-semibold text-amber-900 max-w-md mx-auto">
+                {currentLanguage === 'sl'
+                  ? 'Razpored glasbenikov in tehnikov je dostopen le odobrenim sodelavcem'
+                  : 'Musician and technician schedules are accessible only to approved team servants and leaders'}
+              </p>
+            </div>
+            <p className="text-xs text-gray-500 max-w-md mx-auto leading-relaxed">
+              {currentLanguage === 'sl'
+                ? 'Kot pregledovalec si lahko ogledate pesmarico, sezname pesmi in povezave do posnetkov v zavihkih »Pesmi« in »SASU«.'
+                : 'As a viewer, you can browse the church songbook, lyrics, and recording links in the "Songs" and "SASU" tabs.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4 animate-fade-in">
           {/* Controls & Filter */}
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
             <div className="flex items-center gap-2 flex-1 flex-wrap">
@@ -2745,6 +2768,7 @@ export default function WorshipTeamView({
             </div>
           )}
         </div>
+        )
       )}
 
       {/* ==================== SUB-TAB 3: SOUND & STAGE GUIDE ==================== */}
