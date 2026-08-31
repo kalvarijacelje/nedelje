@@ -34,6 +34,8 @@ interface PeopleViewProps {
   onOpenNotificationModal?: () => void;
   googleToken?: string | null;
   onSetGoogleToken?: (token: string | null) => void;
+  confirmedViewerIds?: string[];
+  onConfirmViewer?: (userId: string, userEmail?: string) => void;
 }
 
 interface PendingUserItemCardProps {
@@ -45,6 +47,7 @@ interface PendingUserItemCardProps {
   onUpdateUserRole?: (userId: string, newRole: UserRole) => void;
   onAddPerson: (newPerson: Person) => void;
   onDeleteUser?: (userId: string, userEmail?: string) => void;
+  onConfirmViewer?: (userId: string, userEmail?: string) => void;
 }
 
 function PendingUserItemCard({
@@ -55,6 +58,7 @@ function PendingUserItemCard({
   onUpdateUserRole,
   onAddPerson,
   onDeleteUser,
+  onConfirmViewer,
 }: PendingUserItemCardProps) {
   // Smart auto-match: find person with similar name or email
   const nameLower = (user.displayName || '').toLowerCase().trim();
@@ -269,13 +273,16 @@ function PendingUserItemCard({
                   setSelectedRole(nextRole);
                   if (onUpdateUserRole) {
                     onUpdateUserRole(user.uid, nextRole);
-                    setStatusMsg({
-                      text: currentLanguage === 'sl'
-                        ? `✓ Vloga uporabnika ${user.displayName || user.email} shranjena (${nextRole})!`
-                        : `✓ Role updated to ${nextRole}!`,
-                      type: 'success'
-                    });
                   }
+                  if (nextRole === 'Viewer' && onConfirmViewer) {
+                    onConfirmViewer(user.uid, user.email);
+                  }
+                  setStatusMsg({
+                    text: currentLanguage === 'sl'
+                      ? `✓ Vloga uporabnika ${user.displayName || user.email} shranjena (${nextRole})!`
+                      : `✓ Role updated to ${nextRole}!`,
+                    type: 'success'
+                  });
                 }}
                 className="w-full text-xs px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-600 cursor-pointer shadow-2xs"
               >
@@ -288,16 +295,37 @@ function PendingUserItemCard({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleLinkExisting}
-              disabled={!selectedPersonName}
-              className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-2xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>{currentLanguage === 'sl' ? '✓ Poveži račun in shrani profil' : '✓ Link Account & Save Profile'}</span>
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={handleLinkExisting}
+                disabled={!selectedPersonName}
+                className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-2xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>{currentLanguage === 'sl' ? '✓ Poveži račun in shrani profil' : '✓ Link Account & Save Profile'}</span>
+              </button>
+
+              {onConfirmViewer && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onConfirmViewer(user.uid, user.email);
+                    setStatusMsg({
+                      text: currentLanguage === 'sl'
+                        ? `✓ Uporabnik ${user.displayName || user.email} je potrjen kot Gledalec (brez pravic urejanja). Obvestilo je odstranjeno!`
+                        : `✓ User ${user.displayName || user.email} confirmed as Viewer. Notification cleared!`,
+                      type: 'success'
+                    });
+                  }}
+                  className="w-full sm:w-auto px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold text-xs rounded-xl shadow-2xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                  title={currentLanguage === 'sl' ? 'Potrdi uporabnika kot Gledalca brez dodeljevanja služb' : 'Confirm user as Viewer without granting editing permissions'}
+                >
+                  <span>👁️ {currentLanguage === 'sl' ? 'Potrdi kot Gledalec (brez pravic)' : 'Keep as Viewer (no permissions)'}</span>
+                </button>
+              )}
+            </div>
 
             <button
               type="button"
@@ -410,6 +438,8 @@ export default function PeopleView({
   onOpenNotificationModal,
   googleToken,
   onSetGoogleToken,
+  confirmedViewerIds = [],
+  onConfirmViewer,
 }: PeopleViewProps) {
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
 
@@ -420,7 +450,10 @@ export default function PeopleView({
         provider: 'google',
         options: {
           scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.create',
-          redirectTo: window.location.origin
+          redirectTo: window.location.origin,
+          queryParams: {
+            prompt: 'select_account',
+          }
         }
       });
       if (error) {
@@ -761,6 +794,15 @@ export default function PeopleView({
 
   const pendingUsers = useMemo(() => {
     return (users || []).filter(u => {
+      const userEmailKey = (u.email || '').toLowerCase().trim();
+      const isConfirmed = 
+        confirmedViewerIds.includes(u.uid) || 
+        (userEmailKey && confirmedViewerIds.includes(userEmailKey)) ||
+        u.approval_status === 'viewer_approved';
+
+      // Confirmed Viewers do NOT show up in pending alerts!
+      if (isConfirmed) return false;
+
       const linkedPerson = (people || []).find(p => p && (
         (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
         (u.personName && p.name && p.name.toLowerCase().trim() === u.personName.toLowerCase().trim()) ||
@@ -768,10 +810,10 @@ export default function PeopleView({
         ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
       ));
       const isUnlinked = !linkedPerson;
-      const isViewer = u.role === 'Viewer';
-      return isUnlinked || isViewer;
+      const isUnconfirmedViewer = u.role === 'Viewer';
+      return isUnlinked || isUnconfirmedViewer;
     });
-  }, [users, people]);
+  }, [users, people, confirmedViewerIds]);
 
   const KNOWN_MINOR_IDS = useMemo(() => new Set([
     'p-tian_knap', 'p-hana_knap', 'p-natan_knap',
@@ -918,16 +960,32 @@ export default function PeopleView({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowPendingUsersModal(true);
-              }}
-              className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-xl transition cursor-pointer shrink-0 shadow-sm flex items-center justify-center gap-1.5"
-            >
-              <span>{currentLanguage === 'sl' ? '⚡ Poveži & Nastavi vloge' : '⚡ Link & Assign Roles'}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
+              {onConfirmViewer && viewersList.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    viewersList.forEach(v => onConfirmViewer(v.uid, v.email));
+                  }}
+                  className="w-full sm:w-auto px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+                  title={currentLanguage === 'sl' ? 'Potrdi gledalce brez dodeljevanja posebnih pravic in odstrani obvestilo' : 'Confirm viewers and dismiss alert'}
+                >
+                  <span>👁️ {currentLanguage === 'sl' ? (viewersList.length === 1 ? 'Potrdi kot Gledalca' : 'Potrdi vse Gledalce') : 'Confirm as Viewer(s)'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPendingUsersModal(true);
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-xl transition cursor-pointer shrink-0 shadow-sm flex items-center justify-center gap-1.5"
+              >
+                <span>{currentLanguage === 'sl' ? '⚡ Poveži & Nastavi vloge' : '⚡ Link & Assign Roles'}</span>
+              </button>
+            </div>
           </div>
         );
       })()}
@@ -3287,6 +3345,13 @@ export default function PeopleView({
             <div className="overflow-y-auto space-y-4 pr-1 flex-1">
               {(() => {
                 const list = (users || []).filter(u => {
+                  const userEmailKey = (u.email || '').toLowerCase().trim();
+                  const isConfirmed = 
+                    confirmedViewerIds.includes(u.uid) || 
+                    (userEmailKey && confirmedViewerIds.includes(userEmailKey)) ||
+                    u.approval_status === 'viewer_approved';
+                  if (isConfirmed) return false;
+
                   const linkedPerson = (people || []).find(p => p && (
                     p.name === u.personName || 
                     p.id === u.personName || 
@@ -3307,8 +3372,8 @@ export default function PeopleView({
                       </h4>
                       <p className="text-xs text-emerald-800 max-w-sm mx-auto">
                         {currentLanguage === 'sl' 
-                          ? 'Vsi registrirani Google računi so povezani s profili v bazi in imajo dodeljene ustrezne vloge.' 
-                          : 'All registered Google accounts have linked roster profiles and roles assigned.'}
+                          ? 'Vsi registrirani Google računi so povezani s profili v bazi ali potrjeni kot gledalci brez obvestil.' 
+                          : 'All registered Google accounts have linked roster profiles or are confirmed as viewers.'}
                       </p>
                       <button
                         type="button"
@@ -3331,6 +3396,7 @@ export default function PeopleView({
                     onUpdateUserRole={onUpdateUserRole}
                     onAddPerson={onAddPerson}
                     onDeleteUser={onDeleteUser}
+                    onConfirmViewer={onConfirmViewer}
                   />
                 ));
               })()}

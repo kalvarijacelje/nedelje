@@ -65,7 +65,11 @@ import {
   ChevronUp,
   MoreHorizontal,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  Mail,
+  Lock,
+  LogIn,
+  AlertCircle
 } from 'lucide-react';
 
 // Import Firebase Firestore utilities conditionally (fallback)
@@ -129,6 +133,10 @@ const PATH_TO_TAB: Record<string, TabType> = {
   '/': 'home',
   '/dom': 'home',
   '/domov': 'home',
+  '/prijava': 'home',
+  '/login': 'home',
+  '/vpis': 'home',
+  '/signin': 'home',
   '/razpored': 'sundays',
   '/statistika': 'statistics',
   '/analitika': 'statistics',
@@ -202,6 +210,35 @@ const removeDeletedPeopleKeys = (identifiers: (string | undefined)[]) => {
   saveDeletedPeopleKeys(filtered);
 };
 
+export const getRoleWeight = (role?: string | null): number => {
+  if (!role) return 1;
+  const r = role.toString().toLowerCase().trim();
+  if (r === 'superadmin' || r === 'admin') return 4;
+  if (r === 'leader') return 3;
+  if (r === 'servant' || r === 'volunteer') return 2;
+  return 1; // 'viewer', 'visitor', 'minor', etc.
+};
+
+export const ensureDesignatedLeaders = (peopleList: Person[]): { list: Person[]; changed: boolean } => {
+  let changed = false;
+  const list = peopleList.map(p => {
+    if (!p) return p;
+    const isNina = p.id === 'p-nina_cizic' || 
+      (p.email && p.email.toLowerCase().trim() === 'nina.cizic@gmail.com') ||
+      (p.name && (p.name.toLowerCase().trim() === 'nina čižič' || p.name.toLowerCase().trim() === 'nina cizic'));
+    const isDoroteja = p.id === 'p-doroteja_kolar' ||
+      (p.email && (p.email.toLowerCase().trim() === 'dkolar@drustvovec.si' || p.email.toLowerCase().trim() === 'doroteja.kolar@gmail.com')) ||
+      (p.name && p.name.toLowerCase().trim() === 'doroteja kolar');
+
+    if ((isNina || isDoroteja) && p.role !== 'Leader') {
+      changed = true;
+      return { ...p, role: 'Leader' as UserRole };
+    }
+    return p;
+  });
+  return { list, changed };
+};
+
 const deduplicatePeopleList = (list: Person[]): Person[] => {
   const result: Person[] = [];
   const seenIds = new Set<string>();
@@ -209,8 +246,18 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
   const emailToPerson = new Map<string, Person>();
   const nameToPerson = new Map<string, Person>();
 
-  // Sort list so that richer records (e.g. records with linked Google email, longer surname) come first
+  // Sort list so that higher-privilege and canonical records (Admin > Leader > Servant > Viewer, and 'p-' canonical IDs) come first
   const sorted = [...list].sort((a, b) => {
+    // 1. Higher role weight first
+    const roleDiff = getRoleWeight(b.role) - getRoleWeight(a.role);
+    if (roleDiff !== 0) return roleDiff;
+
+    // 2. Canonical roster IDs (starting with 'p-') come before arbitrary UUIDs
+    const aIsCanonical = (a.id || '').startsWith('p-') ? 1 : 0;
+    const bIsCanonical = (b.id || '').startsWith('p-') ? 1 : 0;
+    if (aIsCanonical !== bIsCanonical) return bIsCanonical - aIsCanonical;
+
+    // 3. Records with linked emails
     const aHasGoogleEmail = a.email && !a.email.includes('drustvovec.si');
     const bHasGoogleEmail = b.email && !b.email.includes('drustvovec.si');
     if (aHasGoogleEmail && !bHasGoogleEmail) return -1;
@@ -234,6 +281,12 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
     // 1. Deduplicate by matching non-empty phone number
     if (cleanPhone && phoneToPerson.has(cleanPhone)) {
       const existing = phoneToPerson.get(cleanPhone)!;
+      if (getRoleWeight(person.role) > getRoleWeight(existing.role)) {
+        existing.role = person.role;
+      }
+      if (person.id && person.id.startsWith('p-') && !existing.id.startsWith('p-')) {
+        existing.id = person.id;
+      }
       if (!(existing as any).auth_user_id && (person as any).auth_user_id) {
         (existing as any).auth_user_id = (person as any).auth_user_id;
       }
@@ -259,6 +312,12 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
     // 2. Deduplicate by matching non-empty email
     if (cleanEmail && emailToPerson.has(cleanEmail)) {
       const existing = emailToPerson.get(cleanEmail)!;
+      if (getRoleWeight(person.role) > getRoleWeight(existing.role)) {
+        existing.role = person.role;
+      }
+      if (person.id && person.id.startsWith('p-') && !existing.id.startsWith('p-')) {
+        existing.id = person.id;
+      }
       if (!(existing as any).auth_user_id && (person as any).auth_user_id) {
         (existing as any).auth_user_id = (person as any).auth_user_id;
       }
@@ -287,6 +346,12 @@ const deduplicatePeopleList = (list: Person[]): Person[] => {
       if (samePrefix && (Math.abs(cleanName.length - existingName.length) <= 3)) {
         if (existingPerson.role === person.role || (cleanPhone && existingPerson.phone && existingPerson.phone.replace(/[^0-9]/g, '') === cleanPhone)) {
           isNameVariantDuplicate = true;
+          if (getRoleWeight(person.role) > getRoleWeight(existingPerson.role)) {
+            existingPerson.role = person.role;
+          }
+          if (person.id && person.id.startsWith('p-') && !existingPerson.id.startsWith('p-')) {
+            existingPerson.id = person.id;
+          }
           if (!(existingPerson as any).auth_user_id && (person as any).auth_user_id) {
             (existingPerson as any).auth_user_id = (person as any).auth_user_id;
           }
@@ -743,6 +808,14 @@ export default function App() {
   const [userDbProfile, setUserDbProfile] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(false);
   const [dataLoading, setDataLoading] = useState<boolean>(false);
+  const [isSigningInGoogle, setIsSigningInGoogle] = useState<boolean>(false);
+  const [showEmailForm, setShowEmailForm] = useState<boolean>(false);
+  const [emailInput, setEmailInput] = useState<string>('');
+  const [passwordInput, setPasswordInput] = useState<string>('');
+  const [isEmailSubmitting, setIsEmailSubmitting] = useState<boolean>(false);
+  const [authEmailError, setAuthEmailError] = useState<string | null>(null);
+  const [isSendingMagicLink, setIsSendingMagicLink] = useState<boolean>(false);
+  const [magicLinkSent, setMagicLinkSent] = useState<boolean>(false);
   const [googleToken, setGoogleToken] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('church_roster_google_token') || sessionStorage.getItem('church_roster_google_token') || null;
@@ -771,27 +844,73 @@ export default function App() {
     return (saved as UserRole) || 'Admin';
   });
 
-  const [activePersonName, setActivePersonName] = useState<string>(() => {
-    const saved = localStorage.getItem('church_roster_active_person_v2');
-    return saved || 'Aleš Lajlar';
+  // Local role simulation: STRICTLY RESTRICTED TO GENUINE ADMINS
+  const [testRoleOverride, setTestRoleOverride] = useState<UserRole | null>(null);
+
+  // Confirmed Viewer IDs/emails: suppresses persistent pending role alerts for recognized Viewers
+  const [confirmedViewerIds, setConfirmedViewerIds] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('church_roster_confirmed_viewers_v2');
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
   });
 
   useEffect(() => {
-    localStorage.setItem('church_roster_active_person_v2', activePersonName);
+    try {
+      localStorage.removeItem('kck_local_test_role_override');
+    } catch {}
+  }, []);
+
+  const handleSetTestRole = (role: UserRole | null) => {
+    const isAles = (authUser?.email || '').toLowerCase().trim() === 'ales.lajlar@gmail.com';
+    const isDbAdmin = userDbProfile?.role === 'Admin';
+    if (!isAles && !isDbAdmin) {
+      setTestRoleOverride(null);
+      return;
+    }
+    setTestRoleOverride(role);
+  };
+
+  const [activePersonName, setActivePersonName] = useState<string>(() => {
+    const saved = localStorage.getItem('church_roster_active_person_v2');
+    return saved || '';
+  });
+
+  useEffect(() => {
+    if (activePersonName) {
+      localStorage.setItem('church_roster_active_person_v2', activePersonName);
+    } else {
+      localStorage.removeItem('church_roster_active_person_v2');
+    }
   }, [activePersonName]);
 
   // Calculate standard translations
   const translations: Translation = currentLanguage === 'sl' ? TRANS_SL : TRANS_EN;
   const ministries: Ministry[] = INITIAL_MINISTRIES;
 
-  // Active person object safely guarded against missing or null array elements
-  const activePerson: Person | null = (people || []).find(p => {
-    if (!p || typeof p !== 'object' || !p.name) return false;
-    if (p.name === activePersonName) return true;
-    if ((activePersonName === 'Aleš' || activePersonName === 'Aleš Lajlar') && (p.name === 'Aleš' || p.name === 'Aleš Lajlar' || p.id === 'p-ales' || p.id === 'p1')) return true;
-    if (authUser?.email && p.email && p.email.toLowerCase().trim() === authUser.email.toLowerCase().trim()) return true;
-    return false;
-  }) || (people || []).find(p => p && (p.name === 'Aleš' || p.name === 'Aleš Lajlar' || p.id === 'p-ales' || p.id === 'p1')) || null;
+  // Active person object strictly tied to authUser or active persona (NEVER falling back to Aleš Lajlar when someone else logs in!)
+  const activePerson: Person | null = (() => {
+    if (authUser) {
+      const userEmail = (authUser.email || '').toLowerCase().trim();
+      const match = (people || []).find(p => {
+        if (!p || typeof p !== 'object') return false;
+        if (userEmail && p.email && p.email.toLowerCase().trim() === userEmail) return true;
+        if (authUser.id && (p.id === authUser.id || (p as any).auth_user_id === authUser.id)) return true;
+        if (activePersonName && p.name && p.name.toLowerCase().trim() === activePersonName.toLowerCase().trim()) return true;
+        return false;
+      });
+      return match || null;
+    }
+    if (activePersonName) {
+      return (people || []).find(p => p && p.name && p.name.toLowerCase().trim() === activePersonName.toLowerCase().trim()) || null;
+    }
+    return null;
+  })();
 
   // Active upcoming duty count for active person & unread volunteer responses
   const unreadAppNotifsCount = (() => {
@@ -825,9 +944,16 @@ export default function App() {
 
   // Active role depending on authentication state or active persona
   const isAlesLoggedIn = (authUser?.email || '').toLowerCase().trim() === 'ales.lajlar@gmail.com';
-  const activeRole: UserRole = isAlesLoggedIn
+  const isGenuineAdmin = isAlesLoggedIn || userDbProfile?.role === 'Admin';
+  const resolvedDbOrPersonRole = userDbProfile?.role || activePerson?.role;
+  const actualAccountRole: UserRole = isAlesLoggedIn
     ? 'Admin'
-    : (userDbProfile?.role || activePerson?.role || (authUser ? 'Servant' : 'Viewer'));
+    : (resolvedDbOrPersonRole || (authUser ? 'Viewer' : 'Viewer'));
+
+  // ONLY genuine Admins are allowed to simulate roles (Leader, Servant, Viewer). Non-admins ALWAYS get their true role!
+  const activeRole: UserRole = (isGenuineAdmin && testRoleOverride)
+    ? testRoleOverride
+    : actualAccountRole;
 
   // Save changes to localStorage in legacy offline fallback mode
   useEffect(() => {
@@ -907,25 +1033,63 @@ export default function App() {
       // 2. Fetch fresh live profile from Supabase profiles table
       let dbProfile: any = null;
       try {
-        const { data } = await supabase
+        const { data: matchedProfiles } = await supabase
           .from('profiles')
-          .select('*')
-          .or(`auth_user_id.eq.${sessionUser.id},id.eq.${sessionUser.id},email.ilike.${userEmail},full_name.ilike.${userFullName || userEmail}`)
-          .maybeSingle();
-        dbProfile = data;
+          .select('id, auth_user_id, email, full_name, name, role, approval_status, preferred_ministries, led_ministries, family_members, is_exempt_from_burnout')
+          .or(`auth_user_id.eq.${sessionUser.id},id.eq.${sessionUser.id},email.ilike.${userEmail}`)
+          .limit(5);
+
+        if (matchedProfiles && matchedProfiles.length > 0) {
+          // Sort to prioritize highest role (Admin > Leader > Servant > Viewer) and canonical IDs (p-*)
+          const sortedProfiles = [...matchedProfiles].sort((a, b) => {
+            const roleDiff = getRoleWeight(b.role) - getRoleWeight(a.role);
+            if (roleDiff !== 0) return roleDiff;
+            const aIsCanonical = (a.id || '').startsWith('p-') ? 1 : 0;
+            const bIsCanonical = (b.id || '').startsWith('p-') ? 1 : 0;
+            return bIsCanonical - aIsCanonical;
+          });
+          dbProfile = sortedProfiles[0];
+        }
       } catch (e) { /* ignore */ }
 
-      // Find in loaded people list
+      // Find in loaded people list or fallback to initial roster
       let matchedPerson = currentPeople.find(p => p && (
         (p.id && (p.id === sessionUser.id || (p as any).auth_user_id === sessionUser.id || (dbProfile && p.id === dbProfile.id))) ||
         (p.email && p.email.toLowerCase().trim() === userEmail) ||
         (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
       ));
 
+      if (!matchedPerson) {
+        matchedPerson = INITIAL_PEOPLE.find(p => p && (
+          (p.email && p.email.toLowerCase().trim() === userEmail) ||
+          (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
+        ));
+      }
+
+      // Explicit check for designated leaders requested by user
+      const isNina = userEmail === 'nina.cizic@gmail.com' || (userFullName && userFullName.toLowerCase().includes('nina'));
+      const isDoroteja = userEmail === 'dkolar@drustvovec.si' || userEmail === 'doroteja.kolar@gmail.com' || (userFullName && userFullName.toLowerCase().includes('doroteja'));
+
+      // Determine resolved role: preserve any assigned Leader or Servant role!
       let resolvedRole: UserRole = 'Viewer';
 
+      if (isNina || isDoroteja) {
+        resolvedRole = 'Leader';
+      } else {
+        const dbRole = dbProfile?.role ? normalizeUserRole(dbProfile.role) : null;
+        const rosterRole = matchedPerson?.role ? normalizeUserRole(matchedPerson.role) : null;
+
+        // Never downgrade an assigned Leader or Servant to Viewer!
+        const candidateRoles = [dbRole, rosterRole].filter(Boolean) as UserRole[];
+        if (candidateRoles.length > 0) {
+          candidateRoles.sort((a, b) => getRoleWeight(b) - getRoleWeight(a));
+          resolvedRole = candidateRoles[0];
+        } else {
+          resolvedRole = 'Viewer';
+        }
+      }
+
       if (dbProfile) {
-        resolvedRole = normalizeUserRole(dbProfile.role);
         const dbPreferred = Array.isArray(dbProfile.preferred_ministries) ? dbProfile.preferred_ministries : [];
         const dbLed = Array.isArray(dbProfile.led_ministries) ? dbProfile.led_ministries : [];
         const dbFamily = Array.isArray(dbProfile.family_members) ? dbProfile.family_members : [];
@@ -934,9 +1098,9 @@ export default function App() {
           matchedPerson = {
             ...matchedPerson,
             role: resolvedRole,
-            preferredMinistries: dbPreferred,
-            ledMinistries: dbLed,
-            familyMembers: dbFamily
+            preferredMinistries: dbPreferred.length > 0 ? dbPreferred : (matchedPerson.preferredMinistries || []),
+            ledMinistries: dbLed.length > 0 ? dbLed : (matchedPerson.ledMinistries || []),
+            familyMembers: dbFamily.length > 0 ? dbFamily : (matchedPerson.familyMembers || [])
           };
         } else {
           matchedPerson = {
@@ -951,7 +1115,10 @@ export default function App() {
           };
         }
       } else if (matchedPerson) {
-        resolvedRole = normalizeUserRole(matchedPerson.role);
+        matchedPerson = {
+          ...matchedPerson,
+          role: resolvedRole
+        };
       }
 
       if (matchedPerson) {
@@ -988,12 +1155,15 @@ export default function App() {
 
         // Link auth_user_id without downgrading or overwriting their role
         try {
+          const profileIdToUpdate = dbProfile?.id || matchedPerson.id;
           await supabase.from('profiles').update({
             auth_user_id: sessionUser.id,
-            email: sessionUser.email || matchedPerson.email
-          }).eq('id', matchedPerson.id);
+            email: sessionUser.email || matchedPerson.email || userEmail,
+            role: resolvedRole,
+            updated_at: new Date().toISOString()
+          }).or(`id.eq.${profileIdToUpdate},email.ilike.${userEmail}`);
 
-          if (matchedPerson.id !== sessionUser.id) {
+          if (matchedPerson.id !== sessionUser.id && profileIdToUpdate !== sessionUser.id) {
             await supabase.from('profiles').delete().eq('id', sessionUser.id).catch(() => {});
           }
         } catch (e) { /* ignore */ }
@@ -1195,14 +1365,22 @@ export default function App() {
         if (remotePeople.length > 0) {
           const localPeople = safeParsePeople(localStorage.getItem('church_roster_people_v2'));
           const merged = mergePeopleWithDefaults(remotePeople, localPeople);
-          setPeople(merged);
-          try { localStorage.setItem('church_roster_people_v2', JSON.stringify(merged)); } catch (e) {}
+          const { list: enforcedList, changed } = ensureDesignatedLeaders(merged);
+          setPeople(enforcedList);
+          try { localStorage.setItem('church_roster_people_v2', JSON.stringify(enforcedList)); } catch (e) {}
+
+          if (changed && IS_SUPABASE_CONFIGURED) {
+            supabase.from('profiles').update({ role: 'Leader', updated_at: new Date().toISOString() })
+              .or('email.ilike.nina.cizic@gmail.com,id.eq.p-nina_cizic,name.ilike.Nina Čižič,full_name.ilike.Nina Čižič').catch(() => {});
+            supabase.from('profiles').update({ role: 'Leader', updated_at: new Date().toISOString() })
+              .or('email.ilike.dkolar@drustvovec.si,id.eq.p-doroteja_kolar,name.ilike.Doroteja Kolar,full_name.ilike.Doroteja Kolar').catch(() => {});
+          }
 
           // Sync current logged in user's profile role if matched
           if (authUser) {
             const myEmail = (authUser.email || '').toLowerCase().trim();
             const myUid = authUser.id || authUser.uid;
-            const myPerson = (merged || []).find(p => p && (
+            const myPerson = (enforcedList || []).find(p => p && (
               (myEmail && p.email && p.email.toLowerCase().trim() === myEmail) ||
               ((p as any).auth_user_id === myUid) ||
               (p.id === myUid)
@@ -1224,7 +1402,15 @@ export default function App() {
         if (remoteUsers.length > 0) {
           setUsers(prev => {
             const map = new Map<string, User>();
-            remoteUsers.forEach(u => map.set(u.uid, u));
+            remoteUsers.forEach(u => {
+              const isNinaOrDoroteja = (
+                (u.email && (u.email.toLowerCase() === 'nina.cizic@gmail.com' || u.email.toLowerCase() === 'dkolar@drustvovec.si' || u.email.toLowerCase() === 'doroteja.kolar@gmail.com')) ||
+                (u.displayName && (u.displayName.toLowerCase().includes('nina čižič') || u.displayName.toLowerCase().includes('doroteja kolar'))) ||
+                (u.personName && (u.personName.toLowerCase().includes('nina čižič') || u.personName.toLowerCase().includes('doroteja kolar')))
+              );
+              const role = isNinaOrDoroteja ? 'Leader' : u.role;
+              map.set(u.uid, { ...u, role });
+            });
             prev.forEach(u => {
               if (!map.has(u.uid)) map.set(u.uid, u);
             });
@@ -1265,14 +1451,24 @@ export default function App() {
         ]);
 
         if (freshPeople.length > 0) {
-          setPeople(freshPeople);
-          try { localStorage.setItem('church_roster_people_v2', JSON.stringify(freshPeople)); } catch (e) {}
+          const merged = mergePeopleWithDefaults(freshPeople, peopleRef.current);
+          const { list: enforcedList } = ensureDesignatedLeaders(merged);
+          setPeople(enforcedList);
+          try { localStorage.setItem('church_roster_people_v2', JSON.stringify(enforcedList)); } catch (e) {}
         }
 
         if (freshUsers.length > 0) {
           setUsers(prev => {
             const map = new Map<string, User>();
-            freshUsers.forEach(u => map.set(u.uid, u));
+            freshUsers.forEach(u => {
+              const isNinaOrDoroteja = (
+                (u.email && (u.email.toLowerCase() === 'nina.cizic@gmail.com' || u.email.toLowerCase() === 'dkolar@drustvovec.si' || u.email.toLowerCase() === 'doroteja.kolar@gmail.com')) ||
+                (u.displayName && (u.displayName.toLowerCase().includes('nina čižič') || u.displayName.toLowerCase().includes('doroteja kolar'))) ||
+                (u.personName && (u.personName.toLowerCase().includes('nina čižič') || u.personName.toLowerCase().includes('doroteja kolar')))
+              );
+              const role = isNinaOrDoroteja ? 'Leader' : u.role;
+              map.set(u.uid, { ...u, role });
+            });
             prev.forEach(u => {
               if (!map.has(u.uid)) map.set(u.uid, u);
             });
@@ -1383,20 +1579,90 @@ export default function App() {
   }, [sundays, people]);
 
   const handleGoogleLogin = async () => {
+    setIsSigningInGoogle(true);
+    setAuthEmailError(null);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin
+          redirectTo: window.location.origin,
+          queryParams: {
+            prompt: 'select_account'
+          }
         }
       });
       if (error) {
         console.error('Supabase Google OAuth error:', error);
-        alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + error.message);
+        setAuthEmailError((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + error.message);
       }
     } catch (err: any) {
       console.error('Failed signing in with Google provider:', err);
-      alert((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + (err?.message || err));
+      setAuthEmailError((currentLanguage === 'sl' ? 'Napaka pri prijavi z Google računom: ' : 'Google Sign-In failed: ') + (err?.message || err));
+    } finally {
+      setIsSigningInGoogle(false);
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput || !passwordInput) return;
+    setIsEmailSubmitting(true);
+    setAuthEmailError(null);
+    setMagicLinkSent(false);
+
+    try {
+      if (supabase) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: emailInput.trim(),
+          password: passwordInput,
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        if (data?.session?.user) {
+          await syncUserSession(data.session.user);
+        }
+      }
+    } catch (err: any) {
+      console.warn('Email sign-in notice:', err);
+      setAuthEmailError(
+        err?.message ||
+        (currentLanguage === 'sl'
+          ? 'Napačen e-poštni naslov ali geslo.'
+          : 'Invalid email or password.')
+      );
+    } finally {
+      setIsEmailSubmitting(false);
+    }
+  };
+
+  const handleMagicLinkSignIn = async () => {
+    if (!emailInput || !emailInput.includes('@')) {
+      setAuthEmailError(currentLanguage === 'sl' ? 'Vnesite veljaven e-poštni naslov.' : 'Please enter a valid email address.');
+      return;
+    }
+    setIsSendingMagicLink(true);
+    setAuthEmailError(null);
+    setMagicLinkSent(false);
+
+    try {
+      if (supabase) {
+        const { error } = await supabase.auth.signInWithOtp({
+          email: emailInput.trim(),
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
+        });
+        if (error) throw error;
+        setMagicLinkSent(true);
+      }
+    } catch (err: any) {
+      console.warn('Magic link error:', err);
+      setAuthEmailError(err?.message || (currentLanguage === 'sl' ? 'Pošiljanje povezave ni uspelo.' : 'Failed to send login link.'));
+    } finally {
+      setIsSendingMagicLink(false);
     }
   };
 
@@ -1405,9 +1671,14 @@ export default function App() {
       await performGlobalSignOut();
       setUserDbProfile(null);
       setAuthUser(null);
+      setActivePersonName('');
+      localStorage.removeItem('church_roster_active_person_v2');
+      localStorage.removeItem('kck_local_test_role_override');
+      setTestRoleOverride(null);
       setGoogleToken(null);
       setSelectedSundayId(null);
       setActiveTab('home');
+      window.location.reload();
     } catch (err) {
       console.error('Failed log out session:', err);
     }
@@ -1417,9 +1688,25 @@ export default function App() {
   const handleUpdateUserRole = async (userId: string, newRole: UserRole) => {
     const targetUser = users.find(u => u.uid === userId);
     const userName = targetUser?.displayName || targetUser?.personName || targetUser?.email || 'Uporabnik';
+    const userEmailKey = (targetUser?.email || '').toLowerCase().trim();
 
     // 1. Optimistic React state update
     setUsers(prev => prev.map(u => u.uid === userId ? { ...u, role: newRole } : u));
+
+    // Auto-sync confirmed viewer state: if explicitly set to Viewer, dismiss notification
+    if (newRole === 'Viewer') {
+      setConfirmedViewerIds(prev => {
+        const updated = Array.from(new Set([...prev, userId, userEmailKey].filter(Boolean)));
+        try { localStorage.setItem('church_roster_confirmed_viewers_v2', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    } else {
+      setConfirmedViewerIds(prev => {
+        const updated = prev.filter(id => id !== userId && id !== userEmailKey);
+        try { localStorage.setItem('church_roster_confirmed_viewers_v2', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
 
     // 2. Also update linked person in `people` roster if exists
     const linkedPerson = (people || []).find(p => p && (
@@ -1454,8 +1741,12 @@ export default function App() {
       try {
         const { error } = await supabase
           .from('profiles')
-          .update({ role: newRole, updated_at: new Date().toISOString() })
-          .eq('id', userId);
+          .update({ 
+            role: newRole, 
+            approval_status: newRole === 'Viewer' ? 'viewer_approved' : 'approved',
+            updated_at: new Date().toISOString() 
+          })
+          .or(`id.eq.${userId},auth_user_id.eq.${userId},email.ilike.${userEmailKey || 'none'}`);
 
         if (error) {
           console.warn('[Supabase] Role update notice:', error.message);
@@ -1471,6 +1762,45 @@ export default function App() {
         await setDoc(docRef, sanitizeForFirestore({ role: newRole }), { merge: true });
       } catch (err) {
         console.warn('Firestore role notice:', err);
+      }
+    }
+  };
+
+  const handleConfirmViewer = async (userId: string, userEmail?: string) => {
+    const targetUser = users.find(u => u.uid === userId || (userEmail && u.email.toLowerCase().trim() === userEmail.toLowerCase().trim()));
+    const userName = targetUser?.displayName || targetUser?.personName || targetUser?.email || 'Uporabnik';
+    const emailToAdd = (userEmail || targetUser?.email || '').toLowerCase().trim();
+
+    // 1. Optimistic React state update: immediately dismiss notification
+    setConfirmedViewerIds(prev => {
+      const updated = Array.from(new Set([...prev, userId, emailToAdd].filter(Boolean)));
+      try { localStorage.setItem('church_roster_confirmed_viewers_v2', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+
+    setUsers(prev => prev.map(u => (u.uid === userId || (emailToAdd && u.email.toLowerCase().trim() === emailToAdd)) ? { ...u, role: 'Viewer', approval_status: 'viewer_approved' } : u));
+
+    // 2. Show instant toast
+    setRoleActionToast({
+      message: currentLanguage === 'sl'
+        ? `✓ ${userName} je potrjen kot Gledalec (Viewer). Obvestilo je odstranjeno.`
+        : `✓ ${userName} confirmed as Viewer. Notification dismissed.`,
+      type: 'success'
+    });
+
+    // 3. Persist to Supabase profiles
+    if (IS_SUPABASE_CONFIGURED) {
+      try {
+        await supabase
+          .from('profiles')
+          .update({ 
+            role: 'Viewer', 
+            approval_status: 'viewer_approved',
+            updated_at: new Date().toISOString() 
+          })
+          .or(`id.eq.${userId},auth_user_id.eq.${userId},email.ilike.${emailToAdd || 'none'}`);
+      } catch (err) {
+        console.warn('Supabase confirm viewer notice:', err);
       }
     }
   };
@@ -1913,72 +2243,217 @@ export default function App() {
 
   // Active secure sign in check: ALWAYS require login if not authenticated!
   if (!authUser) {
+    const loginBgUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_LOGIN_BG_URL) || '/kck-coffee-bar.jpg';
+
     return (
-      <div className="flex flex-col min-h-screen bg-[#F3F4F6] font-sans">
-        {/* Banner with language change */}
-        <header className="bg-white border-b border-gray-200 py-3 px-4">
-          <div className="max-w-lg mx-auto flex items-center justify-between">
+      <div className="min-h-screen w-full relative flex flex-col justify-between overflow-x-hidden bg-[#150309] select-none">
+        {/* Full-Screen Atmospheric Background Image */}
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-all duration-700"
+          style={{ backgroundImage: `url(${loginBgUrl})` }}
+        />
+
+        {/* Warm Cinematic Dark Vignette Overlay & Soft Backdrop Blur */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/55 to-black/85 backdrop-blur-[2px]" />
+
+        {/* Top Floating Pill Header */}
+        <header className="relative z-10 w-full px-4 sm:px-8 py-4 sm:py-6 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 bg-black/40 hover:bg-black/55 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-white/15 transition shadow-sm">
+            <img
+              src="/KCK-logo-rdec-sekundaren_small.png"
+              alt="KCK"
+              className="w-7 h-7 object-contain rounded-full shadow-2xs shrink-0"
+            />
             <div className="flex items-center gap-2">
-              <KcKalvarijaLogo className="w-8 h-8" />
-              <div>
-                <span className="text-sm font-semibold tracking-tight text-slate-900 block font-display leading-tight">
-                  {translations.title}
-                </span>
-              </div>
+              <span className="text-xs sm:text-sm font-bold tracking-tight text-white font-display">
+                KCK Celje
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#93032E] text-white shadow-2xs">
+                {currentLanguage === 'sl' ? 'Planer' : 'Hub'}
+              </span>
             </div>
-            <button
-              onClick={() => setCurrentLanguage(prev => prev === 'sl' ? 'en' : 'sl')}
-              className="text-[11px] font-mono font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-md transition flex items-center gap-1 cursor-pointer"
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>{currentLanguage === 'sl' ? 'EN' : 'SL'}</span>
-            </button>
           </div>
+
+          <button
+            onClick={() => setCurrentLanguage(prev => prev === 'sl' ? 'en' : 'sl')}
+            className="text-xs font-bold font-mono bg-black/40 hover:bg-black/60 text-white px-3 py-1.5 rounded-xl border border-white/15 transition flex items-center gap-1.5 cursor-pointer backdrop-blur-md shadow-sm active:scale-95"
+            title={currentLanguage === 'sl' ? 'Preklopi jezik' : 'Switch language'}
+          >
+            <Globe className="w-3.5 h-3.5 text-amber-300" />
+            <span>{currentLanguage === 'sl' ? 'SLO ➔ EN' : 'EN ➔ SLO'}</span>
+          </button>
         </header>
 
-        {/* Secure gate panel centering */}
-        <main className="flex-1 flex items-center justify-center px-4 py-12">
-          <div className="max-w-md w-full bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6">
-            <div className="text-center space-y-2">
-              <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto p-1.5 shadow-xs">
-                <KcKalvarijaLogo className="w-full h-full" />
+        {/* Centered Frosted Glass Login Panel */}
+        <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-6 sm:py-10 my-auto">
+          <div className="max-w-md w-full bg-white/95 backdrop-blur-xl border border-white/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-slate-900 animate-in fade-in zoom-in-95 duration-200">
+            {/* Top Brand Logo & Welcome Headings */}
+            <div className="text-center space-y-3">
+              {/* Prominent High-Res KCK Logo */}
+              <div className="inline-flex items-center justify-center p-3.5 sm:p-4 bg-white rounded-2xl shadow-xs border border-slate-100/90 mx-auto">
+                <img
+                  src="/KCK-logo-rdec_small.png"
+                  alt="Krščanska cerkev Kalvarija Celje"
+                  className="h-10 sm:h-12 w-auto object-contain"
+                />
               </div>
-              <h2 className="text-xl font-display font-semibold text-slate-900">
-                {currentLanguage === 'sl' ? 'Prijava v Planer' : 'Sunday Worship Hub'}
-              </h2>
-              <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                {currentLanguage === 'sl' 
-                  ? 'Za dostop do nedeljskih razporedov in pokritosti služb se prijavite s svojim Googlovim računom.' 
-                  : 'To view community rosters, absent notes, and live coverage plans, please sign in with Google.'}
-              </p>
+
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#93032E]/10 text-[#93032E]">
+                  <span>✦ {currentLanguage === 'sl' ? 'Nedeljske službe & ekipe' : 'Sunday Teams & Ministry'} ✦</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-black font-display text-slate-900 tracking-tight">
+                  {currentLanguage === 'sl' ? 'Prijava v Planer' : 'Sunday Worship Hub'}
+                </h1>
+                <p className="text-xs text-slate-600 max-w-xs mx-auto leading-relaxed">
+                  {currentLanguage === 'sl' 
+                    ? 'Dobrodošli! Za dostop do nedeljskih razporedov, služb in gradiv se prijavite s svojim računom.' 
+                    : 'Welcome! Sign in with your account to view service rosters, duty coverage, and materials.'}
+                </p>
+              </div>
             </div>
 
+            {/* Error banner if authentication fails */}
+            {authEmailError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200/80 rounded-2xl text-xs text-rose-700 flex items-start gap-2.5 animate-in fade-in duration-150">
+                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                <span className="leading-snug font-medium">{authEmailError}</span>
+              </div>
+            )}
+
+            {/* 1. Primary Google Sign-In */}
             <button
+              type="button"
               onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-2 bg-slate-950 text-white hover:bg-slate-850 px-4 py-3 rounded-xl transition duration-150 font-semibold text-xs border border-slate-950 shadow-sm cursor-pointer active:scale-95"
+              disabled={isSigningInGoogle}
+              className="w-full flex items-center justify-center gap-3 bg-slate-950 hover:bg-slate-850 text-white px-4 py-3.5 rounded-2xl font-bold text-sm shadow-md transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 group"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>{currentLanguage === 'sl' ? 'Prijava z Google računom' : 'Continue with Google'}</span>
+              {isSigningInGoogle ? (
+                <Loader2 className="w-5 h-5 animate-spin text-amber-300" />
+              ) : (
+                <svg className="w-5 h-5 shrink-0 group-hover:scale-105 transition-transform" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                </svg>
+              )}
+              <span>
+                {isSigningInGoogle
+                  ? (currentLanguage === 'sl' ? 'Povezovanje z Google...' : 'Connecting with Google...')
+                  : (currentLanguage === 'sl' ? 'Nadaljuj z Google računom' : 'Continue with Google')}
+              </span>
             </button>
+
+            {/* 2. Collapsible Dropdown Bar with arrow for Email Sign In */}
+            <div className="pt-2 border-t border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => setShowEmailForm(prev => !prev)}
+                className="w-full flex items-center justify-between py-2 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer select-none"
+              >
+                <span>
+                  {currentLanguage === 'sl'
+                    ? 'Ali pa se prijavi z e-pošto in geslom'
+                    : 'Or sign in with email and password'}
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform duration-200 text-slate-400 ${
+                    showEmailForm ? 'rotate-180 text-[#93032E]' : ''
+                  }`}
+                />
+              </button>
+
+              {showEmailForm && (
+                <form
+                  onSubmit={handleEmailLogin}
+                  className="mt-2.5 p-4 bg-slate-50/90 rounded-2xl border border-slate-200/90 space-y-3 animate-in fade-in slide-in-from-top-2 duration-150"
+                >
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      {currentLanguage === 'sl' ? 'E-poštni naslov' : 'Email Address'}
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="email"
+                        required
+                        value={emailInput}
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        placeholder="vasa.eposta@domena.si"
+                        className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#93032E] focus:outline-none bg-white text-slate-900 placeholder:text-slate-400 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      {currentLanguage === 'sl' ? 'Geslo' : 'Password'}
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="password"
+                        required
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#93032E] focus:outline-none bg-white text-slate-900 placeholder:text-slate-400 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isEmailSubmitting}
+                    className="w-full py-2.5 rounded-xl bg-[#93032E] hover:bg-[#7a0225] text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50"
+                  >
+                    {isEmailSubmitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    ) : (
+                      <LogIn className="w-4 h-4" />
+                    )}
+                    <span>
+                      {isEmailSubmitting
+                        ? (currentLanguage === 'sl' ? 'Preverjanje...' : 'Verifying...')
+                        : (currentLanguage === 'sl' ? 'Prijava z e-pošto' : 'Sign In with Email')}
+                    </span>
+                  </button>
+
+                  <div className="pt-1.5 text-center border-t border-slate-200/60">
+                    <button
+                      type="button"
+                      onClick={handleMagicLinkSignIn}
+                      disabled={isSendingMagicLink || !emailInput}
+                      className="text-[11px] text-slate-500 hover:text-[#93032E] underline cursor-pointer disabled:opacity-50 disabled:no-underline transition-colors"
+                    >
+                      {isSendingMagicLink
+                        ? (currentLanguage === 'sl' ? 'Pošiljanje povezave...' : 'Sending link...')
+                        : (currentLanguage === 'sl' ? 'Nimate gesla? Pošlji povezavo za prijavo na e-pošto' : "Don't have a password? Send login link to email")}
+                    </button>
+                    {magicLinkSent && (
+                      <p className="text-[11px] text-emerald-600 font-medium mt-1 animate-in fade-in">
+                        {currentLanguage === 'sl' ? '✓ Povezava za prijavo poslana na vaš e-poštni naslov!' : '✓ Login link sent to your email address!'}
+                      </p>
+                    )}
+                  </div>
+                </form>
+              )}
+            </div>
+
+            {/* Security footnote */}
+            <div className="pt-1 text-[11px] text-slate-400 text-center font-medium">
+              {currentLanguage === 'sl'
+                ? 'Varno overjanje • Povezano z zbirko podatkov KCK Supabase'
+                : 'Secure authentication • Linked to KCK Supabase database'}
+            </div>
           </div>
         </main>
+
+        {/* Bottom footer credit */}
+        <footer className="relative z-10 py-4 px-6 text-center text-xs text-white/70 tracking-wide font-medium">
+          <span>Krščanska cerkev Kalvarija Celje • nedelje.kalvarija.si</span>
+        </footer>
       </div>
     );
   }
@@ -1992,8 +2467,10 @@ export default function App() {
         user={authUser ? {
           name: isAlesLoggedIn ? 'Aleš Lajlar' : (activePerson?.name || userDbProfile?.personName || userDbProfile?.displayName || authUser.user_metadata?.full_name || authUser.user_metadata?.name || (authUser.email ? authUser.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'Uporabnik')),
           email: authUser.email || '',
-          role: isAlesLoggedIn ? 'Superadmin' : activeRole,
+          role: isAlesLoggedIn ? (testRoleOverride || 'Superadmin') : activeRole,
         } : null}
+        testRole={isGenuineAdmin ? testRoleOverride : null}
+        onTestRoleChange={isGenuineAdmin ? handleSetTestRole : undefined}
         onLogin={handleGoogleLogin}
         onLogout={handleSignOut}
         currentLang={currentLanguage}
@@ -2065,20 +2542,18 @@ export default function App() {
               <span>{currentLanguage === 'sl' ? 'Službe' : 'Teams'}</span>
             </button>
 
-            {canAccessPersonalData(activeRole) && (
-              <button
-                onClick={() => handleNavTab('people')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
-                  activeTab === 'people'
-                    ? 'bg-[#93032E] text-white shadow-xs'
-                    : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
-                }`}
-                title={currentLanguage === 'sl' ? 'Ekipa' : 'People'}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>{currentLanguage === 'sl' ? 'Ekipa' : 'People'}</span>
-              </button>
-            )}
+            <button
+              onClick={() => handleNavTab('people')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Nohemi',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer select-none whitespace-nowrap ${
+                activeTab === 'people'
+                  ? 'bg-[#93032E] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-[#93032E] hover:bg-slate-100/80'
+              }`}
+              title={currentLanguage === 'sl' ? 'Ekipa' : 'People'}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>{currentLanguage === 'sl' ? 'Ekipa' : 'People'}</span>
+            </button>
           </>
         }
         rightActionItems={
@@ -2114,15 +2589,15 @@ export default function App() {
         }
       />
 
-      {/* Roster Alert Info (Hidden for logged in leaders/admins/superadmin) */}
-      {!isAlesLoggedIn && activeRole === 'Viewer' && !authUser && (
+      {/* Roster Alert Info (Visible for viewers across the app) */}
+      {!isAlesLoggedIn && activeRole === 'Viewer' && (
         <div className="bg-amber-500/10 border-b border-amber-500/10 py-1.5 px-4 text-center">
           <div className="max-w-7xl mx-auto flex items-center justify-center gap-1 text-[11px] font-medium text-amber-800">
             <span className="shrink-0">⚠️</span>
             <span>
               {currentLanguage === 'sl' 
-                ? 'Prikaz za gledalce: urejanje in dodeljevanje storitev je zaklenjeno.' 
-                : 'Viewer mode: Editing and volunteer allocation is currently read-only.'}
+                ? 'Prikaz za gledalce: osebni podatki in urejanje služb so omejeni. Za sodelovanje kontaktirajte administratorja.' 
+                : 'Viewer mode: Personal contact details and schedule editing are restricted. Contact an administrator for team access.'}
             </span>
           </div>
         </div>
@@ -2288,6 +2763,8 @@ export default function App() {
                 onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
                 googleToken={googleToken}
                 onSetGoogleToken={handleSetGoogleToken}
+                confirmedViewerIds={confirmedViewerIds}
+                onConfirmViewer={handleConfirmViewer}
               />
             )}
 
@@ -2313,26 +2790,33 @@ export default function App() {
 
                 <div className="border-t border-gray-200/80 my-6 pt-6">
                   {(() => {
-                    const unlinkedCount = users.filter(u => !people.some(p => p && (
-                      p.name === u.personName || 
-                      p.id === u.personName || 
-                      (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
-                      ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
-                    ))).length;
-                    const viewerCount = users.filter(u => u.role === 'Viewer').length;
+                    const unlinkedCount = users.filter(u => {
+                      const isConfirmed = confirmedViewerIds.includes(u.uid) || (u.email && confirmedViewerIds.includes(u.email.toLowerCase().trim())) || u.approval_status === 'viewer_approved';
+                      if (isConfirmed) return false;
+                      return !people.some(p => p && (
+                        p.name === u.personName || 
+                        p.id === u.personName || 
+                        (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
+                        ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
+                      ));
+                    }).length;
+                    const unconfirmedViewerCount = users.filter(u => {
+                      const isConfirmed = confirmedViewerIds.includes(u.uid) || (u.email && confirmedViewerIds.includes(u.email.toLowerCase().trim())) || u.approval_status === 'viewer_approved';
+                      return u.role === 'Viewer' && !isConfirmed;
+                    }).length;
 
                     return (
                       <button
                         type="button"
                         onClick={() => setShowManageUserRoles(!showManageUserRoles)}
                         className={`w-full flex items-center justify-between p-4 rounded-2xl transition cursor-pointer font-sans border shadow-xs ${
-                          unlinkedCount > 0 
+                          (unlinkedCount > 0 || unconfirmedViewerCount > 0)
                             ? 'bg-amber-50 hover:bg-amber-100/90 border-amber-300' 
                             : 'bg-white hover:bg-slate-50 border-slate-200/90'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
-                          <div className={`p-2 rounded-xl shrink-0 ${unlinkedCount > 0 ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                          <div className={`p-2 rounded-xl shrink-0 ${(unlinkedCount > 0 || unconfirmedViewerCount > 0) ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
                             <ShieldAlert className="w-5 h-5" />
                           </div>
                           <span className="font-display font-bold text-sm uppercase tracking-wider text-slate-800 font-mono">
@@ -2346,9 +2830,13 @@ export default function App() {
                               ⚠️ {unlinkedCount} {currentLanguage === 'sl' ? 'nepovezanih' : 'unlinked'}
                             </span>
                           )}
-                          {viewerCount > 0 && (
+                          {unconfirmedViewerCount > 0 ? (
+                            <span className="text-xs bg-amber-600 text-white font-mono font-bold px-2.5 py-0.5 rounded-full shrink-0 shadow-2xs">
+                              👁️ {unconfirmedViewerCount} {currentLanguage === 'sl' ? 'čaka na vlogo' : 'pending review'}
+                            </span>
+                          ) : (
                             <span className="text-xs bg-slate-100 text-slate-700 border border-slate-300 font-mono font-bold px-2.5 py-0.5 rounded-full shrink-0">
-                              👁️ {viewerCount} {currentLanguage === 'sl' ? 'gledalcev' : 'viewers'}
+                              👁️ {users.filter(u => u.role === 'Viewer').length} {currentLanguage === 'sl' ? 'gledalcev' : 'viewers'}
                             </span>
                           )}
                         </div>
@@ -2380,7 +2868,8 @@ export default function App() {
                           ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
                         ));
                         const currentLinkVal = linkedPerson ? linkedPerson.name : (u.personName || '');
-                        const isUnlinked = !linkedPerson;
+                        const isConfirmedViewer = confirmedViewerIds.includes(u.uid) || (u.email && confirmedViewerIds.includes(u.email.toLowerCase().trim())) || u.approval_status === 'viewer_approved';
+                        const isUnlinked = !linkedPerson && !isConfirmedViewer;
 
                         return (
                           <div key={u.uid} className={`rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition shadow-xs ${
@@ -2394,7 +2883,12 @@ export default function App() {
                                 <span className="text-sm font-bold text-slate-900 leading-snug">
                                   {u.displayName || 'Google User'}
                                 </span>
-                                {isUnlinked ? (
+                                {isConfirmedViewer ? (
+                                  <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <span>👁️</span>
+                                    <span>{currentLanguage === 'sl' ? 'Potrjen Gledalec (brez pravic)' : 'Confirmed Viewer'}</span>
+                                  </span>
+                                ) : isUnlinked ? (
                                   <span className="text-[10px] font-mono font-bold bg-amber-600 text-white px-2.5 py-0.5 rounded-full shadow-2xs flex items-center gap-1">
                                     <span>⚠️</span>
                                     <span>{currentLanguage === 'sl' ? 'NI POVEZAN S PROFILOM' : 'NOT LINKED TO ROSTER'}</span>
@@ -2459,6 +2953,18 @@ export default function App() {
                                 <option value="Servant">👤 Služabnik</option>
                                 <option value="Viewer">👁️ Viewer</option>
                               </select>
+
+                              {/* Quick Confirm button for viewers */}
+                              {u.role === 'Viewer' && !isConfirmedViewer && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmViewer(u.uid, u.email)}
+                                  className="px-3 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition active:scale-95 cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
+                                  title={currentLanguage === 'sl' ? 'Potrdi kot Gledalec (odstrani obvestila)' : 'Confirm as Viewer'}
+                                >
+                                  <span>👁️ {currentLanguage === 'sl' ? 'Potrdi' : 'Confirm'}</span>
+                                </button>
+                              )}
 
                               {/* Erase / Delete User Button */}
                               <button

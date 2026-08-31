@@ -648,7 +648,10 @@ export default function SundayDetail({
         provider: 'google',
         options: {
           scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/chat.spaces.readonly https://www.googleapis.com/auth/chat.messages.create',
-          redirectTo: window.location.origin
+          redirectTo: window.location.origin,
+          queryParams: {
+            prompt: 'select_account',
+          }
         }
       });
       if (error) {

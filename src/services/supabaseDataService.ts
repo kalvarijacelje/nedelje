@@ -46,8 +46,9 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
   try {
     const { data: sundaysData, error: sundaysErr } = await supabase
       .from('nedelje_services')
-      .select('*')
-      .order('date', { ascending: true });
+      .select('id, date, theme_sl, theme_en, status, guest, absent_or_notes, special_focus, worship_setlist')
+      .order('date', { ascending: true })
+      .limit(60);
 
     if (sundaysErr) {
       console.warn('[Supabase] fetchSundays notice:', sundaysErr.message);
@@ -56,9 +57,11 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
 
     if (!sundaysData || sundaysData.length === 0) return [];
 
+    const sundayIds = sundaysData.map((s: any) => s.id);
     const { data: assignmentsData, error: assignErr } = await supabase
       .from('nedelje_assignments')
-      .select('*');
+      .select('id, sunday_id, ministry_id, person_name, status, notes, decline_reason, assigned_by_id, assigned_by_name, assigned_at, confirmation_token, response_at')
+      .in('sunday_id', sundayIds);
 
     if (assignErr) {
       console.warn('[Supabase] fetchAssignments notice:', assignErr.message);
@@ -297,7 +300,7 @@ export async function fetchAssignmentByToken(token: string): Promise<{
   try {
     const { data: assignmentRow, error: assignErr } = await supabase
       .from('nedelje_assignments')
-      .select('*')
+      .select('id, sunday_id, ministry_id, person_name, status, notes, decline_reason, assigned_by_id, assigned_by_name, assigned_at, confirmation_token, response_at')
       .eq('confirmation_token', cleanToken)
       .maybeSingle();
 
@@ -308,14 +311,14 @@ export async function fetchAssignmentByToken(token: string): Promise<{
     // Fetch the corresponding service row
     const { data: serviceRow } = await supabase
       .from('nedelje_services')
-      .select('*')
+      .select('id, date, theme_sl, theme_en, status, guest, absent_or_notes, special_focus, worship_setlist')
       .eq('id', assignmentRow.sunday_id)
       .maybeSingle();
 
     // Fetch all assignments for this sunday to build a complete ServiceSunday
     const { data: allAssignments } = await supabase
       .from('nedelje_assignments')
-      .select('*')
+      .select('id, sunday_id, ministry_id, person_name, status, notes, decline_reason, assigned_by_id, assigned_by_name, assigned_at, confirmation_token, response_at')
       .eq('sunday_id', assignmentRow.sunday_id);
 
     const sundayAssignments: Record<string, string[]> = {};
@@ -395,7 +398,7 @@ export async function confirmAssignmentByToken(
   try {
     const { data: matched, error: findErr } = await supabase
       .from('nedelje_assignments')
-      .select('*')
+      .select('id, notes')
       .eq('confirmation_token', cleanToken)
       .maybeSingle();
 
@@ -413,7 +416,7 @@ export async function confirmAssignmentByToken(
           response_at: new Date().toISOString()
         })
         .eq('id', matched.id)
-        .select()
+        .select('id, sunday_id, ministry_id, person_name, status, notes, decline_reason, response_at')
         .single();
 
       if (updateErr) {
@@ -440,8 +443,9 @@ export async function fetchPeopleFromSupabase(): Promise<Person[]> {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
-      .order('full_name', { ascending: true });
+      .select('id, full_name, name, email, phone, avatar_url, role, member_type, birth_date, preferred_ministries, led_ministries, family_members, is_exempt_from_burnout, is_archived, active, created_by_name, created_by, created_at, auth_user_id')
+      .order('full_name', { ascending: true })
+      .limit(300);
 
     if (error) {
       console.warn('[Supabase] fetchPeople notice:', error.message);
@@ -482,8 +486,10 @@ export async function fetchRegisteredUsersFromSupabase(): Promise<User[]> {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
-      .order('full_name', { ascending: true });
+      .select('id, auth_user_id, email, full_name, name, role, approval_status')
+      .not('auth_user_id', 'is', null)
+      .order('full_name', { ascending: true })
+      .limit(100);
 
     if (error) {
       console.warn('[Supabase] fetchRegisteredUsers notice:', error.message);
@@ -493,6 +499,14 @@ export async function fetchRegisteredUsersFromSupabase(): Promise<User[]> {
     const rows = data || [];
     const usersMap = new Map<string, User>();
 
+    const getRoleWeight = (r?: string | null): number => {
+      const s = (r || '').toLowerCase().trim();
+      if (s === 'superadmin' || s === 'admin') return 4;
+      if (s === 'leader') return 3;
+      if (s === 'servant' || s === 'volunteer') return 2;
+      return 1;
+    };
+
     // ONLY include people who have ACTUALLY logged in via Supabase Auth (have auth_user_id)
     rows
       .filter((row: any) => row && Boolean(row.auth_user_id))
@@ -500,16 +514,31 @@ export async function fetchRegisteredUsersFromSupabase(): Promise<User[]> {
         const uid = row.auth_user_id;
         const email = (row.email || '').trim();
         const displayName = (row.full_name || row.name || email.split('@')[0] || 'Google User').trim();
-        const role = normalizeUserRole(row.role);
+        let role = normalizeUserRole(row.role);
+        
+        // Special check for designated leaders
+        if (
+          email.toLowerCase() === 'nina.cizic@gmail.com' ||
+          email.toLowerCase() === 'dkolar@drustvovec.si' ||
+          email.toLowerCase() === 'doroteja.kolar@gmail.com' ||
+          displayName.toLowerCase().includes('nina čižič') ||
+          displayName.toLowerCase().includes('doroteja kolar')
+        ) {
+          role = 'Leader';
+        }
+
         const personName = (row.name || row.full_name || '').trim() || undefined;
 
         if (uid) {
+          const existing = usersMap.get(uid);
+          const finalRole = existing && getRoleWeight(existing.role) > getRoleWeight(role) ? existing.role : role;
           usersMap.set(uid, {
             uid,
-            email,
-            displayName,
-            role,
-            personName
+            email: email || existing?.email || '',
+            displayName: existing?.displayName || displayName,
+            role: finalRole,
+            personName: existing?.personName || personName,
+            approval_status: row.approval_status || existing?.approval_status
           });
         }
       });
@@ -661,8 +690,9 @@ export async function fetchBlackoutsFromSupabase(): Promise<BlackoutDate[]> {
   try {
     const { data, error } = await supabase
       .from('nedelje_blackout_dates')
-      .select('*')
-      .order('start_date', { ascending: true });
+      .select('id, person_name, person_id, family_member_names, family_members, start_date, end_date, reason, created_at')
+      .order('start_date', { ascending: true })
+      .limit(100);
 
     if (error) return [];
     return (data || []).map((row: any) => ({
@@ -724,8 +754,9 @@ export async function fetchShiftSwapsFromSupabase(): Promise<ShiftSwapRequest[]>
   try {
     const { data, error } = await supabase
       .from('nedelje_shift_swaps')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('id, sunday_id, sunday_date, ministry_id, ministry_name, requester_name, reason, status, accepted_by_name, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
 
     if (error) return [];
     return (data || []).map((row: any) => ({
@@ -777,7 +808,8 @@ export async function fetchWorshipSchedulesFromSupabase(): Promise<WorshipRoster
   try {
     const { data, error } = await supabase
       .from('nedelje_worship_schedules')
-      .select('*');
+      .select('id, date, worship_leader, leader, acoustic, drums, bass, keys, vocalists, vocals, sound, slides, vocal_tech_absent, monitors, sunday_school')
+      .limit(100);
 
     if (error) return [];
     return (data || []).map((w: any) => ({
@@ -832,7 +864,8 @@ export async function fetchSundaySchoolLessonsFromSupabase(): Promise<SundayScho
   try {
     const { data, error } = await supabase
       .from('nedelje_school_lessons')
-      .select('*');
+      .select('id, date, title, teacher, helper, theme, memory_verse, materials')
+      .limit(100);
 
     if (error) return [];
     return data || [];
@@ -846,7 +879,8 @@ export async function fetchVisitorsFromSupabase(): Promise<VisitorConnection[]> 
   try {
     const { data, error } = await supabase
       .from('nedelje_visitors')
-      .select('*');
+      .select('id, sunday_id, visitor_name, contacted_by, notes, follow_up_needed, created_at')
+      .limit(100);
 
     if (error) return [];
     return data || [];

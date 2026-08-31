@@ -384,6 +384,7 @@ export interface User {
   displayName: string;
   role: UserRole;
   personName?: string;
+  approval_status?: string;
 }
 
 export interface WorshipRosterEntry {

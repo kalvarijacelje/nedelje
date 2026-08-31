@@ -27,6 +27,12 @@ try {
     if (!fs.existsSync(icon192)) fs.copyFileSync(logoPath, icon192);
     if (!fs.existsSync(icon512)) fs.copyFileSync(logoPath, icon512);
   }
+
+  const uploadedCoffeeBg = 'C:/Users/alesl/.gemini/antigravity/brain/3483a9f5-99e5-412a-9e95-01492b6c5e0c/.user_uploaded/media_1788191711883.jpg';
+  const targetCoffeeBg = path.join(targetDir, 'kck-coffee-bar.jpg');
+  if (fs.existsSync(uploadedCoffeeBg)) {
+    fs.copyFileSync(uploadedCoffeeBg, targetCoffeeBg);
+  }
 } catch (e) {
   // ignore
 }

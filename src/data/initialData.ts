@@ -216,7 +216,7 @@ export const INITIAL_PEOPLE: Person[] = [
     name: "Nina Čižič",
     email: "nina.cizic@gmail.com",
     phone: "031 703 569",
-    role: "Servant",
+    role: "Leader",
     preferredMinistries: ["uvod_slavljenje", "odklepanje", "zaklepanje", "obvestila", "molitev_po", "koncni_pregled"],
     ledMinistries: [],
     familyMembers: ["Damijan Čižič", "Tonja Čižič", "Erik Čižič"],

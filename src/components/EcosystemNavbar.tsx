@@ -39,6 +39,8 @@ export interface EcosystemNavbarProps {
   extraNavItems?: React.ReactNode;
   rightActionItems?: React.ReactNode;
   className?: string;
+  testRole?: string | null;
+  onTestRoleChange?: (role: any) => void;
 }
 
 const SUB_APP_METAS: Record<EcosystemAppKey, { title: string; subtitle: string }> = {
@@ -61,6 +63,8 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
   extraNavItems,
   rightActionItems,
   className = '',
+  testRole,
+  onTestRoleChange,
 }) => {
   const [selectedLang, setSelectedLang] = useState<'sl' | 'en'>(currentLang);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -73,6 +77,8 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
   const [password, setPassword] = useState('');
   const [isEmailSubmitting, setIsEmailSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   useEffect(() => {
     setSelectedLang(currentLang);
@@ -147,6 +153,9 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
           provider: 'google',
           options: {
             redirectTo: window.location.origin,
+            queryParams: {
+              prompt: 'select_account',
+            },
           },
         });
         if (error) throw error;
@@ -184,6 +193,34 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
       console.warn('Email sign in error:', err);
       setAuthError(err?.message || (selectedLang === 'sl' ? 'Napačen e-poštni naslov ali geslo.' : 'Invalid email or password.'));
       setIsEmailSubmitting(false);
+    }
+  };
+
+  const handleMagicLinkSignIn = async () => {
+    if (!email || !email.includes('@')) {
+      setAuthError(selectedLang === 'sl' ? 'Vnesite veljaven e-poštni naslov.' : 'Please enter a valid email address.');
+      return;
+    }
+    setIsSendingMagicLink(true);
+    setAuthError(null);
+    setMagicLinkSent(false);
+
+    try {
+      if (supabase) {
+        const { error } = await supabase.auth.signInWithOtp({
+          email: email.trim(),
+          options: {
+            emailRedirectTo: window.location.origin,
+          },
+        });
+        if (error) throw error;
+        setMagicLinkSent(true);
+      }
+    } catch (err: any) {
+      console.warn('Magic link error:', err);
+      setAuthError(err?.message || (selectedLang === 'sl' ? 'Pošiljanje povezave ni uspelo.' : 'Failed to send login link.'));
+    } finally {
+      setIsSendingMagicLink(false);
     }
   };
 
@@ -310,6 +347,45 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
                           </span>
                         )}
                       </div>
+
+                      {onTestRoleChange && (user.email === 'ales.lajlar@gmail.com' || user.role === 'Superadmin' || user.role === 'Admin') && (
+                        <div className="p-2 border-b border-slate-100 bg-slate-50/70">
+                          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1.5 flex items-center justify-between">
+                            <span>🛠️ {selectedLang === 'sl' ? 'Skrbniška simulacija' : 'Admin Simulation'}</span>
+                            {testRole && (
+                              <span className="text-[9px] text-[#93032E] font-bold">({testRole})</span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            {(['Admin', 'Leader', 'Servant', 'Viewer'] as const).map(r => {
+                              const isSelected = (testRole || user.role) === r;
+                              return (
+                                <button
+                                  key={r}
+                                  type="button"
+                                  onClick={() => onTestRoleChange(testRole === r ? null : r)}
+                                  className={`px-1.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer text-center ${
+                                    isSelected
+                                      ? 'bg-[#93032E] text-white shadow-2xs'
+                                      : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
+                                  }`}
+                                >
+                                  {r} {testRole === r ? '★' : ''}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {testRole && (
+                            <button
+                              type="button"
+                              onClick={() => onTestRoleChange(null)}
+                              className="w-full text-center text-[10px] text-slate-500 hover:text-slate-800 underline mt-1.5 cursor-pointer"
+                            >
+                              {selectedLang === 'sl' ? 'Ponastavi na vlogo računa' : 'Reset to account role'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <button
                         onClick={() => {
                           setUserDropdownOpen(false);
@@ -479,6 +555,24 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
                       )}
                       <span>{selectedLang === 'sl' ? 'Prijavi se' : 'Sign In'}</span>
                     </button>
+
+                    <div className="pt-1 text-center">
+                      <button
+                        type="button"
+                        onClick={handleMagicLinkSignIn}
+                        disabled={isSendingMagicLink || !email}
+                        className="text-[11px] text-slate-500 hover:text-[#93032E] underline cursor-pointer disabled:opacity-50 disabled:no-underline transition-colors"
+                      >
+                        {isSendingMagicLink
+                          ? (selectedLang === 'sl' ? 'Pošiljanje povezave...' : 'Sending link...')
+                          : (selectedLang === 'sl' ? 'Nimate gesla? Pošlji povezavo na e-pošto' : "Don't have a password? Send link to email")}
+                      </button>
+                      {magicLinkSent && (
+                        <p className="text-[11px] text-emerald-600 font-medium mt-1 animate-in fade-in">
+                          {selectedLang === 'sl' ? '✓ Povezava za prijavo poslana na vaš e-poštni naslov!' : '✓ Login link sent to your email address!'}
+                        </p>
+                      )}
+                    </div>
                   </form>
                 )}
               </div>
