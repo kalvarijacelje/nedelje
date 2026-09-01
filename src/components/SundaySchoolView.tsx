@@ -228,9 +228,9 @@ export default function SundaySchoolView({
 
     const updatedAssignments = {
       ...(sun.assignments || {}),
-      [secondaryKey]: newTeam,
-      [primaryKey]: newTeam
+      [secondaryKey]: newTeam
     };
+    delete updatedAssignments[primaryKey];
 
     const updatedSunday: ServiceSunday = {
       ...sun,
@@ -280,9 +280,9 @@ export default function SundaySchoolView({
 
     const updatedAssignments = {
       ...(sun.assignments || {}),
-      [secondaryKey]: newTeam,
-      [primaryKey]: newTeam
+      [secondaryKey]: newTeam
     };
+    delete updatedAssignments[primaryKey];
 
     const updatedSunday: ServiceSunday = {
       ...sun,

@@ -1796,17 +1796,22 @@ export default function App() {
     // 4. Persist to Supabase
     if (IS_SUPABASE_CONFIGURED) {
       try {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ 
-            role: newRole, 
-            approval_status: newRole === 'Viewer' ? 'viewer_approved' : 'approved',
-            updated_at: new Date().toISOString() 
-          })
-          .or(`id.eq.${userId},auth_user_id.eq.${userId},email.ilike.${userEmailKey || 'none'}`);
+        const patch = { 
+          role: newRole, 
+          approval_status: newRole === 'Viewer' ? 'viewer_approved' : 'approved',
+          updated_at: new Date().toISOString() 
+        };
+        const isUUID = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
-        if (error) {
-          console.warn('[Supabase] Role update notice:', error.message);
+        if (userEmailKey) {
+          await supabase.from('profiles').update(patch).ilike('email', userEmailKey);
+        }
+        if (userId) {
+          if (isUUID(userId)) {
+            await supabase.from('profiles').update(patch).or(`id.eq.${userId},auth_user_id.eq.${userId}`);
+          } else {
+            await supabase.from('profiles').update(patch).eq('id', userId);
+          }
         }
       } catch (err) {
         console.error('Failed to promote user role in Supabase:', err);
@@ -1845,17 +1850,26 @@ export default function App() {
       type: 'success'
     });
 
-    // 3. Persist to Supabase profiles
+    // 3. Persist to Supabase profiles safely by email and valid UUID
     if (IS_SUPABASE_CONFIGURED) {
       try {
-        await supabase
-          .from('profiles')
-          .update({ 
-            role: 'Viewer', 
-            approval_status: 'viewer_approved',
-            updated_at: new Date().toISOString() 
-          })
-          .or(`id.eq.${userId},auth_user_id.eq.${userId},email.ilike.${emailToAdd || 'none'}`);
+        const patch = { 
+          role: 'Viewer', 
+          approval_status: 'viewer_approved',
+          updated_at: new Date().toISOString() 
+        };
+        const isUUID = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+
+        if (emailToAdd) {
+          await supabase.from('profiles').update(patch).ilike('email', emailToAdd);
+        }
+        if (userId) {
+          if (isUUID(userId)) {
+            await supabase.from('profiles').update(patch).or(`id.eq.${userId},auth_user_id.eq.${userId}`);
+          } else {
+            await supabase.from('profiles').update(patch).eq('id', userId);
+          }
+        }
       } catch (err) {
         console.warn('Supabase confirm viewer notice:', err);
       }
@@ -1877,6 +1891,16 @@ export default function App() {
       }
       return u;
     }));
+
+    // Auto-dismiss pending notification since user is linked to roster profile
+    if (userId && targetPerson) {
+      const emailKey = (targetUser?.email || '').toLowerCase().trim();
+      setConfirmedViewerIds(prev => {
+        const updated = Array.from(new Set([...prev, userId, emailKey].filter(Boolean)));
+        try { localStorage.setItem('church_roster_confirmed_viewers_v2', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
 
     // Auto-populate person's email with Google email if unwritten or updating
     if (userId && targetPerson) {
@@ -2817,6 +2841,7 @@ export default function App() {
             {visitedTabs.has('people') && (
               <div className={activeTab === 'people' ? 'block animate-fade-in' : 'hidden'}>
                 <PeopleView
+                  key={`people-view-${activeRole}`}
                   sundays={sundays}
                   ministries={ministries}
                   people={people}

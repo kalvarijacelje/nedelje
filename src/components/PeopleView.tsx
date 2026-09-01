@@ -193,7 +193,7 @@ function PendingUserItemCard({
                   ⚠️ {currentLanguage === 'sl' ? 'NI POVEZAN S PROFILOM' : 'NOT LINKED'}
                 </span>
               )}
-              {user.role === 'Viewer' && (
+              {isUnlinked && user.role === 'Viewer' && (
                 <span className="text-[10px] bg-slate-200 text-slate-800 font-mono font-bold px-2 py-0.5 rounded-full border border-slate-300">
                   👁️ {currentLanguage === 'sl' ? 'Čaka na vlogo' : 'Pending Role'}
                 </span>
@@ -515,9 +515,11 @@ export default function PeopleView({
   useBackdropHistory(!!reminderModalPerson, () => setReminderModalPerson(null), 'people-reminder-modal');
   useBackdropHistory(showPendingUsersModal, () => setShowPendingUsersModal(false), 'people-pending-users-modal');
 
-  const isAdmin = userRole === 'Admin';
-  const isLeader = userRole === 'Leader';
+  const normalizedRole = (userRole || '').trim();
+  const isAdmin = normalizedRole === 'Admin' || normalizedRole.toLowerCase() === 'admin';
+  const isLeader = normalizedRole === 'Leader' || normalizedRole.toLowerCase() === 'leader';
   const canEdit = isAdmin || isLeader;
+  const isLeaderOrAdmin = isAdmin || isLeader;
 
   const canEditPerson = (target: Person | null | undefined): boolean => {
     if (!target) return false;
@@ -815,7 +817,8 @@ export default function PeopleView({
         ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
       ));
       const isUnlinked = !linkedPerson;
-      const isUnconfirmedViewer = u.role === 'Viewer';
+      // An unconfirmed viewer is an unlinked user whose role is still default Viewer and not yet approved
+      const isUnconfirmedViewer = isUnlinked && u.role === 'Viewer';
       return isUnlinked || isUnconfirmedViewer;
     });
   }, [users, people, confirmedViewerIds]);
@@ -1003,24 +1006,26 @@ export default function PeopleView({
         subtitle={currentLanguage === 'sl' ? 'Baza članov cerkve, vloge, kontakti, družinske povezave ter pregled služb.' : 'Servant database, team roles, contacts, family linkages, and serving balance tracker.'}
         icon={Users}
       >
-        {/* Subtle Serving Balance & Roster Summary */}
+        {/* Subtle Serving Balance & Roster Summary (Leaders & Admins only) */}
         <div className="pt-2.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-white/85 font-medium flex items-center gap-1.5 text-xs">
-              <HeartPulse className="w-3.5 h-3.5 text-rose-300 shrink-0" />
-              <span>{currentLanguage === 'sl' ? 'Uravnoteženost služb:' : 'Serving balance:'}</span>
-            </span>
+          {isLeaderOrAdmin && (
+            <div className="flex items-center gap-2">
+              <span className="text-white/85 font-medium flex items-center gap-1.5 text-xs">
+                <HeartPulse className="w-3.5 h-3.5 text-rose-300 shrink-0" />
+                <span>{currentLanguage === 'sl' ? 'Uravnoteženost služb:' : 'Serving balance:'}</span>
+              </span>
 
-            {burnoutStats.overloadedCount > 0 ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/40">
-                🔴 {burnoutStats.overloadedCount} {currentLanguage === 'sl' ? 'preobremenjenih' : 'overloaded'}
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
-                🟢 {currentLanguage === 'sl' ? 'Uravnotežen urnik' : 'Balanced schedule'}
-              </span>
-            )}
-          </div>
+              {burnoutStats.overloadedCount > 0 ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-400/40">
+                  🔴 {burnoutStats.overloadedCount} {currentLanguage === 'sl' ? 'preobremenjenih' : 'overloaded'}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+                  🟢 {currentLanguage === 'sl' ? 'Uravnotežen urnik' : 'Balanced schedule'}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-white/85">
             <span className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/10">
@@ -1040,8 +1045,8 @@ export default function PeopleView({
           </div>
         </div>
 
-        {/* Dynamic Alert Banner only if anyone is overloaded */}
-        {burnoutStats.overloadedCount > 0 && (
+        {/* Dynamic Alert Banner only if anyone is overloaded (Leaders & Admins only) */}
+        {isLeaderOrAdmin && burnoutStats.overloadedCount > 0 && (
           <div className="mt-2 p-2.5 bg-rose-950/80 border border-rose-500/40 text-rose-200 rounded-xl text-xs flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
             <span>
@@ -1234,12 +1239,25 @@ export default function PeopleView({
               onChange={(e) => setNewPersonRole(e.target.value as UserRole)}
               className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer font-semibold"
             >
-              <option value="Admin">🛠️ Admin (Poln nadzor)</option>
-              <option value="Leader">📋 Leader / Vodja službe (Urejanje svojih služb)</option>
-              <option value="Servant">🤝 Servant / Služabnik (Služenje v ekipi)</option>
-              <option value="Viewer">👤 Member / Član (Član cerkve)</option>
-              <option value="Visitor">👋 Visitor / Obiskovalec (Občasen obisk / Gost)</option>
-              <option value="Minor">👶 Minor / Mladoletni član</option>
+              {currentLanguage === 'sl' ? (
+                <>
+                  <option value="Admin">🛠️ Administrator (Poln nadzor)</option>
+                  <option value="Leader">📋 Vodja službe (Urejanje svojih služb)</option>
+                  <option value="Servant">🤝 Služabnik (Služenje v ekipi)</option>
+                  <option value="Viewer">👤 Član cerkve</option>
+                  <option value="Visitor">👋 Obiskovalec (Gost)</option>
+                  <option value="Minor">👶 Mladoletni član</option>
+                </>
+              ) : (
+                <>
+                  <option value="Admin">🛠️ Admin (Full control)</option>
+                  <option value="Leader">📋 Leader (Manage assigned teams)</option>
+                  <option value="Servant">🤝 Servant (Team member)</option>
+                  <option value="Viewer">👤 Church Member</option>
+                  <option value="Visitor">👋 Visitor (Guest)</option>
+                  <option value="Minor">👶 Minor / Child</option>
+                </>
+              )}
             </select>
           </div>
 
@@ -1789,18 +1807,20 @@ export default function PeopleView({
                   );
                 })()}
 
-                {/* Serving Burnout Indicator */}
-                <div className={`p-2 rounded-xl border text-[10px] font-mono flex items-center justify-between gap-2 ${burnoutStatus.colorClass}`}>
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <span>{burnoutStatus.badge}</span>
-                    <span>{currentLanguage === 'sl' ? burnoutStatus.labelSl : burnoutStatus.labelEn}</span>
+                {/* Serving Burnout Indicator (Only visible to Admins & Leaders) */}
+                {isLeaderOrAdmin && (
+                  <div className={`p-2 rounded-xl border text-[10px] font-mono flex items-center justify-between gap-2 ${burnoutStatus.colorClass}`}>
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span>{burnoutStatus.badge}</span>
+                      <span>{currentLanguage === 'sl' ? burnoutStatus.labelSl : burnoutStatus.labelEn}</span>
+                    </div>
+                    {burnoutStatus.status === 'overloaded' && (
+                      <span className="text-[9px] bg-rose-200 text-rose-900 px-1.5 py-0.5 rounded font-extrabold animate-pulse">
+                        ⚡ 3+ zapored
+                      </span>
+                    )}
                   </div>
-                  {burnoutStatus.status === 'overloaded' && (
-                    <span className="text-[9px] bg-rose-200 text-rose-900 px-1.5 py-0.5 rounded font-extrabold animate-pulse">
-                      ⚡ 3+ zapored
-                    </span>
-                  )}
-                </div>
+                )}
 
                 {/* Led Ministries Section */}
                 {person.ledMinistries && person.ledMinistries.length > 0 && (() => {
@@ -1929,9 +1949,9 @@ export default function PeopleView({
                 <div className="flex items-center gap-1">
                   {servingCount > 0 ? (
                     <span className={`font-bold px-1.5 py-0.5 rounded border ${
-                      burnoutStatus.status === 'overloaded' 
+                      (isLeaderOrAdmin && burnoutStatus.status === 'overloaded')
                         ? 'bg-rose-100 text-rose-800 border-rose-300'
-                        : burnoutStatus.status === 'exempt'
+                        : (isLeaderOrAdmin && burnoutStatus.status === 'exempt')
                         ? 'bg-purple-100 text-purple-900 border-purple-200'
                         : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                     }`}>
@@ -2120,17 +2140,19 @@ export default function PeopleView({
 
                   {/* Burnout & Attendance Stats */}
                   <div className="space-y-2">
-                    <div className={`p-2.5 rounded-xl border text-xs font-mono flex items-center justify-between gap-2 ${burnoutStatus.colorClass}`}>
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <span>{burnoutStatus.badge}</span>
-                        <span>{currentLanguage === 'sl' ? burnoutStatus.labelSl : burnoutStatus.labelEn}</span>
+                    {isLeaderOrAdmin && (
+                      <div className={`p-2.5 rounded-xl border text-xs font-mono flex items-center justify-between gap-2 ${burnoutStatus.colorClass}`}>
+                        <div className="flex items-center gap-1.5 font-bold">
+                          <span>{burnoutStatus.badge}</span>
+                          <span>{currentLanguage === 'sl' ? burnoutStatus.labelSl : burnoutStatus.labelEn}</span>
+                        </div>
+                        {burnoutStatus.status === 'overloaded' && (
+                          <span className="text-[10px] bg-rose-200 text-rose-900 px-2 py-0.5 rounded-full font-extrabold animate-pulse">
+                            ⚡ 3+ zapored
+                          </span>
+                        )}
                       </div>
-                      {burnoutStatus.status === 'overloaded' && (
-                        <span className="text-[10px] bg-rose-200 text-rose-900 px-2 py-0.5 rounded-full font-extrabold animate-pulse">
-                          ⚡ 3+ zapored
-                        </span>
-                      )}
-                    </div>
+                    )}
 
                     {attStats.totalAssigned > 0 && (
                       <div className="text-xs font-mono text-emerald-950 bg-emerald-50 border border-emerald-250 p-2.5 rounded-xl flex items-center gap-2 font-medium">
@@ -2846,12 +2868,25 @@ export default function PeopleView({
                   }}
                   className="w-full text-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {isAdmin && <option value="Admin">🛠️ Admin (Poln nadzor)</option>}
-                  <option value="Leader">📋 Leader / Vodja službe (Urejanje svojih služb)</option>
-                  <option value="Servant">🤝 Servant / Služabnik (Služenje v ekipi)</option>
-                  <option value="Viewer">👤 Member / Član (Član cerkve)</option>
-                  <option value="Visitor">👋 Visitor / Obiskovalec (Občasen obisk / Gost)</option>
-                  <option value="Minor">👶 Minor / Mladoletni član</option>
+                  {currentLanguage === 'sl' ? (
+                    <>
+                      {isAdmin && <option value="Admin">🛠️ Administrator (Poln nadzor)</option>}
+                      <option value="Leader">📋 Vodja službe (Urejanje svojih služb)</option>
+                      <option value="Servant">🤝 Služabnik (Služenje v ekipi)</option>
+                      <option value="Viewer">👤 Član cerkve</option>
+                      <option value="Visitor">👋 Obiskovalec (Gost)</option>
+                      <option value="Minor">👶 Mladoletni član</option>
+                    </>
+                  ) : (
+                    <>
+                      {isAdmin && <option value="Admin">🛠️ Admin (Full control)</option>}
+                      <option value="Leader">📋 Leader (Manage assigned teams)</option>
+                      <option value="Servant">🤝 Servant (Team member)</option>
+                      <option value="Viewer">👤 Church Member</option>
+                      <option value="Visitor">👋 Visitor (Guest)</option>
+                      <option value="Minor">👶 Minor / Child</option>
+                    </>
+                  )}
                 </select>
                 {!isAdmin && (
                   <p className="text-[10px] text-slate-400 font-mono">

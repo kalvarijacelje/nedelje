@@ -339,7 +339,7 @@ export function syncSundayFromWorshipRosterEntry(
   }
 
   nextAssignments['slavilna_ekipa'] = teamItems;
-  nextAssignments['slavilna'] = teamItems;
+  delete nextAssignments['slavilna'];
 
   // 2. Build structured assignmentDetails with individual musicians and instrument notes
   const extractedVolunteers = extractWorshipVolunteersFromEntry(entry);
@@ -362,7 +362,7 @@ export function syncSundayFromWorshipRosterEntry(
   });
 
   nextDetails['slavilna_ekipa'] = newWorshipDetails;
-  nextDetails['slavilna'] = newWorshipDetails;
+  delete nextDetails['slavilna'];
 
   // 3. Sync tech roles and worship intro
   if (entry.sound !== undefined) {

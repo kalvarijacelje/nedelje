@@ -19,6 +19,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { supabase, performGlobalSignOut } from '../supabaseClient';
+import { getRoleTranslation } from '../types';
 
 export interface EcosystemUser {
   id?: string;
@@ -344,7 +345,7 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
                         <div className="text-[11px] text-slate-500 truncate">{user.email}</div>
                         {user.role && (
                           <span className="inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                            {user.role}
+                            {getRoleTranslation(user.role, selectedLang)}
                           </span>
                         )}
                       </div>
@@ -354,7 +355,7 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
                           <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1.5 flex items-center justify-between">
                             <span>🛠️ {selectedLang === 'sl' ? 'Skrbniška simulacija' : 'Admin Simulation'}</span>
                             {testRole && (
-                              <span className="text-[9px] text-[#93032E] font-bold">({testRole})</span>
+                              <span className="text-[9px] text-[#93032E] font-bold">({getRoleTranslation(testRole, selectedLang)})</span>
                             )}
                           </div>
                           <div className="grid grid-cols-2 gap-1">
@@ -371,7 +372,7 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
                                       : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
                                   }`}
                                 >
-                                  {r} {testRole === r ? '★' : ''}
+                                  {getRoleTranslation(r, selectedLang)} {testRole === r ? '★' : ''}
                                 </button>
                               );
                             })}

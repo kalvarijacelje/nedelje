@@ -23,6 +23,33 @@ export const normalizeUserRole = (role?: string | null): UserRole => {
 };
 
 /**
+ * Translates a user role into Slovene or English display labels.
+ */
+export const getRoleTranslation = (role?: string | null, lang: 'sl' | 'en' = 'sl'): string => {
+  if (!role) return lang === 'sl' ? 'Pregledovalec' : 'Viewer';
+  const r = role.toString().toLowerCase().trim();
+  if (r === 'superadmin' || r === 'admin') return lang === 'sl' ? 'Administrator' : 'Admin';
+  if (r === 'leader') return lang === 'sl' ? 'Vodja' : 'Leader';
+  if (r === 'servant' || r === 'volunteer') return lang === 'sl' ? 'Služabnik' : 'Servant';
+  if (r === 'viewer' || r === 'member') return lang === 'sl' ? 'Pregledovalec' : 'Viewer';
+  if (r === 'visitor') return lang === 'sl' ? 'Obiskovalec' : 'Visitor';
+  if (r === 'minor') return lang === 'sl' ? 'Mladoletni' : 'Minor';
+  return role;
+};
+
+/**
+ * Maps legacy alias ministry IDs (e.g. 'slavilna', 'OTROŠKO SLUŽENJE - MLAJŠA') to their canonical system ID.
+ */
+export const toCanonicalMinistryId = (id?: string | null): string => {
+  if (!id) return '';
+  const trimmed = id.trim();
+  if (trimmed === 'slavilna') return 'slavilna_ekipa';
+  if (trimmed === 'OTROŠKO SLUŽENJE - MLAJŠA' || trimmed.toLowerCase() === 'otroško služenje - mlajša') return 'nedeljska_sola_mlajsa';
+  if (trimmed === 'OTROŠKO SLUŽENJE - STAREJŠA' || trimmed.toLowerCase() === 'otroško služenje - starejša') return 'nedeljska_sola_starejsa';
+  return trimmed;
+};
+
+/**
  * Checks if given email or user object corresponds to the church superadmin & pastor (ales.lajlar@gmail.com).
  */
 export const isSuperAdmin = (emailOrUser?: string | { email?: string | null } | null): boolean => {

@@ -16,7 +16,8 @@ import {
   SundaySchoolSupply, 
   VisitorConnection,
   User,
-  normalizeUserRole
+  normalizeUserRole,
+  toCanonicalMinistryId
 } from '../types';
 import { getAutoSundayStatus } from '../utils/academicYear';
 import { unpackWorshipCompoundString } from '../utils/worshipSync';
@@ -75,12 +76,14 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
       const relatedAssignments = (assignmentsData || []).filter((a: any) => a.sunday_id === row.id);
 
       relatedAssignments.forEach((a: any) => {
-        const mId = a.ministry_id;
+        const mId = toCanonicalMinistryId(a.ministry_id);
         if (!sundayAssignments[mId]) sundayAssignments[mId] = [];
         if (!assignmentDetails[mId]) assignmentDetails[mId] = [];
 
         if (a.status !== 'declined') {
-          sundayAssignments[mId].push(a.person_name);
+          if (!sundayAssignments[mId].includes(a.person_name)) {
+            sundayAssignments[mId].push(a.person_name);
+          }
         }
 
         assignmentDetails[mId].push({
@@ -174,7 +177,8 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
 
     // 1. Reconcile from assignmentDetails if present
     if (sunday.assignmentDetails) {
-      Object.entries(sunday.assignmentDetails).forEach(([ministryId, details]) => {
+      Object.entries(sunday.assignmentDetails).forEach(([rawMinistryId, details]) => {
+        const ministryId = toCanonicalMinistryId(rawMinistryId);
         if (Array.isArray(details)) {
           details.forEach((d) => {
             if (!d.personName) return;
@@ -220,7 +224,8 @@ export async function upsertSundayToSupabase(sunday: ServiceSunday): Promise<boo
 
     // 2. Also ensure any person in sunday.assignments has an assignment row
     if (sunday.assignments) {
-      Object.entries(sunday.assignments).forEach(([ministryId, names]) => {
+      Object.entries(sunday.assignments).forEach(([rawMinistryId, names]) => {
+        const ministryId = toCanonicalMinistryId(rawMinistryId);
         if (Array.isArray(names)) {
           names.forEach(rawName => {
             if (!rawName || typeof rawName !== 'string') return;
