@@ -287,12 +287,13 @@ export const EcosystemNavbar: React.FC<EcosystemNavbarProps> = ({
               const formatSlovenianDisplayName = (rawName?: string | null, email?: string | null): string => {
                 const emailLower = (email || '').toLowerCase().trim();
                 let name = (rawName || '').trim();
-                if (
-                  emailLower.includes('ales.lajlar') ||
-                  emailLower.includes('aleslajlar') ||
-                  (name.toLowerCase() === 'ales' || name.toLowerCase() === 'ales lajlar')
-                ) {
+                const isAlesEmail = emailLower === 'ales.lajlar@gmail.com' || emailLower.includes('ales.lajlar') || emailLower.includes('aleslajlar');
+                if (isAlesEmail) {
                   return 'Aleš Lajlar';
+                }
+                // If not Aleš by email, never display Aleš Lajlar
+                if (!isAlesEmail && (name.toLowerCase().includes('aleš lajlar') || name.toLowerCase() === 'ales' || name.toLowerCase() === 'ales lajlar')) {
+                  name = email ? email.split('@')[0] : 'Uporabnik';
                 }
                 if (!name && email) name = email.split('@')[0];
                 if (!name) return 'Uporabnik';

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, startTransition } from 'react';
 import { ServiceSunday, Ministry, Person, UserRole, Language, Translation, User, ShiftSwapRequest, BlackoutDate, WorshipRosterEntry, SundaySchoolLesson, SundaySchoolSupply, VisitorConnection, canAccessPersonalData } from './types';
 import { 
   INITIAL_MINISTRIES, 
@@ -485,6 +485,15 @@ export default function App() {
     }
     return 'home';
   });
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabType>>(() => new Set([activeTab]));
+  useEffect(() => {
+    setVisitedTabs(prev => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
   const [isConfirmView, setIsConfirmView] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const p = window.location.pathname.toLowerCase();
@@ -516,15 +525,21 @@ export default function App() {
       }
     }
 
-    const handlePopState = () => {
+    const handlePopState = (e: PopStateEvent) => {
+      // Ignore popstate events triggered by modal or drawer overlays closing
+      if (e.state && (e.state as any).__modalOverlay) {
+        return;
+      }
       const p = window.location.pathname.toLowerCase();
       const s = window.location.search.toLowerCase();
       if (p.startsWith('/potrdi') || p.startsWith('/confirm') || s.includes('token=')) {
         setIsConfirmView(true);
       } else {
         setIsConfirmView(false);
-        const tabFromUrl = getTabFromPath(window.location.pathname);
-        setActiveTab(tabFromUrl);
+        const tabFromUrl = (e.state && (e.state as any).tab) ? (e.state as any).tab : getTabFromPath(window.location.pathname);
+        startTransition(() => {
+          setActiveTab(tabFromUrl);
+        });
       }
     };
 
@@ -545,7 +560,15 @@ export default function App() {
     setSelectedSundayId(null);
     setTargetMinistryId(null);
     setTargetCategory(null);
-    setActiveTab(tab);
+    const targetPath = TAB_TO_PATH[tab] || '/domov';
+    const currentPath = typeof window !== 'undefined' ? (window.location.pathname.toLowerCase().replace(/\/$/, '') || '/') : '';
+    if (currentPath !== targetPath && typeof window !== 'undefined') {
+      window.history.pushState({ tab }, '', targetPath);
+    }
+    setVisitedTabs(prev => prev.has(tab) ? prev : new Set(prev).add(tab));
+    startTransition(() => {
+      setActiveTab(tab);
+    });
   };
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
   const [isSwapModalOpen, setIsSwapModalOpen] = useState<boolean>(false);
@@ -897,11 +920,18 @@ export default function App() {
   const activePerson: Person | null = (() => {
     if (authUser) {
       const userEmail = (authUser.email || '').toLowerCase().trim();
+      const isAles = userEmail === 'ales.lajlar@gmail.com';
+      const userFullName = (authUser.user_metadata?.full_name || authUser.user_metadata?.name || '').toLowerCase().trim();
+
       const match = (people || []).find(p => {
         if (!p || typeof p !== 'object') return false;
+        // Strictly prevent any non-Ales user from matching Aleš Lajlar's profile
+        if (!isAles && (p.name?.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || p.email?.toLowerCase() === 'ales.lajlar@gmail.com')) {
+          return false;
+        }
         if (userEmail && p.email && p.email.toLowerCase().trim() === userEmail) return true;
         if (authUser.id && (p.id === authUser.id || (p as any).auth_user_id === authUser.id)) return true;
-        if (activePersonName && p.name && p.name.toLowerCase().trim() === activePersonName.toLowerCase().trim()) return true;
+        if (userFullName && p.name && p.name.toLowerCase().trim() === userFullName) return true;
         return false;
       });
       return match || null;
@@ -945,7 +975,8 @@ export default function App() {
   // Active role depending on authentication state or active persona
   const isAlesLoggedIn = (authUser?.email || '').toLowerCase().trim() === 'ales.lajlar@gmail.com';
   const isGenuineAdmin = isAlesLoggedIn || userDbProfile?.role === 'Admin';
-  const resolvedDbOrPersonRole = userDbProfile?.role || activePerson?.role;
+  const safeActivePersonRole = (!isAlesLoggedIn && activePerson?.name === 'Aleš Lajlar') ? 'Viewer' : activePerson?.role;
+  const resolvedDbOrPersonRole = userDbProfile?.role || safeActivePersonRole;
   const actualAccountRole: UserRole = isAlesLoggedIn
     ? 'Admin'
     : (resolvedDbOrPersonRole || (authUser ? 'Viewer' : 'Viewer'));
@@ -1030,6 +1061,15 @@ export default function App() {
         return;
       }
 
+      // Purge any stale active persona from localStorage left over from previous test sessions
+      if (!isAles) {
+        const storedActivePerson = localStorage.getItem('church_roster_active_person_v2');
+        if (storedActivePerson && storedActivePerson.toLowerCase().includes('aleš')) {
+          localStorage.removeItem('church_roster_active_person_v2');
+          setActivePersonName('');
+        }
+      }
+
       // 2. Fetch fresh live profile from Supabase profiles table
       let dbProfile: any = null;
       try {
@@ -1040,29 +1080,40 @@ export default function App() {
           .limit(5);
 
         if (matchedProfiles && matchedProfiles.length > 0) {
-          // Sort to prioritize highest role (Admin > Leader > Servant > Viewer) and canonical IDs (p-*)
-          const sortedProfiles = [...matchedProfiles].sort((a, b) => {
-            const roleDiff = getRoleWeight(b.role) - getRoleWeight(a.role);
-            if (roleDiff !== 0) return roleDiff;
-            const aIsCanonical = (a.id || '').startsWith('p-') ? 1 : 0;
-            const bIsCanonical = (b.id || '').startsWith('p-') ? 1 : 0;
-            return bIsCanonical - aIsCanonical;
-          });
-          dbProfile = sortedProfiles[0];
+          // If not Ales, discard any profile belonging to Ales Lajlar to prevent identity crossover
+          const filteredProfiles = isAles
+            ? matchedProfiles
+            : matchedProfiles.filter(p => !p.email?.toLowerCase().includes('ales.lajlar') && !p.full_name?.toLowerCase().includes('aleš lajlar') && p.id !== 'p-ales_lajlar');
+
+          if (filteredProfiles.length > 0) {
+            // Sort to prioritize highest role (Admin > Leader > Servant > Viewer) and canonical IDs (p-*)
+            const sortedProfiles = [...filteredProfiles].sort((a, b) => {
+              const roleDiff = getRoleWeight(b.role) - getRoleWeight(a.role);
+              if (roleDiff !== 0) return roleDiff;
+              const aIsCanonical = (a.id || '').startsWith('p-') ? 1 : 0;
+              const bIsCanonical = (b.id || '').startsWith('p-') ? 1 : 0;
+              return bIsCanonical - aIsCanonical;
+            });
+            dbProfile = sortedProfiles[0];
+          }
         }
       } catch (e) { /* ignore */ }
 
-      // Find in loaded people list or fallback to initial roster
+      // Find in loaded people list or fallback to initial roster (preventing non-Ales from matching Aleš Lajlar)
       let matchedPerson = currentPeople.find(p => p && (
-        (p.id && (p.id === sessionUser.id || (p as any).auth_user_id === sessionUser.id || (dbProfile && p.id === dbProfile.id))) ||
-        (p.email && p.email.toLowerCase().trim() === userEmail) ||
-        (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
+        (!isAles && (p.name?.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || p.email?.toLowerCase() === 'ales.lajlar@gmail.com') ? false : true) && (
+          (p.id && (p.id === sessionUser.id || (p as any).auth_user_id === sessionUser.id || (dbProfile && p.id === dbProfile.id))) ||
+          (p.email && p.email.toLowerCase().trim() === userEmail) ||
+          (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
+        )
       ));
 
       if (!matchedPerson) {
         matchedPerson = INITIAL_PEOPLE.find(p => p && (
-          (p.email && p.email.toLowerCase().trim() === userEmail) ||
-          (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
+          (!isAles && (p.name?.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || p.email?.toLowerCase() === 'ales.lajlar@gmail.com') ? false : true) && (
+            (p.email && p.email.toLowerCase().trim() === userEmail) ||
+            (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
+          )
         ));
       }
 
@@ -1379,11 +1430,14 @@ export default function App() {
           // Sync current logged in user's profile role if matched
           if (authUser) {
             const myEmail = (authUser.email || '').toLowerCase().trim();
+            const isAles = myEmail === 'ales.lajlar@gmail.com';
             const myUid = authUser.id || authUser.uid;
             const myPerson = (enforcedList || []).find(p => p && (
-              (myEmail && p.email && p.email.toLowerCase().trim() === myEmail) ||
-              ((p as any).auth_user_id === myUid) ||
-              (p.id === myUid)
+              (!isAles && (p.name?.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || p.email?.toLowerCase() === 'ales.lajlar@gmail.com') ? false : true) && (
+                (myEmail && p.email && p.email.toLowerCase().trim() === myEmail) ||
+                ((p as any).auth_user_id === myUid) ||
+                (p.id === myUid)
+              )
             ));
             if (myPerson) {
               const liveRole = normalizeUserRole(myPerson.role);
@@ -1479,11 +1533,14 @@ export default function App() {
           // Sync current logged in user's profile role on live Supabase changes
           if (authUser) {
             const myEmail = (authUser.email || '').toLowerCase().trim();
+            const isAles = myEmail === 'ales.lajlar@gmail.com';
             const myUid = authUser.id || authUser.uid;
             const myPerson = (freshPeople || []).find(p => p && (
-              (myEmail && p.email && p.email.toLowerCase().trim() === myEmail) ||
-              ((p as any).auth_user_id === myUid) ||
-              (p.id === myUid)
+              (!isAles && (p.name?.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || p.email?.toLowerCase() === 'ales.lajlar@gmail.com') ? false : true) && (
+                (myEmail && p.email && p.email.toLowerCase().trim() === myEmail) ||
+                ((p as any).auth_user_id === myUid) ||
+                (p.id === myUid)
+              )
             ));
             if (myPerson) {
               const liveRole = normalizeUserRole(myPerson.role);
@@ -2465,7 +2522,9 @@ export default function App() {
       <EcosystemNavbar
         currentApp="nedelje"
         user={authUser ? {
-          name: isAlesLoggedIn ? 'Aleš Lajlar' : (activePerson?.name || userDbProfile?.personName || userDbProfile?.displayName || authUser.user_metadata?.full_name || authUser.user_metadata?.name || (authUser.email ? authUser.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'Uporabnik')),
+          name: isAlesLoggedIn 
+            ? 'Aleš Lajlar' 
+            : ((activePerson && !activePerson.name.toLowerCase().includes('aleš lajlar') ? activePerson.name : null) || (userDbProfile?.personName && !userDbProfile.personName.toLowerCase().includes('aleš lajlar') ? userDbProfile.personName : null) || userDbProfile?.displayName || authUser.user_metadata?.full_name || authUser.user_metadata?.name || (authUser.email ? authUser.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'Uporabnik')),
           email: authUser.email || '',
           role: isAlesLoggedIn ? (testRoleOverride || 'Superadmin') : activeRole,
         } : null}
@@ -2639,138 +2698,150 @@ export default function App() {
           />
         ) : (
           <div className="animate-fade-in">
-            {activeTab === 'home' && (
-              <HomeDashboard
-                sundays={sundays}
-                ministries={ministries}
-                people={people}
-                activePerson={activePerson}
-                userRole={activeRole}
-                translations={translations}
-                currentLanguage={currentLanguage}
-                onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
-                onAddSunday={handleAddSunday}
-                onUpdateSunday={handleUpdateSunday}
-                onOpenVisitorModal={() => setIsVisitorModalOpen(true)}
-                onOpenSwapModal={() => setIsSwapModalOpen(true)}
-                onOpenCheckInModal={() => setIsAttendanceModalOpen(true)}
-                onOpenBlackoutModal={() => setIsBlackoutModalOpen(true)}
-                onOpenInspectionModal={handleOpenInspectionModal}
-                onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
-                onOpenRundownModal={handleOpenRundownModal}
-                visitors={visitorConnections}
-                blackoutDates={blackoutDates}
-              />
+            {visitedTabs.has('home') && (
+              <div className={activeTab === 'home' ? 'block animate-fade-in' : 'hidden'}>
+                <HomeDashboard
+                  sundays={sundays}
+                  ministries={ministries}
+                  people={people}
+                  activePerson={activePerson}
+                  userRole={activeRole}
+                  translations={translations}
+                  currentLanguage={currentLanguage}
+                  onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
+                  onAddSunday={handleAddSunday}
+                  onUpdateSunday={handleUpdateSunday}
+                  onOpenVisitorModal={() => setIsVisitorModalOpen(true)}
+                  onOpenSwapModal={() => setIsSwapModalOpen(true)}
+                  onOpenCheckInModal={() => setIsAttendanceModalOpen(true)}
+                  onOpenBlackoutModal={() => setIsBlackoutModalOpen(true)}
+                  onOpenInspectionModal={handleOpenInspectionModal}
+                  onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
+                  onOpenRundownModal={handleOpenRundownModal}
+                  visitors={visitorConnections}
+                  blackoutDates={blackoutDates}
+                />
+              </div>
             )}
 
-            {activeTab === 'sundays' && (
-              <ScheduleView
-                sundays={sundays}
-                ministries={ministries}
-                userRole={activeRole}
-                translations={translations}
-                currentLanguage={currentLanguage}
-                onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
-                onDeleteSunday={handleDeleteSunday}
-                onGenerateAcademicYear={handleGenerateAcademicYear}
-                onOpenStatistics={() => setActiveTab('statistics')}
-              />
+            {visitedTabs.has('sundays') && (
+              <div className={activeTab === 'sundays' ? 'block animate-fade-in' : 'hidden'}>
+                <ScheduleView
+                  sundays={sundays}
+                  ministries={ministries}
+                  userRole={activeRole}
+                  translations={translations}
+                  currentLanguage={currentLanguage}
+                  onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
+                  onDeleteSunday={handleDeleteSunday}
+                  onGenerateAcademicYear={handleGenerateAcademicYear}
+                  onOpenStatistics={() => handleNavTab('statistics')}
+                />
+              </div>
             )}
 
-            {activeTab === 'statistics' && (
-              <Statistika
-                sundays={sundays}
-                ministries={ministries}
-                people={people}
-                currentLanguage={currentLanguage}
-                translations={translations}
-                onBack={() => setActiveTab('sundays')}
-                onSelectSunday={(id) => {
-                  handleSelectSunday(id);
-                  setActiveTab('sundays');
-                }}
-              />
+            {visitedTabs.has('statistics') && (
+              <div className={activeTab === 'statistics' ? 'block animate-fade-in' : 'hidden'}>
+                <Statistika
+                  sundays={sundays}
+                  ministries={ministries}
+                  people={people}
+                  currentLanguage={currentLanguage}
+                  translations={translations}
+                  onBack={() => handleNavTab('sundays')}
+                  onSelectSunday={(id) => {
+                    handleSelectSunday(id);
+                    handleNavTab('sundays');
+                  }}
+                />
+              </div>
             )}
 
-            {activeTab === 'sunday_school' && (
-              <SundaySchoolView
-                sundays={sundays}
-                people={people}
-                userRole={activeRole}
-                lessons={sundaySchoolLessons}
-                supplies={sundaySchoolSupplies}
-                onUpdateLessons={handleUpdateSundaySchoolLessons}
-                onUpdateSupplies={setSundaySchoolSupplies}
-                translations={translations}
-                currentLanguage={currentLanguage}
-                canEdit={activeRole !== 'Viewer'}
-                onSelectSunday={(id) => handleSelectSunday(id, 'nedeljska_sola_mlajsa', 'kids')}
-                onUpdateSunday={handleUpdateSunday}
-                onGenerateAcademicYear={handleGenerateAcademicYear}
-                blackoutDates={blackoutDates}
-                ministries={ministries}
-              />
+            {visitedTabs.has('sunday_school') && (
+              <div className={activeTab === 'sunday_school' ? 'block animate-fade-in' : 'hidden'}>
+                <SundaySchoolView
+                  sundays={sundays}
+                  people={people}
+                  userRole={activeRole}
+                  lessons={sundaySchoolLessons}
+                  supplies={sundaySchoolSupplies}
+                  onUpdateLessons={handleUpdateSundaySchoolLessons}
+                  onUpdateSupplies={setSundaySchoolSupplies}
+                  translations={translations}
+                  currentLanguage={currentLanguage}
+                  canEdit={activeRole !== 'Viewer'}
+                  onSelectSunday={(id) => handleSelectSunday(id, 'nedeljska_sola_mlajsa', 'kids')}
+                  onUpdateSunday={handleUpdateSunday}
+                  onGenerateAcademicYear={handleGenerateAcademicYear}
+                  blackoutDates={blackoutDates}
+                  ministries={ministries}
+                />
+              </div>
             )}
 
-            {activeTab === 'worship' && (
-              <WorshipTeamView
-                sundays={sundays}
-                people={people}
-                userRole={activeRole}
-                translations={translations}
-                currentLanguage={currentLanguage}
-                worshipRoster={worshipRoster}
-                onUpdateWorshipRoster={handleUpdateWorshipRoster}
-                onUpdateSunday={handleUpdateSunday}
-                onSelectSunday={(id) => handleSelectSunday(id, 'slavilna_ekipa', 'worship')}
-                blackoutDates={blackoutDates}
-                ministries={ministries}
-              />
+            {visitedTabs.has('worship') && (
+              <div className={activeTab === 'worship' ? 'block animate-fade-in' : 'hidden'}>
+                <WorshipTeamView
+                  sundays={sundays}
+                  people={people}
+                  userRole={activeRole}
+                  translations={translations}
+                  currentLanguage={currentLanguage}
+                  worshipRoster={worshipRoster}
+                  onUpdateWorshipRoster={handleUpdateWorshipRoster}
+                  onUpdateSunday={handleUpdateSunday}
+                  onSelectSunday={(id) => handleSelectSunday(id, 'slavilna_ekipa', 'worship')}
+                  blackoutDates={blackoutDates}
+                  ministries={ministries}
+                />
+              </div>
             )}
 
-            {activeTab === 'ministries' && (
-              <MinistryView
-                sundays={sundays}
-                ministries={ministries}
-                people={people}
-                userRole={activeRole}
-                translations={translations}
-                currentLanguage={currentLanguage}
-                worshipRoster={worshipRoster}
-                sundaySchoolLessons={sundaySchoolLessons}
-                onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
-                onOpenInspectionModal={handleOpenInspectionModal}
-              />
+            {visitedTabs.has('ministries') && (
+              <div className={activeTab === 'ministries' ? 'block animate-fade-in' : 'hidden'}>
+                <MinistryView
+                  sundays={sundays}
+                  ministries={ministries}
+                  people={people}
+                  userRole={activeRole}
+                  translations={translations}
+                  currentLanguage={currentLanguage}
+                  worshipRoster={worshipRoster}
+                  sundaySchoolLessons={sundaySchoolLessons}
+                  onSelectSunday={(id, mId, catId) => handleSelectSunday(id, mId, catId)}
+                  onOpenInspectionModal={handleOpenInspectionModal}
+                />
+              </div>
             )}
 
-            {activeTab === 'people' && (
-              <PeopleView
-                sundays={sundays}
-                ministries={ministries}
-                people={people}
-                users={users}
-                userRole={activeRole}
-                activePerson={activePerson}
-                authUser={authUser}
-                translations={translations}
-                currentLanguage={currentLanguage}
-                onAddPerson={handleAddPerson}
-                onDeletePerson={handleDeletePerson}
-                onUpdatePerson={handleUpdatePerson}
-                onLinkUserPerson={handleLinkUserPerson}
-                onUpdateUserRole={handleUpdateUserRole}
-                onDeleteUser={handleDeleteUser}
-                onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
-                googleToken={googleToken}
-                onSetGoogleToken={handleSetGoogleToken}
-                confirmedViewerIds={confirmedViewerIds}
-                onConfirmViewer={handleConfirmViewer}
-              />
-            )}
+            {visitedTabs.has('people') && (
+              <div className={activeTab === 'people' ? 'block animate-fade-in' : 'hidden'}>
+                <PeopleView
+                  sundays={sundays}
+                  ministries={ministries}
+                  people={people}
+                  users={users}
+                  userRole={activeRole}
+                  activePerson={activePerson}
+                  authUser={authUser}
+                  translations={translations}
+                  currentLanguage={currentLanguage}
+                  onAddPerson={handleAddPerson}
+                  onDeletePerson={handleDeletePerson}
+                  onUpdatePerson={handleUpdatePerson}
+                  onLinkUserPerson={handleLinkUserPerson}
+                  onUpdateUserRole={handleUpdateUserRole}
+                  onDeleteUser={handleDeleteUser}
+                  onOpenNotificationModal={() => setIsNotificationModalOpen(true)}
+                  googleToken={googleToken}
+                  onSetGoogleToken={handleSetGoogleToken}
+                  confirmedViewerIds={confirmedViewerIds}
+                  onConfirmViewer={handleConfirmViewer}
+                />
 
-            {/* Extra Admin Controls Block (Collapsible) */}
-            {activeTab === 'people' && activeRole === 'Admin' && users.length > 0 && (
-              <div className="px-2 sm:px-4 pb-12 max-w-6xl mx-auto w-full space-y-4">
+                {/* Extra Admin Controls Block (Collapsible) */}
+                {activeRole === 'Admin' && users.length > 0 && (
+                  <div className="px-2 sm:px-4 pb-12 max-w-6xl mx-auto w-full space-y-4">
                 {/* Save confirmation toast inside section */}
                 {roleActionToast && (
                   <div className="bg-emerald-600 text-white p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between shadow-md border border-emerald-500 animate-fade-in">
@@ -2982,6 +3053,8 @@ export default function App() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
               </div>
             )}
           </div>

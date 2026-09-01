@@ -63,13 +63,18 @@ function PendingUserItemCard({
   // Smart auto-match: find person with similar name or email
   const nameLower = (user.displayName || '').toLowerCase().trim();
   const emailLower = (user.email || '').toLowerCase().trim();
+  const isAles = emailLower === 'ales.lajlar@gmail.com';
 
   const bestMatch = (people || []).find(p => {
     if (!p || !p.name) return false;
+    // Strictly prevent non-Ales accounts from auto-matching Aleš Lajlar
+    if (!isAles && (p.name.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || (p.email && p.email.toLowerCase() === 'ales.lajlar@gmail.com'))) {
+      return false;
+    }
     const pNameLower = p.name.toLowerCase().trim();
     const pEmailLower = (p.email || '').toLowerCase().trim();
     if (emailLower && pEmailLower && emailLower === pEmailLower) return true;
-    if (nameLower && pNameLower && (nameLower === pNameLower || nameLower.includes(pNameLower) || pNameLower.includes(nameLower))) return true;
+    if (nameLower && pNameLower && (nameLower === pNameLower || (nameLower.length >= 3 && pNameLower.includes(nameLower)) || (pNameLower.length >= 3 && nameLower.includes(pNameLower)))) return true;
     return false;
   });
 

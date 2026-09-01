@@ -33,6 +33,7 @@ export function useBackdropHistory(
     // Modal just opened: push history entry
     isClosedByPopstate.current = false;
     isPushed.current = true;
+    const initialPath = typeof window !== 'undefined' ? window.location.pathname : '';
     const stateTag = { __modalOverlay: modalId, timestamp: Date.now() };
     window.history.pushState(stateTag, '');
 
@@ -49,10 +50,12 @@ export function useBackdropHistory(
       window.removeEventListener('popstate', handlePopState);
 
       // If closed programmatically / via UI click (not by back button) and state was pushed
+      // ONLY revert history if the user is still on the same pathname!
+      // If the route or tab changed, DO NOT call history.back() as it would undo the user's tab navigation!
       if (isPushed.current && !isClosedByPopstate.current) {
         isPushed.current = false;
-        // Revert the pushed state if it was created for this overlay
-        if (window.history.state && window.history.state.__modalOverlay === modalId) {
+        const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+        if (currentPath === initialPath && window.history.state && window.history.state.__modalOverlay === modalId) {
           window.history.back();
         }
       }
