@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { ServiceSunday, Ministry, UserRole, Translation, Person, VisitorConnection, BlackoutDate, canAccessPersonalData, getFirstName } from '../types';
 import { 
-  Calendar, Users, ArrowRightLeft, AlertTriangle, ShieldCheck, Heart, Sparkles, ChevronRight, CheckCircle2, AlertCircle, Plus, Eye, BookOpen, Layers, Check, Clock, HelpCircle, X, ExternalLink, ShieldAlert, Award, Star, MessageSquare, Phone, Info, Music, Home, Wine, HeartHandshake, PlusCircle, Coffee, Edit, UserPlus, Copy, CheckCircle, Palmtree, ClipboardCheck, Bell, UserCheck, User, Crown
+  Calendar, Users, ArrowRightLeft, AlertTriangle, ShieldCheck, Heart, Sparkles, ChevronRight, CheckCircle2, AlertCircle, Plus, Eye, BookOpen, Layers, Check, Clock, HelpCircle, X, ExternalLink, ShieldAlert, Award, Star, MessageSquare, Phone, Info, Music, Home, Wine, HeartHandshake, PlusCircle, Coffee, Edit, UserPlus, Copy, CheckCircle, Palmtree, ClipboardCheck, Bell, UserCheck, User, Crown, ChevronDown
 } from 'lucide-react';
 import HeroHeaderBanner from './HeroHeaderBanner';
 import KcKalvarijaLogoComponent from './KcKalvarijaLogo';
@@ -75,6 +75,9 @@ export default function HomeDashboard({
   const [selectedVacantId, setSelectedVacantId] = useState('');
   const [selectedPersonName, setSelectedPersonName] = useState('');
   const [rosterSearchQuery, setRosterSearchQuery] = useState('');
+
+  // Personal upcoming serving calendar toggle in banner
+  const [showMyServingCalendar, setShowMyServingCalendar] = useState(false);
 
   // Today at midnight for calculating upcoming dates
   const today = new Date();
@@ -330,43 +333,171 @@ export default function HomeDashboard({
     return assignedList.some(name => name.toLowerCase().trim() === pName);
   };
 
-  // Personalized & Community stats computation
-  let myThisSundayMinistries: string[] = [];
-  let nextServingSunday: ServiceSunday | null = null;
-  let nextServingMinistries: string[] = [];
-  let myYearAssignmentsCount = 0;
+  // Serving Phase Helper
+  type ServingPhase = 'before' | 'during' | 'after';
+
+  type ServingDutyItem = {
+    ministry: Ministry;
+    phase: ServingPhase;
+    phaseLabel: string;
+    timeHint: string;
+    phaseEmoji: string;
+    phaseColor: string;
+    actionTooltip: string;
+  };
+
+  type ServingSundayScheduleItem = {
+    sunday: ServiceSunday;
+    date: string;
+    isThisSunday: boolean;
+    duties: ServingDutyItem[];
+  };
+
+  const getMinistryPhaseInfo = (
+    m: Ministry,
+    lang: 'sl' | 'en'
+  ): {
+    phase: ServingPhase;
+    phaseLabel: string;
+    timeHint: string;
+    phaseEmoji: string;
+    phaseColor: string;
+  } => {
+    const cat = (m.category || '').toLowerCase();
+    const id = (m.id || '').toLowerCase();
+    const name = ((m.nameSl || '') + ' ' + (m.nameEn || '')).toLowerCase();
+
+    // 1. After service duties (inspection, lock, finance count, coffee cleanup)
+    if (
+      cat === 'post_service' ||
+      id.includes('lock') || id.includes('zaklep') ||
+      id.includes('inspect') || id.includes('pregled') ||
+      id.includes('count') || id.includes('finance') || id.includes('darov') ||
+      name.includes('zaklep') || name.includes('pregled') || name.includes('lock') || name.includes('posprav') || name.includes('darov')
+    ) {
+      return {
+        phase: 'after',
+        phaseLabel: lang === 'sl' ? 'Po bogoslužju' : 'After Service',
+        timeHint: '11:30+',
+        phaseEmoji: '🧹',
+        phaseColor: 'border-amber-400/40 text-amber-200 bg-amber-500/15',
+      };
+    }
+
+    // 2. Before service setup & tech duties (audio/video setup, stage prep, door welcome)
+    if (
+      cat === 'cleaning' ||
+      cat === 'audio_video' ||
+      cat === 'av_tech' ||
+      id.includes('setup') || id.includes('priprava') || id.includes('tehnika') || id.includes('sound') ||
+      name.includes('priprava') || name.includes('zvok') || name.includes('sound') || name.includes('vrata') || name.includes('sprejem')
+    ) {
+      return {
+        phase: 'before',
+        phaseLabel: lang === 'sl' ? 'Pred bogoslužjem' : 'Before Service',
+        timeHint: '09:00 - 09:45',
+        phaseEmoji: '🌅',
+        phaseColor: 'border-sky-400/40 text-sky-200 bg-sky-500/15',
+      };
+    }
+
+    // 3. During service (Sermon, Worship, Kids, Prayer, Communion, Hospitality)
+    return {
+      phase: 'during',
+      phaseLabel: lang === 'sl' ? 'Med bogoslužjem' : 'During Service',
+      timeHint: '10:00 - 11:30',
+      phaseEmoji: '⛪',
+      phaseColor: 'border-emerald-400/40 text-emerald-200 bg-emerald-500/15',
+    };
+  };
+
+  // Personalized serving duties computation
+  const myThisSundayDuties: ServingDutyItem[] = [];
+  const myUpcomingServingSchedule: ServingSundayScheduleItem[] = [];
 
   if (activePerson) {
-    // 1. Check this upcoming Sunday
-    ministries.forEach(m => {
-      if (isPersonAssignedOnSunday(nextSunday, activePerson, m.id)) {
-        myThisSundayMinistries.push(currentLanguage === 'sl' ? m.nameSl : m.nameEn);
-      }
-    });
-
-    // 2. Scan all sortedSundays
+    // 1. Scan all future Sundays
     sortedSundays.forEach(s => {
       const sDate = parseEuropeanDate(s.date);
-      let assignedInSunday = false;
-      const assignedMinNames: string[] = [];
+      if (sDate.getTime() >= today.getTime()) {
+        const assignedDutiesForSunday: ServingDutyItem[] = [];
+        ministries.forEach(m => {
+          if (isPersonAssignedOnSunday(s, activePerson, m.id)) {
+            const phaseInfo = getMinistryPhaseInfo(m, currentLanguage);
+            const mId = m.id.toLowerCase();
+            const actionTooltip = (mId.includes('inspect') || mId.includes('pregled') || mId.includes('lock') || mId.includes('zaklep'))
+              ? (currentLanguage === 'sl' ? 'Odpri kontrolni seznam pregleda' : 'Open inspection checklist')
+              : (mId.includes('sermon') || mId.includes('govor') || mId.includes('pridig') || mId.includes('rundown'))
+                ? (currentLanguage === 'sl' ? 'Odpri potek bogoslužja & odštevalnik' : 'Open service rundown & timer')
+                : (currentLanguage === 'sl' ? 'Odpri razpored te službe' : 'Open schedule for this role');
 
-      ministries.forEach(m => {
-        if (isPersonAssignedOnSunday(s, activePerson, m.id)) {
-          assignedInSunday = true;
-          myYearAssignmentsCount++;
-          assignedMinNames.push(currentLanguage === 'sl' ? m.nameSl : m.nameEn);
+            assignedDutiesForSunday.push({
+              ministry: m,
+              ...phaseInfo,
+              actionTooltip,
+            });
+          }
+        });
+
+        if (assignedDutiesForSunday.length > 0) {
+          myUpcomingServingSchedule.push({
+            sunday: s,
+            date: s.date,
+            isThisSunday: s.id === nextSunday.id,
+            duties: assignedDutiesForSunday,
+          });
         }
-      });
-
-      // Find earliest upcoming serving date (today or future)
-      if (assignedInSunday && sDate.getTime() >= today.getTime() && !nextServingSunday) {
-        nextServingSunday = s;
-        nextServingMinistries = assignedMinNames;
       }
     });
+
+    // 2. Extract this Sunday's duties
+    const thisSundaySchedule = myUpcomingServingSchedule.find(entry => entry.sunday.id === nextSunday.id);
+    if (thisSundaySchedule) {
+      myThisSundayDuties.push(...thisSundaySchedule.duties);
+    }
   }
 
-  const isServingThisSunday = myThisSundayMinistries.length > 0;
+  const isServingThisSunday = myThisSundayDuties.length > 0;
+  const nextServingScheduleEntry = isServingThisSunday
+    ? myUpcomingServingSchedule.find(entry => entry.sunday.id !== nextSunday.id)
+    : myUpcomingServingSchedule[0];
+
+  const beforeDuties = myThisSundayDuties.filter(d => d.phase === 'before');
+  const duringDuties = myThisSundayDuties.filter(d => d.phase === 'during');
+  const afterDuties = myThisSundayDuties.filter(d => d.phase === 'after');
+
+  const handleServingDutyClick = (m: Ministry, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const mId = m.id.toLowerCase();
+
+    // If it's an inspection / lock / checklist duty
+    if (mId.includes('inspect') || mId.includes('pregled') || mId.includes('lock') || mId.includes('zaklep')) {
+      if (onOpenInspectionModal) {
+        if (mId.includes('tech') || mId.includes('oder')) {
+          onOpenInspectionModal('tech_stage');
+        } else if (mId.includes('coffee') || mId.includes('kav')) {
+          onOpenInspectionModal('coffee_upper_hall');
+        } else if (mId.includes('kid') || mId.includes('sol') || mId.includes('šol')) {
+          onOpenInspectionModal('kids_classrooms');
+        } else {
+          onOpenInspectionModal('general_cleaning');
+        }
+        return;
+      }
+    }
+
+    // If it's sermon / teaching / rundown
+    if (mId.includes('sermon') || mId.includes('govor') || mId.includes('pridig') || mId.includes('rundown')) {
+      if (onOpenRundownModal) {
+        onOpenRundownModal(nextSunday.id);
+        return;
+      }
+    }
+
+    // Default: Open the Sunday details focused on that ministry
+    onSelectSunday(nextSunday.id, m.id, m.category);
+  };
+
   const nextSundayFocus = getEffectiveSundayFocus(nextSunday);
   const nextSundayFocusLabel = nextSundayFocus.type === 'communion'
     ? (currentLanguage === 'sl' ? '🍷 Gospodova Večerja' : '🍷 Lord\'s Supper')
@@ -599,92 +730,366 @@ export default function HomeDashboard({
           </div>
         }
       >
-        {/* Subtle serving & overview metrics line (Option 2 + Option 4 merged) */}
-        <div className="pt-2.5 border-t border-white/15 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-          
-          {/* Left Side: Personalized Volunteer Pulse or Next Sunday Focus */}
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            {activePerson ? (
-              <>
-                {isServingThisSunday ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 text-[11px] font-medium shadow-2xs">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
-                    <span>
-                      {currentLanguage === 'sl' 
-                        ? `Ta teden služiš: ${myThisSundayMinistries.join(', ')}` 
-                        : `Serving this Sunday: ${myThisSundayMinistries.join(', ')}`}
-                    </span>
-                  </span>
-                ) : nextServingSunday ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-white/95 border border-white/20 text-[11px] font-medium backdrop-blur-xs">
-                    <Calendar className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                    <span>
-                      {currentLanguage === 'sl' 
-                        ? `Naslednje služenje: ${formatToEuropeanDate((nextServingSunday as ServiceSunday).date)} (${nextServingMinistries.join(', ')})` 
-                        : `Next duty: ${formatToEuropeanDate((nextServingSunday as ServiceSunday).date)} (${nextServingMinistries.join(', ')})`}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-white/80 border border-white/15 text-[11px]">
-                    <User className="w-3.5 h-3.5 text-white/70 shrink-0" />
-                    <span>{currentLanguage === 'sl' ? 'Brez prihajajočih zadolžitev' : 'No upcoming duties'}</span>
-                  </span>
-                )}
+        {/* Personalized Interactive Serving Center & Church Metrics */}
+        <div className="pt-2.5 border-t border-white/15 space-y-3">
+          {activePerson ? (
+            <div className="space-y-2.5">
+              {isServingThisSunday ? (
+                /* Card when serving this Sunday */
+                <div className="bg-black/30 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 border border-white/20 shadow-lg space-y-3">
+                  {/* Top Bar: Count of assignments + Calendar button */}
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-xl bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 text-sm font-bold shadow-2xs">
+                        ⚡
+                      </span>
+                      <div>
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className="text-sm sm:text-base font-extrabold text-white font-display tracking-tight">
+                            {currentLanguage === 'sl' 
+                              ? `${myThisSundayDuties.length} ${myThisSundayDuties.length === 1 ? 'zadolžitev' : myThisSundayDuties.length === 2 ? 'zadolžitvi' : myThisSundayDuties.length <= 4 ? 'zadolžitve' : 'zadolžitev'} to nedeljo` 
+                              : `${myThisSundayDuties.length} assignment${myThisSundayDuties.length > 1 ? 's' : ''} this Sunday`}
+                          </span>
+                          <span className="text-xs text-emerald-300 font-mono font-medium">
+                            ({formatToEuropeanDate(nextSunday.date)})
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-white/75 font-sans">
+                          {currentLanguage === 'sl' 
+                            ? 'Kliknite na posamezno službo za takojšen ogled ali kontrolni seznam:' 
+                            : 'Click any assignment below to view details or launch its checklist:'}
+                        </p>
+                      </div>
+                    </div>
 
-                {myYearAssignmentsCount > 0 && (
-                  <span 
-                    className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-white/10 text-white/90 border border-white/15" 
-                    title={currentLanguage === 'sl' ? 'Skupno število služb v tem šolskem letu' : 'Total serving assignments this school year'}
-                  >
-                    🎯 {myYearAssignmentsCount}x {currentLanguage === 'sl' ? 'letos' : 'this year'}
-                  </span>
-                )}
+                    {/* Schedule / Calendar Drawer Toggle */}
+                    {myUpcomingServingSchedule.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowMyServingCalendar(!showMyServingCalendar)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border shadow-xs active:scale-95 ${
+                          showMyServingCalendar
+                            ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold shadow-md'
+                            : 'bg-white/15 hover:bg-white/25 text-white border-white/20'
+                        }`}
+                        title={currentLanguage === 'sl' ? 'Prikaži vse prihajajoče nedelje služenja' : 'View all upcoming serving dates'}
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>
+                          {currentLanguage === 'sl' 
+                            ? `Moj razpored (${myUpcomingServingSchedule.length})` 
+                            : `My Schedule (${myUpcomingServingSchedule.length})`}
+                        </span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showMyServingCalendar ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
+                  </div>
 
-                {pendingInvitations.length > 0 && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-xs animate-pulse">
-                    <Bell className="w-3 h-3" />
-                    <span>{pendingInvitations.length} {currentLanguage === 'sl' ? 'vabilo k potrditvi' : 'pending invite'}</span>
-                  </span>
-                )}
-              </>
-            ) : (
-              <div className="flex items-center gap-2 text-white/90 text-xs">
-                <span className="flex items-center gap-1 text-white/80">
-                  <Calendar className="w-3.5 h-3.5 text-sky-300 shrink-0" />
-                  <span>{currentLanguage === 'sl' ? 'Naslednje bogoslužje:' : 'Next Service:'}</span>
-                </span>
-                <span className="font-bold text-white bg-white/15 px-2 py-0.5 rounded-md border border-white/20 text-[11px] font-mono">
-                  {formatToEuropeanDate(nextSunday.date)}
-                </span>
-                <span className="text-[11px] bg-white/10 px-2 py-0.5 rounded-md border border-white/15 text-indigo-100 font-medium">
-                  {nextSundayFocusLabel}
-                </span>
-              </div>
-            )}
-          </div>
+                  {/* Phase Flow Grid (Before / During / After) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                    {beforeDuties.length > 0 && (
+                      <div className="bg-white/10 rounded-xl p-2.5 border border-sky-400/30 flex flex-col justify-between gap-2 backdrop-blur-xs">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-sky-200 pb-1 border-b border-white/10">
+                          <span className="flex items-center gap-1.5">
+                            <span>🌅</span>
+                            <span className="uppercase tracking-wider font-mono font-bold">
+                              {currentLanguage === 'sl' ? 'Pred bogoslužjem' : 'Before Service'}
+                            </span>
+                          </span>
+                          <span className="text-[10px] text-sky-300/80 font-mono">09:00 - 09:45</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {beforeDuties.map((duty, idx) => {
+                            const minName = currentLanguage === 'sl' ? duty.ministry.nameSl : duty.ministry.nameEn;
+                            const emoji = getMinistryIconEmoji(duty.ministry.id);
+                            return (
+                              <button
+                                key={`before-${duty.ministry.id}-${idx}`}
+                                type="button"
+                                onClick={(e) => handleServingDutyClick(duty.ministry, e)}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/35 border border-sky-400/40 text-white font-medium text-xs flex items-center justify-between gap-2 transition cursor-pointer group shadow-2xs active:scale-98"
+                                title={duty.actionTooltip}
+                              >
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <span>{emoji}</span>
+                                  <span className="truncate font-semibold">{minName}</span>
+                                </span>
+                                <ExternalLink className="w-3 h-3 text-sky-300 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition shrink-0" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
-          {/* Right Side: Community & Ecosystem Live Metrics */}
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-white/90">
-            <span 
-              className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
-              title={currentLanguage === 'sl' 
-                ? `Šolsko leto 2026/2027: ${completedSchoolSundaysCount} zaključenih nedelj, še ${upcomingSchoolSundays.length} pred nami (skupaj ${activeSchoolSundays.length})` 
-                : `School Year 2026/2027: ${completedSchoolSundaysCount} completed, ${upcomingSchoolSundays.length} upcoming (${activeSchoolSundays.length} total)`}
-            >
-              📅 <strong className="text-white font-bold">{upcomingSchoolSundays.length}/{activeSchoolSundays.length}</strong> {currentLanguage === 'sl' ? 'nedelj' : 'Sundays'}
-            </span>
-            <span 
-              className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
-              title={currentLanguage === 'sl' ? 'Aktivne službe v cerkvi' : 'Active church ministries'}
-            >
-              📋 <strong className="text-white font-bold">{ministries.length}</strong> {currentLanguage === 'sl' ? 'služb' : 'ministries'}
-            </span>
-            <span 
-              className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
-              title={currentLanguage === 'sl' ? `Aktivni sodelavci z dodeljenimi ali prednostnimi službami (${activeServantsCount} od skupaj ${people.length} v bazi)` : `Active servants with ministry duties (${activeServantsCount} of ${people.length} total)`}
-            >
-              👥 <strong className="text-white font-bold">{activeServantsCount}</strong> {currentLanguage === 'sl' ? 'aktivnih' : 'active'}
-            </span>
+                    {duringDuties.length > 0 && (
+                      <div className="bg-white/10 rounded-xl p-2.5 border border-emerald-400/30 flex flex-col justify-between gap-2 backdrop-blur-xs">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-200 pb-1 border-b border-white/10">
+                          <span className="flex items-center gap-1.5">
+                            <span>⛪</span>
+                            <span className="uppercase tracking-wider font-mono font-bold">
+                              {currentLanguage === 'sl' ? 'Med bogoslužjem' : 'During Service'}
+                            </span>
+                          </span>
+                          <span className="text-[10px] text-emerald-300/80 font-mono">10:00 - 11:30</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {duringDuties.map((duty, idx) => {
+                            const minName = currentLanguage === 'sl' ? duty.ministry.nameSl : duty.ministry.nameEn;
+                            const emoji = getMinistryIconEmoji(duty.ministry.id);
+                            return (
+                              <button
+                                key={`during-${duty.ministry.id}-${idx}`}
+                                type="button"
+                                onClick={(e) => handleServingDutyClick(duty.ministry, e)}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/40 text-white font-medium text-xs flex items-center justify-between gap-2 transition cursor-pointer group shadow-2xs active:scale-98"
+                                title={duty.actionTooltip}
+                              >
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <span>{emoji}</span>
+                                  <span className="truncate font-semibold">{minName}</span>
+                                </span>
+                                <ExternalLink className="w-3 h-3 text-emerald-300 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition shrink-0" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {afterDuties.length > 0 && (
+                      <div className="bg-white/10 rounded-xl p-2.5 border border-amber-400/30 flex flex-col justify-between gap-2 backdrop-blur-xs">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-amber-200 pb-1 border-b border-white/10">
+                          <span className="flex items-center gap-1.5">
+                            <span>🧹</span>
+                            <span className="uppercase tracking-wider font-mono font-bold">
+                              {currentLanguage === 'sl' ? 'Po bogoslužju' : 'After Service'}
+                            </span>
+                          </span>
+                          <span className="text-[10px] text-amber-300/80 font-mono">11:30+</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {afterDuties.map((duty, idx) => {
+                            const minName = currentLanguage === 'sl' ? duty.ministry.nameSl : duty.ministry.nameEn;
+                            const emoji = getMinistryIconEmoji(duty.ministry.id);
+                            return (
+                              <button
+                                key={`after-${duty.ministry.id}-${idx}`}
+                                type="button"
+                                onClick={(e) => handleServingDutyClick(duty.ministry, e)}
+                                className="w-full text-left px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/40 text-white font-medium text-xs flex items-center justify-between gap-2 transition cursor-pointer group shadow-2xs active:scale-98"
+                                title={duty.actionTooltip}
+                              >
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <span>{emoji}</span>
+                                  <span className="truncate font-semibold">{minName}</span>
+                                </span>
+                                <ExternalLink className="w-3 h-3 text-amber-300 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition shrink-0" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expanded Upcoming Serving Schedule */}
+                  {showMyServingCalendar && (
+                    <div className="mt-3 pt-3 border-t border-white/15 space-y-2.5 animate-fade-in">
+                      <div className="flex items-center justify-between text-xs text-white/90">
+                        <span className="font-bold flex items-center gap-1.5 text-amber-300">
+                          <Calendar className="w-4 h-4" />
+                          <span>{currentLanguage === 'sl' ? 'Vaš koledar služenja za naslednje mesece:' : 'Your upcoming serving schedule:'}</span>
+                        </span>
+                        {onOpenSwapModal && (
+                          <button
+                            type="button"
+                            onClick={onOpenSwapModal}
+                            className="text-[11px] bg-white/15 hover:bg-white/25 px-2.5 py-1 rounded-lg border border-white/20 transition cursor-pointer flex items-center gap-1 text-white active:scale-95"
+                          >
+                            <ArrowRightLeft className="w-3 h-3 text-amber-300" />
+                            <span>{currentLanguage === 'sl' ? 'Zamenjava' : 'Swap'}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {myUpcomingServingSchedule.map((entry, eIdx) => {
+                          return (
+                            <div
+                              key={`upcoming-entry-${entry.sunday.id}-${eIdx}`}
+                              className={`p-2.5 rounded-xl border transition ${
+                                entry.isThisSunday
+                                  ? 'bg-emerald-500/25 border-emerald-400/50 shadow-xs'
+                                  : 'bg-black/25 border-white/15 hover:bg-black/35'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-white/10 text-xs">
+                                <span className="font-bold font-mono text-white flex items-center gap-1">
+                                  <Calendar className="w-3.5 h-3.5 text-indigo-300" />
+                                  <span>{formatToEuropeanDate(entry.date)}</span>
+                                </span>
+                                {entry.isThisSunday ? (
+                                  <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-400 text-emerald-950">
+                                    {currentLanguage === 'sl' ? 'To nedeljo' : 'This Sunday'}
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => onSelectSunday(entry.sunday.id)}
+                                    className="text-[10px] text-sky-300 hover:text-white underline cursor-pointer font-medium"
+                                  >
+                                    {currentLanguage === 'sl' ? 'Odpri razpored' : 'Open Schedule'}
+                                  </button>
+                                )}
+                              </div>
+                              <div className="pt-1.5 space-y-1">
+                                {entry.duties.map((d, dIdx) => (
+                                  <div key={`entry-duty-${d.ministry.id}-${dIdx}`} className="flex items-center justify-between text-[11px] text-white/90">
+                                    <span className="flex items-center gap-1 truncate">
+                                      <span>{getMinistryIconEmoji(d.ministry.id)}</span>
+                                      <span className="truncate">{currentLanguage === 'sl' ? d.ministry.nameSl : d.ministry.nameEn}</span>
+                                    </span>
+                                    <span className="text-[10px] text-white/60 font-mono shrink-0 ml-1">{d.phaseLabel}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Card when activePerson is NOT serving this Sunday */
+                <div className="bg-black/25 backdrop-blur-md rounded-2xl p-3.5 sm:p-4 border border-white/15 shadow-md space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-xl bg-white/15 border border-white/20 text-amber-300 text-sm">
+                        ✨
+                      </span>
+                      <div>
+                        <span className="text-xs sm:text-sm font-bold text-white font-display block">
+                          {currentLanguage === 'sl' ? 'To nedeljo nimaš razporejenih služb' : 'No duties scheduled for this Sunday'}
+                        </span>
+                        {nextServingScheduleEntry && (
+                          <span className="text-[11px] text-white/80 font-mono">
+                            {currentLanguage === 'sl' 
+                              ? `Naslednje služenje: ${formatToEuropeanDate(nextServingScheduleEntry.date)} (${nextServingScheduleEntry.duties.map(d => currentLanguage === 'sl' ? d.ministry.nameSl : d.ministry.nameEn).join(', ')})`
+                              : `Next duty: ${formatToEuropeanDate(nextServingScheduleEntry.date)} (${nextServingScheduleEntry.duties.map(d => currentLanguage === 'sl' ? d.ministry.nameSl : d.ministry.nameEn).join(', ')})`}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {myUpcomingServingSchedule.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowMyServingCalendar(!showMyServingCalendar)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border shadow-xs active:scale-95 ${
+                          showMyServingCalendar
+                            ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold shadow-md'
+                            : 'bg-white/15 hover:bg-white/25 text-white border-white/20'
+                        }`}
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>
+                          {currentLanguage === 'sl' 
+                            ? `Moj koledar (${myUpcomingServingSchedule.length})` 
+                            : `My Schedule (${myUpcomingServingSchedule.length})`}
+                        </span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showMyServingCalendar ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Expanded Upcoming Serving Schedule */}
+                  {showMyServingCalendar && (
+                    <div className="mt-3 pt-3 border-t border-white/15 space-y-2 animate-fade-in">
+                      <div className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4" />
+                        <span>{currentLanguage === 'sl' ? 'Vaša prihajajoča služenja:' : 'Your upcoming serving dates:'}</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {myUpcomingServingSchedule.map((entry, eIdx) => (
+                          <div
+                            key={`upcoming-rest-${entry.sunday.id}-${eIdx}`}
+                            className="p-2.5 rounded-xl border bg-black/25 border-white/15 hover:bg-black/35 transition"
+                          >
+                            <div className="flex items-center justify-between gap-1.5 pb-1 border-b border-white/10 text-xs">
+                              <span className="font-bold font-mono text-white flex items-center gap-1">
+                                <Calendar className="w-3.5 h-3.5 text-indigo-300" />
+                                <span>{formatToEuropeanDate(entry.date)}</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => onSelectSunday(entry.sunday.id)}
+                                className="text-[10px] text-sky-300 hover:text-white underline cursor-pointer font-medium"
+                              >
+                                {currentLanguage === 'sl' ? 'Odpri razpored' : 'Open Schedule'}
+                              </button>
+                            </div>
+                            <div className="pt-1.5 space-y-1">
+                              {entry.duties.map((d, dIdx) => (
+                                <div key={`entry-rest-duty-${d.ministry.id}-${dIdx}`} className="flex items-center justify-between text-[11px] text-white/90">
+                                  <span className="flex items-center gap-1 truncate">
+                                    <span>{getMinistryIconEmoji(d.ministry.id)}</span>
+                                    <span className="truncate">{currentLanguage === 'sl' ? d.ministry.nameSl : d.ministry.nameEn}</span>
+                                  </span>
+                                  <span className="text-[10px] text-white/60 font-mono shrink-0 ml-1">{d.phaseLabel}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* General Next Sunday Summary when no active person is selected */
+            <div className="flex items-center gap-2 text-white/90 text-xs py-1">
+              <span className="flex items-center gap-1 text-white/80">
+                <Calendar className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                <span>{currentLanguage === 'sl' ? 'Naslednje bogoslužje:' : 'Next Service:'}</span>
+              </span>
+              <span className="font-bold text-white bg-white/15 px-2 py-0.5 rounded-md border border-white/20 text-[11px] font-mono">
+                {formatToEuropeanDate(nextSunday.date)}
+              </span>
+              <span className="text-[11px] bg-white/10 px-2 py-0.5 rounded-md border border-white/15 text-indigo-100 font-medium">
+                {nextSundayFocusLabel}
+              </span>
+            </div>
+          )}
+
+          {/* Bottom Community & Ecosystem Live Metrics */}
+          <div className="pt-1.5 flex flex-wrap items-center justify-between gap-2.5 text-[11px] font-mono text-white/90 border-t border-white/10">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span 
+                className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
+                title={currentLanguage === 'sl' 
+                  ? `Šolsko leto 2026/2027: ${completedSchoolSundaysCount} zaključenih nedelj, še ${upcomingSchoolSundays.length} pred nami (skupaj ${activeSchoolSundays.length})` 
+                  : `School Year 2026/2027: ${completedSchoolSundaysCount} completed, ${upcomingSchoolSundays.length} upcoming (${activeSchoolSundays.length} total)`}
+              >
+                📅 <strong className="text-white font-bold">{upcomingSchoolSundays.length}/{activeSchoolSundays.length}</strong> {currentLanguage === 'sl' ? 'nedelj' : 'Sundays'}
+              </span>
+              <span 
+                className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
+                title={currentLanguage === 'sl' ? 'Aktivne službe v cerkvi' : 'Active church ministries'}
+              >
+                📋 <strong className="text-white font-bold">{ministries.length}</strong> {currentLanguage === 'sl' ? 'služb' : 'ministries'}
+              </span>
+              <span 
+                className="px-2 py-0.5 bg-white/10 rounded-lg border border-white/15 flex items-center gap-1 shadow-2xs backdrop-blur-xs" 
+                title={currentLanguage === 'sl' ? `Aktivni sodelavci z dodeljenimi ali prednostnimi službami (${activeServantsCount} od skupaj ${people.length} v bazi)` : `Active servants with ministry duties (${activeServantsCount} of ${people.length} total)`}
+              >
+                👥 <strong className="text-white font-bold">{activeServantsCount}</strong> {currentLanguage === 'sl' ? 'aktivnih' : 'active'}
+              </span>
+            </div>
+
             {onOpenVisitorModal && (
               <button
                 type="button"
@@ -699,7 +1104,6 @@ export default function HomeDashboard({
               </button>
             )}
           </div>
-
         </div>
       </HeroHeaderBanner>
 

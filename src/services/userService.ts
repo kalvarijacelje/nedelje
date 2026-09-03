@@ -25,6 +25,65 @@ export function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Rec
 }
 
 /**
+ * Normalizes a name string for flexible matching:
+ * 1. Strips aliases/nicknames in parentheses e.g. "Stella (Estelle) Kreiner" -> "Stella Kreiner"
+ * 2. Removes diacritics (š->s, č->c, ž->z)
+ * 3. Removes punctuation and collapses whitespace
+ */
+export function normalizeNameForMatching(name?: string | null): string {
+  if (!name || typeof name !== 'string') return '';
+  return name
+    .toLowerCase()
+    .replace(/\s*\([^)]*\)/g, ' ') // Remove parentheses like (Estelle)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove accents / diacritics
+    .replace(/[^a-z0-9\s]/g, ' ') // Replace punctuation with space
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Checks whether two person names match intelligently:
+ * - Exact string match
+ * - Normalized match (without diacritics or parenthesized nicknames)
+ * - Substring containment
+ * - First + Last name token match
+ */
+export function isNameMatch(name1?: string | null, name2?: string | null): boolean {
+  if (!name1 || !name2) return false;
+  
+  const raw1 = name1.toLowerCase().trim();
+  const raw2 = name2.toLowerCase().trim();
+  if (raw1 === raw2) return true;
+  
+  const norm1 = normalizeNameForMatching(name1);
+  const norm2 = normalizeNameForMatching(name2);
+  if (!norm1 || !norm2) return false;
+  if (norm1 === norm2) return true;
+  
+  // Direct containment
+  if (norm1.length >= 4 && norm2.includes(norm1)) return true;
+  if (norm2.length >= 4 && norm1.includes(norm2)) return true;
+
+  // First & Last name matching
+  const tokens1 = norm1.split(' ').filter(t => t.length >= 2);
+  const tokens2 = norm2.split(' ').filter(t => t.length >= 2);
+  
+  if (tokens1.length >= 2 && tokens2.length >= 2) {
+    const first1 = tokens1[0];
+    const last1 = tokens1[tokens1.length - 1];
+    const first2 = tokens2[0];
+    const last2 = tokens2[tokens2.length - 1];
+    
+    if (first1 === first2 && last1 === last2) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Finds matching Person record by Auth User email or UID, prioritizing exact email match.
  */
 export function findPersonByAuthUser(
@@ -36,15 +95,10 @@ export function findPersonByAuthUser(
   const authEmail = (authUser.email || '').toLowerCase().trim();
   const authUid = authUser.uid || authUser.id;
   const authName = (authUser.displayName || authUser.user_metadata?.full_name || authUser.user_metadata?.name || '').toLowerCase().trim();
+  const isAles = authEmail === 'ales.lajlar@gmail.com' || authName === 'aleš' || authName === 'ales' || authName.includes('aleš lajlar') || authName.includes('ales lajlar');
 
   // 1. Superadmin special matching for ales.lajlar@gmail.com or name Aleš / Ales
-  if (
-    authEmail === 'ales.lajlar@gmail.com' ||
-    authName === 'aleš' ||
-    authName === 'ales' ||
-    authName.includes('aleš lajlar') ||
-    authName.includes('ales lajlar')
-  ) {
+  if (isAles) {
     const alesMatch = people.find(p => p && (
       p.id === 'p-ales' ||
       p.id === 'p1' ||
@@ -69,8 +123,26 @@ export function findPersonByAuthUser(
 
   // 4. Exact full display name match
   if (authName) {
-    const nameMatch = people.find(p => p && p.name && p.name.toLowerCase().trim() === authName);
+    const nameMatch = people.find(p => {
+      if (!p || !p.name) return false;
+      if (!isAles && (p.name.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || (p.email && p.email.toLowerCase() === 'ales.lajlar@gmail.com'))) {
+        return false;
+      }
+      return p.name.toLowerCase().trim() === authName;
+    });
     if (nameMatch) return nameMatch;
+  }
+
+  // 5. Intelligent fuzzy / nickname name match (e.g. "Stella Kreiner" -> "Stella (Estelle) Kreiner")
+  if (authName) {
+    const fuzzyMatch = people.find(p => {
+      if (!p || !p.name) return false;
+      if (!isAles && (p.name.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || (p.email && p.email.toLowerCase() === 'ales.lajlar@gmail.com'))) {
+        return false;
+      }
+      return isNameMatch(p.name, authName);
+    });
+    if (fuzzyMatch) return fuzzyMatch;
   }
 
   return undefined;

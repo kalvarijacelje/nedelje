@@ -14,6 +14,7 @@ import { calculatePersonBurnoutStatus, getBurnoutSummaryStats, isExemptFromBurno
 import { useBackdropHistory } from '../hooks/useBackdropHistory';
 import { supabase } from '../supabaseClient';
 import { toCanonicalPersonId } from '../services/supabaseDataService';
+import { isNameMatch } from '../services/userService';
 
 interface PeopleViewProps {
   sundays: ServiceSunday[];
@@ -74,6 +75,8 @@ function PendingUserItemCard({
     const pNameLower = p.name.toLowerCase().trim();
     const pEmailLower = (p.email || '').toLowerCase().trim();
     if (emailLower && pEmailLower && emailLower === pEmailLower) return true;
+    if (user.displayName && isNameMatch(p.name, user.displayName)) return true;
+    if (nameLower && isNameMatch(p.name, nameLower)) return true;
     if (nameLower && pNameLower && (nameLower === pNameLower || (nameLower.length >= 3 && pNameLower.includes(nameLower)) || (pNameLower.length >= 3 && nameLower.includes(pNameLower)))) return true;
     return false;
   });
@@ -162,6 +165,7 @@ function PendingUserItemCard({
   const linkedPerson = (people || []).find(p => p && (
     p.name === user.personName || 
     p.id === user.personName || 
+    (user.personName && isNameMatch(p.name, user.personName)) ||
     (p.email && user.email && p.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
     ((p as any).auth_user_id && (p as any).auth_user_id === user.uid)
   ));
@@ -812,8 +816,8 @@ export default function PeopleView({
 
       const linkedPerson = (people || []).find(p => p && (
         (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
-        (u.personName && p.name && p.name.toLowerCase().trim() === u.personName.toLowerCase().trim()) ||
-        (u.displayName && p.name && (u.displayName.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(u.displayName.toLowerCase()))) ||
+        (u.personName && p.name && (p.name.toLowerCase().trim() === u.personName.toLowerCase().trim() || isNameMatch(p.name, u.personName))) ||
+        (u.displayName && p.name && (u.displayName.toLowerCase().includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(u.displayName.toLowerCase()) || isNameMatch(p.name, u.displayName))) ||
         ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
       ));
       const isUnlinked = !linkedPerson;
@@ -925,6 +929,8 @@ export default function PeopleView({
         const unlinkedList = pendingUsers.filter(u => !people.some(p => p && (
           p.name === u.personName || 
           p.id === u.personName || 
+          (u.personName && isNameMatch(p.name, u.personName)) ||
+          (u.displayName && isNameMatch(p.name, u.displayName)) ||
           (p.email && u.email && p.email.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
           ((p as any).auth_user_id && (p as any).auth_user_id === u.uid)
         )));

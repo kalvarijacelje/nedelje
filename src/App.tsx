@@ -85,7 +85,8 @@ import {
   updatePersonRecord, 
   createPersonRecord, 
   deletePersonRecord, 
-  linkUserToPerson 
+  linkUserToPerson,
+  isNameMatch 
 } from './services/userService';
 import { 
   collection, 
@@ -1104,7 +1105,7 @@ export default function App() {
         (!isAles && (p.name?.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || p.email?.toLowerCase() === 'ales.lajlar@gmail.com') ? false : true) && (
           (p.id && (p.id === sessionUser.id || (p as any).auth_user_id === sessionUser.id || (dbProfile && p.id === dbProfile.id))) ||
           (p.email && p.email.toLowerCase().trim() === userEmail) ||
-          (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
+          (userFullName && p.name && (p.name.toLowerCase().trim() === userFullName.toLowerCase().trim() || isNameMatch(p.name, userFullName)))
         )
       ));
 
@@ -1112,7 +1113,7 @@ export default function App() {
         matchedPerson = INITIAL_PEOPLE.find(p => p && (
           (!isAles && (p.name?.toLowerCase().includes('aleš lajlar') || p.id === 'p-ales_lajlar' || p.email?.toLowerCase() === 'ales.lajlar@gmail.com') ? false : true) && (
             (p.email && p.email.toLowerCase().trim() === userEmail) ||
-            (userFullName && p.name && p.name.toLowerCase().trim() === userFullName.toLowerCase().trim())
+            (userFullName && p.name && (p.name.toLowerCase().trim() === userFullName.toLowerCase().trim() || isNameMatch(p.name, userFullName)))
           )
         ));
       }
@@ -1877,7 +1878,7 @@ export default function App() {
   };
 
   const handleLinkUserPerson = async (userId: string, personNameOrId: string | undefined) => {
-    const targetPerson = (people || []).find(p => p && (p.id === personNameOrId || p.name === personNameOrId));
+    const targetPerson = (people || []).find(p => p && (p.id === personNameOrId || p.name === personNameOrId || (personNameOrId && isNameMatch(p.name, personNameOrId))));
     const targetUser = (users || []).find(u => u.uid === userId);
     
     // 1. Optimistic React Memory State Update
