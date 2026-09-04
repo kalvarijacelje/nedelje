@@ -847,6 +847,249 @@ export async function sendLeaderResponseNotification({
   });
 }
 
+/**
+ * Parameters for sending a direct targeted shift swap request email
+ */
+export interface DirectSwapNotificationParams {
+  requesterName: string;
+  requesterEmail?: string;
+  targetPersonName: string;
+  targetPersonEmail: string;
+  ministryName: string;
+  sundayDate: string;
+  reason?: string;
+  token: string;
+  baseUrl?: string;
+}
+
+export function generateDirectSwapEmail({
+  requesterName,
+  targetPersonName,
+  ministryName,
+  sundayDate,
+  reason,
+  token,
+  baseUrl,
+}: {
+  requesterName: string;
+  targetPersonName: string;
+  ministryName: string;
+  sundayDate: string;
+  reason?: string;
+  token: string;
+  baseUrl?: string;
+}): { subject: string; html: string; text: string } {
+  const subject = `Prošnja za zamenjavo službe: ${ministryName} (${sundayDate}) - od ${requesterName}`;
+  const acceptUrl = generatePublicConfirmationUrl(token, 'accept', baseUrl);
+  const declineUrl = generatePublicConfirmationUrl(token, 'decline', baseUrl);
+
+  const text = `Pozdravljeni ${targetPersonName},
+
+Sodelavec ${requesterName} te prosi za zamenjavo pri nedeljski službi ${ministryName}.
+
+📅 Datum: ${sundayDate}
+📋 Služba: ${ministryName}
+${reason ? `💬 Sporočilo prosilca: "${reason}"\n` : ''}
+
+Za odgovor kliknite na eno od povezav:
+✅ SPREJMI ZAMENJAVO: ${acceptUrl}
+❌ NE MOREM / ZAVRNI: ${declineUrl}
+
+Če sprejmete, se nedeljski razpored samodejno posodobi in obvesti prosilca.
+
+Lep pozdrav,
+Ekipa KC Kalvarija
+`;
+
+  const html = `<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 24px 12px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="580" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+          <!-- Header Banner -->
+          <tr>
+            <td style="background-color: #d97706; padding: 26px 24px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 19px; font-weight: 700; letter-spacing: -0.025em;">KC KALVARIJA</h1>
+              <p style="margin: 4px 0 0 0; color: #fef3c7; font-size: 13px; font-weight: 500;">Prošnja za zamenjavo nedeljske službe</p>
+            </td>
+          </tr>
+          
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 30px 26px 20px 26px;">
+              <p style="font-size: 16px; margin-top: 0; margin-bottom: 14px;">
+                Pozdravljeni <strong>${targetPersonName}</strong>,
+              </p>
+              
+              <p style="font-size: 15px; color: #334155; margin-bottom: 20px; line-height: 1.6;">
+                Sodelavec <strong>${requesterName}</strong> te prosi za pomoč in zamenjavo pri službi:
+              </p>
+
+              <!-- Duty Highlight Card -->
+              <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 18px; margin-bottom: 22px;">
+                <div style="font-size: 16px; font-weight: 800; color: #92400e; margin-bottom: 6px;">
+                  📅 ${sundayDate}
+                </div>
+                <div style="font-size: 15px; font-weight: 600; color: #78350f;">
+                  📋 ${ministryName}
+                </div>
+                ${reason ? `
+                  <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed #fcd34d; font-size: 13px; color: #78350f; font-style: italic;">
+                    💬 "${reason}"
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- Action Buttons -->
+              <div style="text-align: center; margin: 24px 0 16px 0;">
+                <table border="0" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                  <tr>
+                    <td style="padding-right: 12px;">
+                      <a href="${acceptUrl}" target="_blank" style="display: inline-block; background-color: #059669; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 22px; border-radius: 8px; box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);">
+                        ✅ Sprejmi zamenjavo
+                      </a>
+                    </td>
+                    <td>
+                      <a href="${declineUrl}" target="_blank" style="display: inline-block; color: #64748b; background-color: #f1f5f9; border: 1px solid #cbd5e1; font-size: 14px; font-weight: 600; text-decoration: none; padding: 11px 18px; border-radius: 8px;">
+                        ❌ Ne morem
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- Reassuring Note -->
+              <p style="font-size: 12px; color: #64748b; text-align: center; margin: 18px 0 0 0; font-style: italic;">
+                "Če sprejmete, se nedeljski razpored takoj samodejno posodobi in obvesti prosilca."
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer bottom note -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 24px; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                Krščanska cerkev Kalvarija • Avtomatski sistem zamenjav
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return { subject, html, text };
+}
+
+export async function sendDirectSwapNotification(params: DirectSwapNotificationParams): Promise<{ success: boolean; error?: string }> {
+  if (!params.targetPersonEmail || !params.targetPersonEmail.includes('@')) {
+    return { success: false, error: 'Sodelavec nima vpisanega e-poštnega naslova' };
+  }
+  const emailContent = generateDirectSwapEmail({
+    requesterName: params.requesterName,
+    targetPersonName: params.targetPersonName,
+    ministryName: params.ministryName,
+    sundayDate: params.sundayDate,
+    reason: params.reason,
+    token: params.token,
+    baseUrl: params.baseUrl || getPublicAppBaseUrl(),
+  });
+  return sendEmail({
+    toEmail: params.targetPersonEmail,
+    subject: emailContent.subject,
+    html: emailContent.html,
+    text: emailContent.text,
+  });
+}
+
+export async function sendSwapAcceptedNotificationToRequester(params: {
+  requesterName: string;
+  requesterEmail: string;
+  targetPersonName: string;
+  ministryName: string;
+  sundayDate: string;
+  baseUrl?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (!params.requesterEmail || !params.requesterEmail.includes('@')) {
+    return { success: false, error: 'Prosilcev e-poštni naslov ni na voljo' };
+  }
+  const root = params.baseUrl || getPublicAppBaseUrl();
+  const scheduleUrl = `${root.replace(/\/$/, '')}/urnik`;
+
+  const subject = `🎉 Zamenjava potrjena! ${params.targetPersonName} je prevzel/a tvojo službo: ${params.ministryName} (${params.sundayDate})`;
+  const text = `Pozdravljeni ${params.requesterName},
+
+Odlična novica! Sodelavec ${params.targetPersonName} je pravkar SPREJEL/A tvojo prošnjo za zamenjavo pri službi ${params.ministryName} dne ${params.sundayDate}.
+
+Nedeljski razpored je samodejno posodobljen.
+
+Odpri urnik: ${scheduleUrl}
+
+Lep pozdrav,
+Ekipa KC Kalvarija`;
+
+  const html = `<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="utf-8">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 24px 12px;">
+    <tr>
+      <td align="center">
+        <table width="100%" max-width="580" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+          <tr>
+            <td style="background-color: #059669; padding: 26px 24px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 19px; font-weight: 700;">KC KALVARIJA</h1>
+              <p style="margin: 4px 0 0 0; color: #d1fae5; font-size: 13px; font-weight: 500;">Zamenjava uspešno potrjena</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px;">
+              <div style="display: inline-block; background-color: #d1fae5; color: #065f46; font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 9999px; margin-bottom: 16px;">
+                ✓ Zamenjava uspešna
+              </div>
+              <p style="font-size: 16px; margin: 0 0 16px 0;">
+                Pozdravljeni <strong>${params.requesterName}</strong>,
+              </p>
+              <p style="font-size: 15px; color: #334155; margin-bottom: 20px;">
+                Odlična novica! Sodelavec <strong>${params.targetPersonName}</strong> je pravkar <strong>sprejel/a</strong> tvojo prošnjo za zamenjavo pri službi <strong>${params.ministryName}</strong> za nedeljo, <strong>${params.sundayDate}</strong>.
+              </p>
+              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: #166534;">
+                Urnik je samodejno posodobljen. Za to nedeljo si razbremenjen/a te službe.
+              </div>
+              <div style="text-align: center; margin: 24px 0 12px 0;">
+                <a href="${scheduleUrl}" target="_blank" style="display: inline-block; background-color: #4f46e5; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 10px;">
+                  📅 Preglej urnik
+                </a>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return sendEmail({
+    toEmail: params.requesterEmail,
+    subject,
+    html,
+    text,
+  });
+}
+
 export interface AppNotification {
   id: string;
   type: 'volunteer_response' | 'assignment' | 'swap' | 'system';

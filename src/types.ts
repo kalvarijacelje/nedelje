@@ -489,13 +489,22 @@ export interface ArchivedSong {
 export interface ShiftSwapRequest {
   id: string;
   requesterName: string;
+  requesterEmail?: string;
   sundayId: string;
   sundayDate: string;
   ministryId: string;
   ministryName: string;
   reason?: string;
-  status: 'open' | 'accepted' | 'declined' | 'cancelled';
+  status: 'open' | 'pending_direct' | 'accepted' | 'declined' | 'cancelled';
+  swapType?: 'direct' | 'open';
+  targetPersonName?: string;
+  targetPersonId?: string;
+  targetPersonEmail?: string;
+  confirmationToken?: string;
   acceptedByName?: string;
+  acceptedAt?: string;
+  declinedByName?: string;
+  declineReason?: string;
   createdAt: string;
 }
 

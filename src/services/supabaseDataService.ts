@@ -764,18 +764,53 @@ export async function fetchShiftSwapsFromSupabase(): Promise<ShiftSwapRequest[]>
       .limit(100);
 
     if (error) return [];
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      sundayId: row.sunday_id,
-      sundayDate: row.sunday_date,
-      ministryId: row.ministry_id,
-      ministryName: row.ministry_name,
-      requesterName: row.requester_name,
-      reason: row.reason || '',
-      status: row.status || 'open',
-      acceptedByName: row.accepted_by_name || undefined,
-      createdAt: row.created_at
-    }));
+    return (data || []).map((row: any) => {
+      let reason = row.reason || '';
+      let targetPersonName: string | undefined = undefined;
+      let targetPersonId: string | undefined = undefined;
+      let targetPersonEmail: string | undefined = undefined;
+      let confirmationToken: string | undefined = undefined;
+      let swapType: 'direct' | 'open' = 'open';
+      let requesterEmail: string | undefined = undefined;
+      let declinedByName: string | undefined = undefined;
+      let declineReason: string | undefined = undefined;
+
+      if (typeof reason === 'string' && reason.startsWith('__SWAP_META__:')) {
+        try {
+          const meta = JSON.parse(reason.replace('__SWAP_META__:', ''));
+          targetPersonName = meta.targetPersonName;
+          targetPersonId = meta.targetPersonId;
+          targetPersonEmail = meta.targetPersonEmail;
+          confirmationToken = meta.confirmationToken;
+          swapType = meta.swapType || (targetPersonName ? 'direct' : 'open');
+          requesterEmail = meta.requesterEmail;
+          declinedByName = meta.declinedByName;
+          declineReason = meta.declineReason;
+          reason = meta.cleanReason || '';
+        } catch (e) {}
+      }
+
+      return {
+        id: row.id,
+        sundayId: row.sunday_id,
+        sundayDate: row.sunday_date,
+        ministryId: row.ministry_id,
+        ministryName: row.ministry_name,
+        requesterName: row.requester_name,
+        requesterEmail,
+        reason,
+        status: row.status || 'open',
+        swapType,
+        targetPersonName,
+        targetPersonId,
+        targetPersonEmail,
+        confirmationToken,
+        acceptedByName: row.accepted_by_name || undefined,
+        declinedByName,
+        declineReason,
+        createdAt: row.created_at
+      };
+    });
   } catch {
     return [];
   }
@@ -784,20 +819,56 @@ export async function fetchShiftSwapsFromSupabase(): Promise<ShiftSwapRequest[]>
 export async function upsertShiftSwapToSupabase(swap: ShiftSwapRequest): Promise<boolean> {
   if (!IS_SUPABASE_CONFIGURED) return false;
   try {
+    const meta = {
+      targetPersonName: swap.targetPersonName,
+      targetPersonId: swap.targetPersonId,
+      targetPersonEmail: swap.targetPersonEmail,
+      confirmationToken: swap.confirmationToken,
+      swapType: swap.swapType || (swap.targetPersonName ? 'direct' : 'open'),
+      requesterEmail: swap.requesterEmail,
+      declinedByName: swap.declinedByName,
+      declineReason: swap.declineReason,
+      cleanReason: swap.reason || '',
+    };
+    const storedReason = `__SWAP_META__:${JSON.stringify(meta)}`;
+
     const { error } = await supabase
       .from('nedelje_shift_swaps')
       .upsert({
-        id: swap.id.startsWith('swap-') ? undefined : swap.id,
+        id: swap.id,
         sunday_id: swap.sundayId,
         sunday_date: swap.sundayDate,
         ministry_id: swap.ministryId,
         ministry_name: swap.ministryName,
         requester_name: swap.requesterName,
-        reason: swap.reason || null,
+        reason: storedReason,
         status: swap.status,
         accepted_by_name: swap.acceptedByName || null,
         updated_at: new Date().toISOString()
       });
+
+    // Also register the token into nedelje_assignments table for universal confirmation link resolution
+    if (swap.confirmationToken && swap.targetPersonName) {
+      const cleanSlug = toCanonicalPersonId(swap.targetPersonName).replace(/^p-/, '');
+      const assignRowId = `${swap.sundayId}_${swap.ministryId}_swap_${cleanSlug}`;
+      await supabase
+        .from('nedelje_assignments')
+        .upsert({
+          id: assignRowId,
+          sunday_id: swap.sundayId,
+          ministry_id: swap.ministryId,
+          person_name: swap.targetPersonName,
+          person_id: swap.targetPersonId || null,
+          status: swap.status === 'accepted' ? 'confirmed' : swap.status === 'declined' ? 'declined' : 'pending',
+          notes: swap.reason || `Prošnja za zamenjavo s strani: ${swap.requesterName}`,
+          decline_reason: swap.declineReason || null,
+          assigned_by_name: swap.requesterName,
+          confirmation_token: swap.confirmationToken,
+          assigned_at: new Date().toISOString(),
+          response_at: swap.status === 'accepted' || swap.status === 'declined' ? new Date().toISOString() : null
+        });
+    }
+
     return !error;
   } catch {
     return false;

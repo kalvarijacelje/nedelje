@@ -35,6 +35,7 @@ import ServiceRundownModal from './components/ServiceRundownModal';
 import Statistika from './pages/Statistika';
 import ConfirmPage from './pages/ConfirmPage';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
+import { sendSwapAcceptedNotificationToRequester, logInAppNotification } from './services/notificationService';
 
 import { INITIAL_SUNDAY_SCHOOL_LESSONS, INITIAL_SUNDAY_SCHOOL_SUPPLIES } from './data/sundaySchoolData';
 import { INITIAL_VISITOR_CONNECTIONS } from './data/visitorData';
@@ -749,11 +750,11 @@ export default function App() {
   };
 
   // Handlers for Swap Requests
-  const handleCreateSwapRequest = (req: Omit<ShiftSwapRequest, 'id' | 'createdAt' | 'status'>) => {
+  const handleCreateSwapRequest = (req: Omit<ShiftSwapRequest, 'id' | 'createdAt' | 'status'> & { status?: ShiftSwapRequest['status'] }) => {
     const newReq: ShiftSwapRequest = {
       ...req,
       id: 'swap-' + Date.now(),
-      status: 'open',
+      status: req.status || (req.swapType === 'direct' ? 'pending_direct' : 'open'),
       createdAt: 'Danes ob ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
     setSwapRequests(prev => [newReq, ...prev]);
@@ -799,6 +800,79 @@ export default function App() {
         return sun;
       })
     );
+
+    // 3. Resolve requester email and send notification + log in-app notification
+    const requesterPerson = people.find(p => p.name.toLowerCase().trim() === req.requesterName.toLowerCase().trim());
+    const requesterEmail = req.requesterEmail || requesterPerson?.email;
+
+    logInAppNotification({
+      type: 'volunteer_response',
+      title: `🎉 Zamenjava sprejeta! (${req.ministryName})`,
+      message: `${acceptingPersonName} je sprejel/a tvojo prošnjo za zamenjavo pri službi ${req.ministryName} dne ${req.sundayDate}.`,
+      action: 'confirmed',
+      volunteerName: acceptingPersonName,
+      ministryName: req.ministryName,
+      sundayDate: req.sundayDate,
+    });
+
+    if (requesterEmail && requesterEmail.includes('@')) {
+      sendSwapAcceptedNotificationToRequester({
+        requesterName: req.requesterName,
+        requesterEmail,
+        targetPersonName: acceptingPersonName,
+        ministryName: req.ministryName,
+        sundayDate: req.sundayDate,
+      }).catch(err => {
+        console.warn('Swap accepted email notice to requester:', err);
+      });
+    }
+  };
+
+  const handleDeclineSwapRequest = (requestId: string, declineReason?: string) => {
+    const req = swapRequests.find(r => r.id === requestId);
+    if (!req) return;
+
+    const updatedReq: ShiftSwapRequest = {
+      ...req,
+      status: 'declined',
+      declinedByName: req.targetPersonName || activePerson?.name,
+      declineReason: declineReason || req.declineReason,
+    };
+
+    setSwapRequests(prev =>
+      prev.map(r => r.id === requestId ? updatedReq : r)
+    );
+    upsertShiftSwapToSupabase(updatedReq).catch(console.warn);
+
+    logInAppNotification({
+      type: 'volunteer_response',
+      title: `❌ Prošnja za zamenjavo zavrnjena (${req.ministryName})`,
+      message: `${req.targetPersonName || 'Sodelavec'} ne more prevzeti službe ${req.ministryName} dne ${req.sundayDate}.${declineReason ? ` Razlog: "${declineReason}"` : ''} Lahko objavite na odprto desko.`,
+      action: 'declined',
+      volunteerName: req.targetPersonName || '',
+      ministryName: req.ministryName,
+      sundayDate: req.sundayDate,
+      note: declineReason,
+    });
+  };
+
+  const handleConvertToOpenSwapRequest = (requestId: string) => {
+    const req = swapRequests.find(r => r.id === requestId);
+    if (!req) return;
+
+    const updatedReq: ShiftSwapRequest = {
+      ...req,
+      status: 'open',
+      swapType: 'open',
+      targetPersonName: undefined,
+      targetPersonId: undefined,
+      targetPersonEmail: undefined,
+    };
+
+    setSwapRequests(prev =>
+      prev.map(r => r.id === requestId ? updatedReq : r)
+    );
+    upsertShiftSwapToSupabase(updatedReq).catch(console.warn);
   };
 
   const handleCancelSwapRequest = (requestId: string) => {
@@ -2311,7 +2385,10 @@ export default function App() {
         sundays={sundays}
         ministries={ministries}
         people={people}
+        swapRequests={swapRequests}
         onUpdateSunday={handleUpdateSunday}
+        onAcceptSwapRequest={handleAcceptSwapRequest}
+        onDeclineSwapRequest={handleDeclineSwapRequest}
         onNavigateHome={() => {
           setIsConfirmView(false);
           setActiveTab('home');
@@ -3214,7 +3291,10 @@ export default function App() {
         currentLanguage={currentLanguage}
         onCreateSwapRequest={handleCreateSwapRequest}
         onAcceptSwapRequest={handleAcceptSwapRequest}
+        onDeclineSwapRequest={handleDeclineSwapRequest}
+        onConvertToOpenSwapRequest={handleConvertToOpenSwapRequest}
         onCancelSwapRequest={handleCancelSwapRequest}
+        blackoutDates={blackoutDates}
         userRole={activeRole}
       />
 
