@@ -493,12 +493,9 @@ export default function PeopleView({
 
   // Quick WhatsApp / SMS Reminder trigger modal
   const [reminderModalPerson, setReminderModalPerson] = useState<Person | null>(null);
-  const [copiedReminderText, setCopiedReminderText] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
-  const [activePeopleTab, setActivePeopleTab] = useState<'all' | 'active' | 'members' | 'youth' | 'visitors'>('all');
+  const [activePeopleTab, setActivePeopleTab] = useState<'all' | 'active' | 'members' | 'youth' | 'visitors'>('active');
   const [showPendingUsersModal, setShowPendingUsersModal] = useState<boolean>(false);
-
-  // Quick edit member state
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -1510,24 +1507,7 @@ export default function PeopleView({
           </button>
         )}
 
-        {/* Tab 0: All People */}
-        <button
-          type="button"
-          onClick={() => setActivePeopleTab('all')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activePeopleTab === 'all'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5 text-indigo-500" />
-          <span>{currentLanguage === 'sl' ? 'Vsi' : 'All'}</span>
-          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'all' ? 'bg-indigo-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
-            {allPeopleCount}
-          </span>
-        </button>
-
-        {/* Tab 1: Active Servants */}
+        {/* Tab 1: Active Servants (First tab) */}
         <button
           type="button"
           onClick={() => setActivePeopleTab('active')}
@@ -1592,6 +1572,23 @@ export default function PeopleView({
           <span>{currentLanguage === 'sl' ? 'Obiskovalci' : 'Visitors'}</span>
           <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'visitors' ? 'bg-amber-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
             {visitorsCount}
+          </span>
+        </button>
+
+        {/* Tab 5: All People (Vsi) */}
+        <button
+          type="button"
+          onClick={() => setActivePeopleTab('all')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activePeopleTab === 'all'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5 text-indigo-500" />
+          <span>{currentLanguage === 'sl' ? 'Vsi' : 'All'}</span>
+          <span className={`text-[10px] px-2 py-0.2 rounded-full font-mono ${activePeopleTab === 'all' ? 'bg-indigo-500/40 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+            {allPeopleCount}
           </span>
         </button>
       </div>

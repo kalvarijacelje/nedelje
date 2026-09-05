@@ -415,21 +415,41 @@ const mergePeopleWithDefaults = (fetched: Person[], base: Person[]): Person[] =>
   return [];
 };
 
+const normalizeDateKey = (dateStr: string): string => {
+  const d = parseEuropeanDate(dateStr);
+  if (!d || isNaN(d.getTime()) || d.getTime() === 0) return (dateStr || '').replace(/\s+/g, '');
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const mergeSundaysWithDefaults = (fetched: ServiceSunday[], base: ServiceSunday[]): ServiceSunday[] => {
   const map = new Map<string, ServiceSunday>();
   
   // 1. Initial past year sundays
-  INITIAL_SUNDAYS.forEach(s => { if (s && s.id) map.set(s.id, s); });
+  INITIAL_SUNDAYS.forEach(s => { 
+    if (s && s.date) {
+      const key = normalizeDateKey(s.date);
+      map.set(key, s);
+    } 
+  });
   
   // 2. Standard 2026/2027 Academic Year (Aug 30, 2026 -> Aug 29, 2027)
   const standardAy = generateAcademicYear2026_2027();
-  standardAy.forEach(s => { if (s && s.id) map.set(s.id, s); });
+  standardAy.forEach(s => { 
+    if (s && s.date) {
+      const key = normalizeDateKey(s.date);
+      map.set(key, s);
+    } 
+  });
 
   // 3. Overlay base/local storage (filtering out any obsolete s_ay2627_ keys)
   base.forEach(s => { 
-    if (s && s.id && !s.id.startsWith('s_ay2627_')) {
-      map.set(s.id, {
+    if (s && s.date && !s.id?.startsWith('s_ay2627_')) {
+      const key = normalizeDateKey(s.date);
+      const existing = map.get(key);
+      map.set(key, {
+        ...(existing || {}),
         ...s,
+        id: existing?.id || s.id.replace(/_/g, '-'),
         status: getAutoSundayStatus(s.date)
       }); 
     } 
@@ -437,9 +457,13 @@ const mergeSundaysWithDefaults = (fetched: ServiceSunday[], base: ServiceSunday[
 
   // 4. Overlay authoritative remote records
   fetched.forEach(s => { 
-    if (s && s.id && !s.id.startsWith('s_ay2627_')) {
-      map.set(s.id, {
+    if (s && s.date && !s.id?.startsWith('s_ay2627_')) {
+      const key = normalizeDateKey(s.date);
+      const existing = map.get(key);
+      map.set(key, {
+        ...(existing || {}),
         ...s,
+        id: existing?.id || s.id.replace(/_/g, '-'),
         status: getAutoSundayStatus(s.date)
       }); 
     } 
@@ -1569,8 +1593,9 @@ export default function App() {
       async () => {
         const freshSundays = await fetchSundaysFromSupabase();
         if (freshSundays.length > 0) {
-          setSundays(freshSundays);
-          try { localStorage.setItem('church_roster_sundays_v2', JSON.stringify(freshSundays)); } catch (e) {}
+          const merged = mergeSundaysWithDefaults(freshSundays, []);
+          setSundays(merged);
+          try { localStorage.setItem('church_roster_sundays_v2', JSON.stringify(merged)); } catch (e) {}
         }
       },
       async () => {

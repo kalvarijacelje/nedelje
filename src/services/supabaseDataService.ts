@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { getAutoSundayStatus } from '../utils/academicYear';
 import { unpackWorshipCompoundString } from '../utils/worshipSync';
+import { parseEuropeanDate } from '../utils/dateUtils';
 
 const envUrl = 
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -48,8 +49,7 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
     const { data: sundaysData, error: sundaysErr } = await supabase
       .from('nedelje_services')
       .select('id, date, theme_sl, theme_en, status, guest, absent_or_notes, special_focus, worship_setlist')
-      .order('date', { ascending: true })
-      .limit(60);
+      .limit(1000);
 
     if (sundaysErr) {
       console.warn('[Supabase] fetchSundays notice:', sundaysErr.message);
@@ -58,22 +58,27 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
 
     if (!sundaysData || sundaysData.length === 0) return [];
 
-    const sundayIds = sundaysData.map((s: any) => s.id);
     const { data: assignmentsData, error: assignErr } = await supabase
       .from('nedelje_assignments')
       .select('id, sunday_id, ministry_id, person_name, status, notes, decline_reason, assigned_by_id, assigned_by_name, assigned_at, confirmation_token, response_at')
-      .in('sunday_id', sundayIds);
+      .limit(10000);
 
     if (assignErr) {
       console.warn('[Supabase] fetchAssignments notice:', assignErr.message);
     }
 
     // Map relational rows into the standard ServiceSunday object format
-    return (sundaysData || []).map((row: any) => {
+    const mappedSundays = (sundaysData || []).map((row: any) => {
       const sundayAssignments: Record<string, string[]> = {};
       const assignmentDetails: Record<string, MinistryAssignment[]> = {};
 
-      const relatedAssignments = (assignmentsData || []).filter((a: any) => a.sunday_id === row.id);
+      const cleanRowId = (row.id || '').replace(/_/g, '-');
+      const relatedAssignments = (assignmentsData || []).filter((a: any) => {
+        if (!a || !a.sunday_id) return false;
+        if (a.sunday_id === row.id) return true;
+        if (a.sunday_id.replace(/_/g, '-') === cleanRowId) return true;
+        return false;
+      });
 
       relatedAssignments.forEach((a: any) => {
         const mId = toCanonicalMinistryId(a.ministry_id);
@@ -112,6 +117,10 @@ export async function fetchSundaysFromSupabase(): Promise<ServiceSunday[]> {
         assignments: sundayAssignments,
         assignmentDetails: assignmentDetails
       };
+    });
+
+    return mappedSundays.sort((a, b) => {
+      return parseEuropeanDate(a.date).getTime() - parseEuropeanDate(b.date).getTime();
     });
   } catch (err) {
     console.warn('[Supabase] Error in fetchSundaysFromSupabase:', err);
