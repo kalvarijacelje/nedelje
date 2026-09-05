@@ -132,20 +132,29 @@ export function batchAssignPersonToConsecutiveSundays({
       return;
     }
 
+    const isSelfAssign = Boolean(
+      leaderName && 
+      leaderName.toLowerCase().trim() !== 'vodja službe' && 
+      trimmed.toLowerCase() === leaderName.toLowerCase().trim()
+    );
+
     const token = generateConfirmationToken(targetSunday.id, ministryId, trimmed);
     assignedDates.add(normDate);
-    assignedItems.push({ sundayDate: targetSunday.date, token });
+    if (!isSelfAssign) {
+      assignedItems.push({ sundayDate: targetSunday.date, token });
+    }
 
     const updatedAssignments = [...existingAssignments, trimmed];
     const existingDetails = targetSunday.assignmentDetails?.[ministryId] || [];
     const newDetail: MinistryAssignment = {
       personName: trimmed,
-      status: 'pending',
+      status: isSelfAssign ? 'confirmed' : 'pending',
       notes: '',
       assignedByLeaderId: leaderId || '',
       assignedByLeaderName: leaderName || 'Vodja službe',
       assignedAt: new Date().toISOString(),
       confirmationToken: token,
+      responseAt: isSelfAssign ? new Date().toISOString() : undefined,
     };
     const updatedDetails = [...existingDetails, newDetail];
 

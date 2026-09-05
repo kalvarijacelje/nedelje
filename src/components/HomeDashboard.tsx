@@ -122,18 +122,37 @@ export default function HomeDashboard({
     const myName = activePerson.name.toLowerCase().trim();
     const myId = activePerson.id;
 
+    // Track if any self-assigned records were cleaned up/auto-confirmed
+    const sundaysToAutoConfirm: ServiceSunday[] = [];
+
     sortedSundays.forEach(sunday => {
       if (sunday.assignmentDetails) {
+        let hasSelfPendingToConfirm = false;
+        const updatedAssignmentDetails = { ...sunday.assignmentDetails };
+
         Object.entries(sunday.assignmentDetails).forEach(([mId, details]) => {
           if (Array.isArray(details)) {
-            details.forEach(d => {
+            const nextDetails = details.map(d => {
               const matchesPerson = (myId && (d as any).personId === myId) || 
                 (d.personName && d.personName.toLowerCase().trim() === myName);
 
-              if (
-                matchesPerson &&
-                (d.status === 'pending' || d.status === 'tentative')
-              ) {
+              if (matchesPerson && (d.status === 'pending' || d.status === 'tentative')) {
+                // If assigned by user themselves, auto-confirm it immediately
+                const assignedByName = (d.assignedByLeaderName || '').toLowerCase().trim();
+                const assignedById = (d.assignedByLeaderId || '').trim();
+                const isAssignedByMe = (assignedById && myId && assignedById === myId) || 
+                  (assignedByName && assignedByName === myName);
+
+                if (isAssignedByMe) {
+                  hasSelfPendingToConfirm = true;
+                  return {
+                    ...d,
+                    status: 'confirmed' as const,
+                    responseAt: d.responseAt || new Date().toISOString()
+                  };
+                }
+
+                // If genuinely invited by another leader, add to in-app pendingInvitations banner
                 const ministryObj = ministries.find(m => m.id === mId) || {
                   id: mId,
                   nameSl: mId,
@@ -148,11 +167,28 @@ export default function HomeDashboard({
                   detail: d
                 });
               }
+              return d;
             });
+
+            updatedAssignmentDetails[mId] = nextDetails;
           }
         });
+
+        if (hasSelfPendingToConfirm) {
+          sundaysToAutoConfirm.push({
+            ...sunday,
+            assignmentDetails: updatedAssignmentDetails
+          });
+        }
       }
     });
+
+    // Auto-update any self-assigned entries in the background so they are properly confirmed
+    if (sundaysToAutoConfirm.length > 0 && onUpdateSunday) {
+      setTimeout(() => {
+        sundaysToAutoConfirm.forEach(s => onUpdateSunday(s));
+      }, 0);
+    }
   }
 
   const handleInAppAccept = (sunday: ServiceSunday, ministryId: string, personName: string) => {
@@ -1626,8 +1662,29 @@ export default function HomeDashboard({
               <div className="p-4 bg-emerald-50 text-emerald-950 border border-emerald-200 rounded-xl flex items-center gap-3 text-xs shadow-2xs">
                 <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
                 <div>
-                  <span className="font-bold block text-emerald-950">{currentLanguage === 'sl' ? 'Čudovito! Vse službe so pokrite!' : 'Excellent! All roles are filled!'}</span>
-                  <span className="text-emerald-800/85 text-[11px] block mt-0.5">{currentLanguage === 'sl' ? 'Sodelavci so uspešno razporejeni za vse službe.' : 'Roster checklist is fully completed.'}</span>
+                  <span className="font-bold block text-emerald-950">
+                    {currentLanguage === 'sl' ? 'Čudovito! Vse službe so zapolnjene!' : 'Excellent! All roles are filled!'}
+                  </span>
+                  <span className="text-emerald-800/85 text-[11px] block mt-0.5">
+                    {(() => {
+                      // Check if any fulfilled ministry has pending responses
+                      let pendingCount = 0;
+                      fulfilledMinistries.forEach(m => {
+                        const details = nextSunday.assignmentDetails?.[m.id] || [];
+                        if (details.some(d => d.status === 'pending' || d.status === 'tentative')) {
+                          pendingCount++;
+                        }
+                      });
+                      if (pendingCount > 0) {
+                        return currentLanguage === 'sl' 
+                          ? `Sodelavci so določeni za vse službe (${pendingCount} še čaka na potrditev).` 
+                          : `Volunteers assigned to all roles (${pendingCount} awaiting confirmation).`;
+                      }
+                      return currentLanguage === 'sl' 
+                        ? 'Vsi sodelavci so potrjeni in razpored je popolnoma pripravljen.' 
+                        : 'All volunteers are confirmed and the schedule is complete.';
+                    })()}
+                  </span>
                 </div>
               </div>
             )}
@@ -1638,7 +1695,7 @@ export default function HomeDashboard({
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{currentLanguage === 'sl' ? 'Zapolnjeno / Pokrito' : 'Filled & Fulfilled'} ({fulfilledMinistries.length}/{totalSlots}):</span>
+                    <span>{currentLanguage === 'sl' ? 'Dodeljene službe' : 'Assigned Roles'} ({fulfilledMinistries.length}/{totalSlots}):</span>
                   </span>
                 </div>
 
@@ -1648,6 +1705,9 @@ export default function HomeDashboard({
                     const emoji = getMinistryIconEmoji(ministry.id);
                     const borderClass = getCategoryBorderClass(ministry.category);
                     const iconBg = getCategoryIconBgClass(ministry.category);
+
+                    const details = nextSunday.assignmentDetails?.[ministry.id] || [];
+                    const hasPending = details.some(d => d.status === 'pending' || d.status === 'tentative');
 
                     return (
                       <button
@@ -1663,15 +1723,22 @@ export default function HomeDashboard({
                             <span className="text-xs font-semibold text-slate-800 group-hover:text-indigo-600 transition block truncate">
                               {currentLanguage === 'sl' ? ministry.nameSl : ministry.nameEn}
                             </span>
-                            <span className="text-[10px] text-emerald-800 font-mono font-medium block truncate flex items-center gap-1">
+                            <span className={`text-[10px] font-mono font-medium block truncate flex items-center gap-1 ${hasPending ? 'text-amber-800' : 'text-emerald-800'}`}>
                               <span>👤 {userRole === 'Viewer' ? (currentLanguage === 'sl' ? 'Dodeljeno sodelavcu' : 'Assigned') : assignedPeople.join(', ')}</span>
                             </span>
                           </div>
                         </div>
 
-                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 font-mono font-bold text-[9px] uppercase rounded-md tracking-wider shrink-0 shadow-2xs">
-                          ✓ {currentLanguage === 'sl' ? 'ZASEDENO' : 'FILLED'}
-                        </span>
+                        {hasPending ? (
+                          <span className="px-2 py-0.5 bg-amber-50 text-amber-900 border border-amber-300 font-mono font-bold text-[9px] uppercase rounded-md tracking-wider shrink-0 shadow-2xs flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-amber-600 stroke-[2.5]" />
+                            <span>{currentLanguage === 'sl' ? 'V ČAKANJU' : 'PENDING'}</span>
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 font-mono font-bold text-[9px] uppercase rounded-md tracking-wider shrink-0 shadow-2xs">
+                            ✓ {currentLanguage === 'sl' ? 'ZASEDENO' : 'FILLED'}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

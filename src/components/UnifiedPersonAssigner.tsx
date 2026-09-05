@@ -72,6 +72,13 @@ export const UnifiedPersonAssigner: React.FC<UnifiedPersonAssignerProps> = ({
   const [seriesWeeks, setSeriesWeeks] = useState(3);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Automatically reset multi-week checkbox when closed or role changes
+  useEffect(() => {
+    if (!isOpen) {
+      setEnableSeries(false);
+    }
+  }, [isOpen, roleKey]);
+
   // Normalize active assignments into a string array
   const assignedList = useMemo(() => {
     if (!value) return [];

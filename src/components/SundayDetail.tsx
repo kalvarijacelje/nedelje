@@ -1021,6 +1021,11 @@ export default function SundayDetail({
   const [enableSeries, setEnableSeries] = useState(false);
   const [seriesWeekCount, setSeriesWeekCount] = useState<number>(5);
 
+  // Automatically reset multi-week checkbox when switching between ministries or closing editor
+  React.useEffect(() => {
+    setEnableSeries(false);
+  }, [activeMinistryEditId]);
+
   const handleAddAssignment = (
     ministryId: string, 
     personOrName: string | Person, 
@@ -1055,7 +1060,15 @@ export default function SundayDetail({
         onUpdateSunday
       });
 
-      if (matchedRosterPerson?.email) {
+      const isSelfAssign = Boolean(activePerson && resolvedName.toLowerCase() === activePerson.name.toLowerCase());
+
+      if (isSelfAssign) {
+        setSuccessToast(currentLanguage === 'sl' 
+          ? `✓ Uspešno ste se prijavili za naslednjih ${seriesWeekCount} nedelj!` 
+          : `✓ Successfully signed yourself up for the next ${seriesWeekCount} Sundays!`
+        );
+        setTimeout(() => setSuccessToast(null), 3500);
+      } else if (matchedRosterPerson?.email) {
         const minObj = ministries.find(m => m.id === ministryId);
         let minName = minObj ? (currentLanguage === 'sl' ? minObj.nameSl : minObj.nameEn) : ministryId;
         if (instrumentNote) {
