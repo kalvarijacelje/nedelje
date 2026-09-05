@@ -2182,7 +2182,7 @@ export default function SundayDetail({
                         <p className="text-[9px] uppercase font-bold tracking-wider text-gray-400 font-mono">
                           {currentLanguage === 'sl' ? 'Status potrditve, povabila in opombe' : 'Confirmation Status, Invites & Notes'}
                         </p>
-                        <div className="space-y-2.5 max-h-72 overflow-y-auto">
+                        <div className="space-y-2.5">
                           {getAssignmentDetails(ministry.id).map((detail) => {
                             const personObj = (people || []).find(p => p.name.toLowerCase() === detail.personName.toLowerCase());
                             const waUrl = getWhatsAppInvitationUrl({
